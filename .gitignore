@@ -6,3 +6,21 @@ offline_buffer_cache/
 online_buffer_cache/
 bc_run_*
 deps/
+
+# ── IsaacLab: ignore everything except .py files ──
+isaaclab/**
+!isaaclab/**/
+!isaaclab/**/*.py
+
+# Still ignore bytecode / caches everywhere
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Backup / scratch files from Isaac env development
+*.before_restore_*
+*.before_timeline_restore_*
+*_env copy.py
+*_env_lot.py
+*_env_simple.py
+*_env_2026-*
