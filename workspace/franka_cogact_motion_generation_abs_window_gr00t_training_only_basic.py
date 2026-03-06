@@ -152,6 +152,12 @@ parser.add_argument(
     help="Comparison debug logging interval in sim steps.",
 )
 parser.add_argument(
+    "--heartbeat_log_interval",
+    type=int,
+    default=100,
+    help="Emit runtime heartbeat logs every N sim steps (0 disables).",
+)
+parser.add_argument(
     "--rl_bootstrap",
     action="store_true",
     help="Step-1 RL migration switch: keep current non-RL behavior but write outputs to RL bootstrap folder.",
@@ -204,6 +210,8 @@ simulation_app = app_launcher.app
 import os
 import json
 import time
+import faulthandler
+import traceback
 import numpy as np
 import pandas as pd
 import torch
@@ -230,6 +238,8 @@ from isaaclab.actuators.actuator_cfg import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 from isaaclab.utils.assets import ISAACLAB_NUCLEUS_DIR
 
+faulthandler.enable(all_threads=True)
+
 
 # -----------------------------
 # constants
@@ -254,6 +264,7 @@ EXEC_HORIZON = int(getattr(args_cli, "exec_horizon", 16))
 DEBUG_MODE = bool(getattr(args_cli, "debug", False))
 COMPARE_DEBUG_DUMP = bool(getattr(args_cli, "compare_debug_dump", False))
 COMPARE_DEBUG_INTERVAL = int(getattr(args_cli, "compare_debug_interval", 60))
+HEARTBEAT_LOG_INTERVAL = int(getattr(args_cli, "heartbeat_log_interval", 100))
 RL_BOOTSTRAP = bool(getattr(args_cli, "rl_bootstrap", False))
 RL_EPISODE_LIMIT = int(getattr(args_cli, "rl_episode_limit", 0))
 RL_DISABLE_RETRIES = bool(getattr(args_cli, "rl_disable_retries", False))
@@ -553,6 +564,34 @@ def _pick_state_for_key(key: str, joint_pos_np: np.ndarray, gripper_frac: float)
     return np.zeros((1,), dtype=np.float32)
 
 
+def _read_rss_mb() -> float:
+    try:
+        with open("/proc/self/status", "r", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    kb = float(line.split()[1])
+                    return kb / 1024.0
+    except Exception:
+        pass
+    return float("nan")
+
+
+def _log_heartbeat(step: int, tag: str = "") -> None:
+    rss_mb = _read_rss_mb()
+    msg = f"[HB] step={step} rss_mb={rss_mb:.1f}"
+    if torch.cuda.is_available():
+        try:
+            free_b, total_b = torch.cuda.mem_get_info()
+            used_mb = (total_b - free_b) / (1024.0 ** 2)
+            total_mb = total_b / (1024.0 ** 2)
+            msg += f" cuda_used_mb={used_mb:.1f} cuda_total_mb={total_mb:.1f}"
+        except Exception as e:
+            msg += f" cuda_mem_query_failed={e}"
+    if tag:
+        msg += f" tag={tag}"
+    print(msg)
+
+
 # -----------------------------
 # main simulator loop
 # -----------------------------
@@ -781,6 +820,9 @@ def run_simulator(
             if not sim.is_playing():
                 sim.step(render=False)
                 continue
+
+            if HEARTBEAT_LOG_INTERVAL > 0 and (count % max(1, HEARTBEAT_LOG_INTERVAL) == 0):
+                _log_heartbeat(count, tag="loop")
 
             # update cameras & keep front/back facing target
             for cam in (camera_front, camera_back, camera_wrist):
@@ -1094,6 +1136,8 @@ def main():
     print(f"[INFO] lift_success_threshold={LIFT_SUCCESS_THRESHOLD}")
     print(f"[INFO] max_attempts_per_episode={MAX_ATTEMPTS_PER_EPISODE}")
     print(f"[INFO] success_log_csv={success_log_csv}")
+    print(f"[INFO] heartbeat_log_interval={HEARTBEAT_LOG_INTERVAL}")
+    _log_heartbeat(0, tag="before_sim_init")
 
     # Create a single sim + scene and reuse them across episodes
     sim_cfg = sim_utils.SimulationCfg(dt=0.01, device=args_cli.device)
@@ -1101,6 +1145,7 @@ def main():
     scene_cfg = _make_gr00t_scene_cfg(num_envs=args_cli.num_envs, env_spacing=2.0)
     scene = InteractiveScene(scene_cfg)
     sim.reset()
+    _log_heartbeat(0, tag="after_sim_reset")
 
     if MODEL_PATH is None:
         raise ValueError("--model_path is required for local inference mode")
@@ -1112,6 +1157,7 @@ def main():
         strict=POLICY_STRICT,
     )
     print("[INFO] Local GR00T policy loaded.")
+    _log_heartbeat(0, tag="after_policy_load")
 
     success_rows = []
     for ep_dir in csv_dirs:
@@ -1170,5 +1216,11 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
-    simulation_app.close()
+    try:
+        main()
+    except Exception:
+        print("[FATAL] Unhandled exception in main()")
+        traceback.print_exc()
+        raise
+    finally:
+        simulation_app.close()

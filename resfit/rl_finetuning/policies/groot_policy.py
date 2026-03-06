@@ -1,15 +1,13 @@
 """
-GR00T PolicyClient wrapper that exposes the same interface as resfit's ACTPolicy
-(``select_action`` / ``reset``), with action-chunk caching.
+GR00T base-policy wrapper for resfit with action-chunk caching.
 
 Design choices
 --------------
 * GR00T returns 16-token action chunks.  We cache the full chunk and serve one
   token per ``select_action`` call, advancing an internal index.
 * A fresh server call happens only when the cache is exhausted (every 16 calls).
-* For multi-env, each environment has its own independent cache.  Server calls
-  are batched when possible but fall back to per-env calls since the ZMQ
-  PolicyClient is single-stream.
+* For multi-env, each environment has its own independent cache.
+* Supports both server mode (PolicyClient) and local mode (Gr00tPolicy).
 * Image observations are converted to the format GR00T expects:
   ``(1, 1, H, W, 3)`` uint8 numpy arrays keyed by view name.
 
@@ -35,6 +33,13 @@ try:
     from gr00t.policy.server_client import PolicyClient
 except ImportError:
     PolicyClient = None  # graceful fallback for py_compile
+
+try:
+    from gr00t.policy.gr00t_policy import Gr00tPolicy
+    from gr00t.data.embodiment_tags import EmbodimentTag
+except ImportError:
+    Gr00tPolicy = None
+    EmbodimentTag = None
 
 
 # ── Modality keys (same as standalone GR00T script) ──
@@ -79,10 +84,10 @@ class GR00TBasePolicy:
         task_description: str = "Pick up the white object.",
         language_override: str | None = None,
         action_horizon: int = 16,
+        model_path: str | None = None,
+        embodiment_tag: str = "new_embodiment",
+        strict: bool = False,
     ):
-        if PolicyClient is None:
-            raise ImportError("gr00t not found. Add Isaac-GR00T to PYTHONPATH.")
-
         self.host = host
         self.port = port
         self.num_envs = num_envs
@@ -90,20 +95,40 @@ class GR00TBasePolicy:
         self.task_description = task_description
         self.language_override = language_override
         self.action_horizon = action_horizon
+        self.mode = "local" if model_path else "server"
+        self.client = None
+        self.local_policy = None
 
-        # Connect
-        self.client = PolicyClient(host=host, port=port, strict=False)
-        if not self.client.ping():
-            raise RuntimeError(f"GR00T server ping failed at {host}:{port}")
-        print(f"[GR00TBasePolicy] Connected to {host}:{port}")
+        if self.mode == "local":
+            if Gr00tPolicy is None or EmbodimentTag is None:
+                raise ImportError("gr00t local policy not found. Add Isaac-GR00T to PYTHONPATH.")
+            resolved_tag = self._resolve_embodiment_tag(embodiment_tag)
+            self.local_policy = Gr00tPolicy(
+                embodiment_tag=resolved_tag,
+                model_path=model_path,
+                device=device,
+                strict=strict,
+            )
+            try:
+                mod_cfg = self.local_policy.get_modality_config()
+                self.action_horizon = len(mod_cfg["action"].delta_indices)
+            except Exception:
+                pass
+            print(f"[GR00TBasePolicy] Local mode loaded: {model_path}")
+        else:
+            if PolicyClient is None:
+                raise ImportError("gr00t server client not found. Add Isaac-GR00T to PYTHONPATH.")
+            self.client = PolicyClient(host=host, port=port, strict=False)
+            if not self.client.ping():
+                raise RuntimeError(f"GR00T server ping failed at {host}:{port}")
+            print(f"[GR00TBasePolicy] Connected to {host}:{port}")
 
-        # Read modality config to get actual action horizon
-        try:
-            mod_cfg = self.client.get_modality_config()
-            self.action_horizon = len(mod_cfg["action"].delta_indices)
-        except Exception:
-            pass
-        print(f"[GR00TBasePolicy] action_horizon={self.action_horizon}")
+            try:
+                mod_cfg = self.client.get_modality_config()
+                self.action_horizon = len(mod_cfg["action"].delta_indices)
+            except Exception:
+                pass
+            print(f"[GR00TBasePolicy] action_horizon={self.action_horizon}")
 
         # Per-env action chunk cache
         self._cached_chunks: list[np.ndarray | None] = [None] * num_envs  # (H, 7)
@@ -127,7 +152,7 @@ class GR00TBasePolicy:
         for env_id in range(self.num_envs):
             # Check if we need a fresh inference
             if self._cached_chunks[env_id] is None or self._chunk_idx[env_id] >= self._cached_chunks[env_id].shape[0]:
-                chunk = self._call_server(obs, env_id)
+                chunk = self._call_local(obs, env_id) if self.mode == "local" else self._call_server(obs, env_id)
                 if chunk is not None:
                     self._cached_chunks[env_id] = chunk
                     self._chunk_idx[env_id] = 0
@@ -178,6 +203,26 @@ class GR00TBasePolicy:
             return None
         except Exception as e:
             print(f"[GR00TBasePolicy] Server call failed for env {env_id}: {e}")
+            return None
+
+    def _call_local(self, obs: dict[str, torch.Tensor], env_id: int) -> np.ndarray | None:
+        """Build GR00T obs dict for one env and call local in-process model."""
+        try:
+            video_dict = self._build_video_dict(obs, env_id)
+            state_dict = self._build_state_dict(obs, env_id)
+            lang_str = self.language_override if self.language_override is not None else self.task_description
+            language_dict = {_LANGUAGE_KEY: [[str(lang_str)]]}
+
+            groot_obs = {"video": video_dict, "state": state_dict, "language": language_dict}
+            pred_action, _info = self.local_policy.get_action(groot_obs)
+
+            chunk = self._parse_action(pred_action)
+            if chunk is not None and chunk.ndim == 2 and chunk.shape[1] == 7:
+                num_tokens = min(self.action_horizon, chunk.shape[0])
+                return chunk[:num_tokens].astype(np.float32)
+            return None
+        except Exception as e:
+            print(f"[GR00TBasePolicy] Local inference failed for env {env_id}: {e}")
             return None
 
     # ------------------------------------------------------------------
@@ -246,3 +291,15 @@ class GR00TBasePolicy:
             return None
         arr = np.array(pred_action, dtype=np.float32)
         return arr[0] if arr.ndim == 3 else arr
+
+    @staticmethod
+    def _resolve_embodiment_tag(tag_str: str):
+        if EmbodimentTag is None:
+            raise ImportError("EmbodimentTag is unavailable")
+        if hasattr(EmbodimentTag, str(tag_str)):
+            return getattr(EmbodimentTag, str(tag_str))
+        for member in EmbodimentTag:
+            if str(member.value) == str(tag_str):
+                return member
+        valid = ", ".join(sorted(str(m.value) for m in EmbodimentTag))
+        raise ValueError(f"Unknown embodiment_tag='{tag_str}'. Valid: {valid}")

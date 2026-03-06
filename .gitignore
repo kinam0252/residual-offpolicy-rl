@@ -31,3 +31,4 @@ isaaclab
 workspace/.pydeps_groot_iso/
 workspace/.venv_groot_iso/
 workspace/__pycache__/
+workspace/logs/
