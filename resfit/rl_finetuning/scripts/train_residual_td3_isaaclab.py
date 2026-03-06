@@ -34,8 +34,17 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Residual TD3 on IsaacLab + GR00T")
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--total_timesteps", type=int, default=300_000)
+parser.add_argument("--learning_starts", type=int, default=None)
+parser.add_argument("--critic_warmup_steps", type=int, default=None)
+parser.add_argument("--update_every_n_steps", type=int, default=None)
+parser.add_argument("--num_updates_per_iteration", type=int, default=None)
+parser.add_argument("--offline_fraction", type=float, default=None)
 parser.add_argument("--gr00t_host", type=str, default="127.0.0.1")
 parser.add_argument("--gr00t_port", type=int, default=5555)
+parser.add_argument("--task_description", type=str, default=None)
+parser.add_argument("--language_override", type=str, default=None)
+parser.add_argument("--csv_base_dir", type=str, default=None)
+parser.add_argument("--csv_init_row_index", type=int, default=None)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--wandb_mode", type=str, default="disabled")
 AppLauncher.add_app_launcher_args(parser)
@@ -52,6 +61,7 @@ import logging
 import pprint
 import random
 import time
+from dataclasses import asdict, is_dataclass
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
@@ -311,10 +321,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     # ── W&B ──
     run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
     if wandb is not None:
+        if is_dataclass(cfg):
+            wandb_cfg = asdict(cfg)
+        else:
+            try:
+                wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+            except Exception:
+                wandb_cfg = {}
         wandb.init(
             project=cfg.wandb.project,
             entity=cfg.wandb.entity,
-            config=OmegaConf.to_container(cfg, resolve=True) if hasattr(cfg, '__dataclass_fields__') else {},
+            config=wandb_cfg,
             name=run_name,
             mode=cfg.wandb.mode,
         )
@@ -412,10 +429,29 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 if __name__ == "__main__":
     cfg = ResidualTD3IsaacLabConfig()
     cfg.isaaclab_env.num_envs = args_cli.num_envs
+    cfg.isaaclab_env.device = args_cli.device
     cfg.num_envs = args_cli.num_envs
     cfg.algo.total_timesteps = args_cli.total_timesteps
+    if args_cli.learning_starts is not None:
+        cfg.algo.learning_starts = args_cli.learning_starts
+    if args_cli.critic_warmup_steps is not None:
+        cfg.algo.critic_warmup_steps = args_cli.critic_warmup_steps
+    if args_cli.update_every_n_steps is not None:
+        cfg.algo.update_every_n_steps = args_cli.update_every_n_steps
+    if args_cli.num_updates_per_iteration is not None:
+        cfg.algo.num_updates_per_iteration = args_cli.num_updates_per_iteration
+    if args_cli.offline_fraction is not None:
+        cfg.algo.offline_fraction = args_cli.offline_fraction
     cfg.groot_policy.host = args_cli.gr00t_host
     cfg.groot_policy.port = args_cli.gr00t_port
+    if args_cli.task_description is not None:
+        cfg.groot_policy.task_description = args_cli.task_description
+    if args_cli.language_override is not None:
+        cfg.groot_policy.language_override = args_cli.language_override
+    if args_cli.csv_base_dir is not None:
+        cfg.isaaclab_env.csv_base_dir = args_cli.csv_base_dir
+    if args_cli.csv_init_row_index is not None:
+        cfg.isaaclab_env.csv_init_row_index = args_cli.csv_init_row_index
     cfg.seed = args_cli.seed
     cfg.device = args_cli.device
     cfg.wandb.mode = args_cli.wandb_mode

@@ -26,3 +26,8 @@ isaaclab/**
 *_env_2026-*
 
 isaaclab
+
+# workspace-local runtime artifacts (keep scripts trackable)
+workspace/.pydeps_groot_iso/
+workspace/.venv_groot_iso/
+workspace/__pycache__/
