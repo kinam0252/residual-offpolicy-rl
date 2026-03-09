@@ -158,6 +158,12 @@ parser.add_argument(
     help="Emit runtime heartbeat logs every N sim steps (0 disables).",
 )
 parser.add_argument(
+    "--max_steps",
+    type=int,
+    default=1000,
+    help="Maximum sim steps per episode before forced stop.",
+)
+parser.add_argument(
     "--rl_bootstrap",
     action="store_true",
     help="Step-1 RL migration switch: keep current non-RL behavior but write outputs to RL bootstrap folder.",
@@ -197,6 +203,13 @@ parser.add_argument(
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 
 # cameras needed
 args_cli.enable_cameras = True
@@ -265,6 +278,7 @@ DEBUG_MODE = bool(getattr(args_cli, "debug", False))
 COMPARE_DEBUG_DUMP = bool(getattr(args_cli, "compare_debug_dump", False))
 COMPARE_DEBUG_INTERVAL = int(getattr(args_cli, "compare_debug_interval", 60))
 HEARTBEAT_LOG_INTERVAL = int(getattr(args_cli, "heartbeat_log_interval", 100))
+MAX_STEPS = int(getattr(args_cli, "max_steps", 1000))
 RL_BOOTSTRAP = bool(getattr(args_cli, "rl_bootstrap", False))
 RL_EPISODE_LIMIT = int(getattr(args_cli, "rl_episode_limit", 0))
 RL_DISABLE_RETRIES = bool(getattr(args_cli, "rl_disable_retries", False))
@@ -589,7 +603,7 @@ def _log_heartbeat(step: int, tag: str = "") -> None:
             msg += f" cuda_mem_query_failed={e}"
     if tag:
         msg += f" tag={tag}"
-    print(msg)
+    print(msg, flush=True)
 
 
 # -----------------------------
@@ -1048,8 +1062,8 @@ def run_simulator(
                 pass
 
             count += 1
-            if count >= 1000:
-                print("[INFO] reached max steps, stopping.")
+            if count >= MAX_STEPS:
+                print(f"[INFO] reached max steps ({MAX_STEPS}), stopping.", flush=True)
                 break
     finally:
         try:

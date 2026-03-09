@@ -41,12 +41,18 @@ parser.add_argument("--num_updates_per_iteration", type=int, default=None)
 parser.add_argument("--offline_fraction", type=float, default=None)
 parser.add_argument("--gr00t_host", type=str, default="127.0.0.1")
 parser.add_argument("--gr00t_port", type=int, default=5555)
+parser.add_argument("--groot_model_path", type=str, default=None)
+parser.add_argument("--groot_embodiment_tag", type=str, default="new_embodiment")
+parser.add_argument("--groot_policy_device", type=str, default=None)
+parser.add_argument("--groot_policy_strict", action="store_true")
 parser.add_argument("--task_description", type=str, default=None)
 parser.add_argument("--language_override", type=str, default=None)
 parser.add_argument("--csv_base_dir", type=str, default=None)
 parser.add_argument("--csv_init_row_index", type=int, default=None)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--wandb_mode", type=str, default="disabled")
+parser.add_argument("--heartbeat_interval_sec", type=int, default=20)
+parser.add_argument("--stack_dump_interval_sec", type=int, default=180)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -60,7 +66,9 @@ import json
 import logging
 import pprint
 import random
+import threading
 import time
+import faulthandler
 from dataclasses import asdict, is_dataclass
 from collections import defaultdict
 from contextlib import contextmanager
@@ -87,6 +95,7 @@ from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
 from resfit.rl_finetuning.utils.dtype import to_uint8
 from resfit.rl_finetuning.utils.rb_transforms import MultiStepTransform
 from resfit.rl_finetuning.utils.offline_buffer_csv import populate_offline_buffer_from_csv
+from resfit.rl_finetuning.utils.offline_buffer_lerobot_local import populate_offline_buffer_from_lerobot_local
 from resfit.rl_finetuning.wrappers.isaaclab_env_wrapper import IsaacLabVecEnvWrapper, create_isaaclab_env
 from resfit.rl_finetuning.wrappers.isaaclab_residual_wrapper import IsaacLabResidualWrapper
 from resfit.rl_finetuning.policies.groot_policy import GR00TBasePolicy
@@ -94,6 +103,37 @@ from resfit.rl_finetuning.policies.groot_policy import GR00TBasePolicy
 
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+
+_PHASE = "startup"
+_PHASE_SINCE = time.time()
+
+
+def _ts() -> str:
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _log(msg: str):
+    print(f"[{_ts()}] {msg}", flush=True)
+
+
+def _set_phase(phase: str):
+    global _PHASE, _PHASE_SINCE
+    _PHASE = phase
+    _PHASE_SINCE = time.time()
+    _log(f"PHASE -> {phase}")
+
+
+def _start_phase_heartbeat(interval_sec: int):
+    interval_sec = max(1, int(interval_sec))
+
+    def _worker():
+        while True:
+            elapsed = time.time() - _PHASE_SINCE
+            _log(f"heartbeat phase={_PHASE} elapsed={elapsed:.1f}s")
+            time.sleep(interval_sec)
+
+    t = threading.Thread(target=_worker, name="phase-heartbeat", daemon=True)
+    t.start()
 
 
 # ── Timing utility (same as original) ──
@@ -157,6 +197,20 @@ def _add_transitions(
 
 # ── Main ──
 def main(cfg: ResidualTD3IsaacLabConfig):
+    heartbeat_interval_sec = max(1, int(getattr(cfg, "heartbeat_interval_sec", 20)))
+    stack_dump_interval_sec = int(getattr(cfg, "stack_dump_interval_sec", 180))
+
+    if stack_dump_interval_sec > 0:
+        try:
+            faulthandler.enable()
+            faulthandler.dump_traceback_later(stack_dump_interval_sec, repeat=True)
+            _log(f"Enabled periodic stack dump every {stack_dump_interval_sec}s")
+        except Exception as err:
+            _log(f"Failed to enable faulthandler: {err}")
+
+    _start_phase_heartbeat(heartbeat_interval_sec)
+    _set_phase("setup")
+
     device = torch.device(cfg.device if torch.cuda.is_available() else "cpu")
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True
@@ -171,12 +225,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     torch.manual_seed(cfg.seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(cfg.seed)
-    print(f"Seed: {cfg.seed}")
+    _log(f"Seed: {cfg.seed}")
 
     # ── Create IsaacLab env ──
     ecfg = cfg.isaaclab_env
+    if not cfg.groot_policy.model_path:
+        raise ValueError(
+            "Local GR00T mode requires --groot_model_path. "
+            "Server mode is disabled for this training entrypoint."
+        )
     extra_overrides = {
-        "use_api_for_pose": True,
+        "use_api_for_pose": False,
         "gr00t_host": cfg.groot_policy.host,
         "gr00t_port": cfg.groot_policy.port,
     }
@@ -187,6 +246,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     else:
         extra_overrides["enforce_csv_reset_init"] = False
 
+    _set_phase("create_isaaclab_env")
+    _log("Creating IsaacLab env...")
     isaac_env = create_isaaclab_env(
         task=ecfg.task,
         num_envs=ecfg.num_envs,
@@ -195,24 +256,38 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         image_size=(ecfg.image_size_h, ecfg.image_size_w),
         extra_cfg_overrides=extra_overrides,
     )
+    _set_phase("isaaclab_env_ready")
+    _log("IsaacLab env ready.")
 
     # ── Create GR00T base policy ──
     gcfg = cfg.groot_policy
+    groot_policy_device = gcfg.policy_device if gcfg.policy_device else cfg.device
+    _set_phase("init_groot_base_policy")
+    _log("Initializing GR00T base policy...")
     groot = GR00TBasePolicy(
         host=gcfg.host,
         port=gcfg.port,
         num_envs=ecfg.num_envs,
-        device=cfg.device,
+        device=groot_policy_device,
         task_description=gcfg.task_description,
         language_override=gcfg.language_override,
         action_horizon=gcfg.action_horizon,
+        model_path=gcfg.model_path,
+        embodiment_tag=gcfg.embodiment_tag,
+        strict=gcfg.strict,
     )
+    _set_phase("groot_base_policy_ready")
+    _log("GR00T base policy ready.")
 
     # ── Wrap with residual wrapper ──
+    _set_phase("build_residual_wrapper")
+    _log("Building residual wrapper...")
     env = IsaacLabResidualWrapper(
         vec_env=isaac_env,
         base_policy=groot,
     )
+    _set_phase("residual_wrapper_ready")
+    _log("Residual wrapper ready.")
 
     # ── Dimensions ──
     image_keys = list(cfg.rl_camera)
@@ -222,7 +297,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     lowdim_keys = ["observation.state", "observation.base_action"]
     num_envs = ecfg.num_envs
 
-    print(f"lowdim_dim={lowdim_dim}, img=({img_c},{img_h},{img_w}), action_dim={action_dim}")
+    _log(f"lowdim_dim={lowdim_dim}, img=({img_c},{img_h},{img_w}), action_dim={action_dim}")
 
     # ── QAgent ──
     agent = QAgent(
@@ -259,22 +334,37 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
     # ── Populate offline buffer from CSV episodes ──
     if cfg.offline_data is not None and acfg.offline_fraction > 0.0:
-        print("Populating offline buffer from CSV episodes...")
-        n_offline = populate_offline_buffer_from_csv(
-            data_dir=cfg.offline_data.csv_data_dir,
-            rb=offline_rb,
-            split_file=cfg.offline_data.split_file if cfg.offline_data.split_file else None,
-            split=cfg.offline_data.split,
-            image_keys=image_keys,
-            image_size=(ecfg.image_size_h, ecfg.image_size_w),
-            max_episodes=cfg.offline_data.num_episodes,
-        )
-        print(f"Offline buffer: {n_offline} transitions, size={len(offline_rb)}")
+        offline_root = Path(cfg.offline_data.csv_data_dir)
+        is_lerobot_local = (offline_root / "data" / "chunk-000").exists() and (offline_root / "videos" / "chunk-000").exists()
+
+        if is_lerobot_local:
+            _log(f"Populating offline buffer from LeRobot local dataset: {offline_root}")
+            n_offline = populate_offline_buffer_from_lerobot_local(
+                data_dir=offline_root,
+                rb=offline_rb,
+                image_keys=image_keys,
+                image_size=(ecfg.image_size_h, ecfg.image_size_w),
+                max_episodes=cfg.offline_data.num_episodes,
+            )
+        else:
+            _log("Populating offline buffer from CSV episodes...")
+            n_offline = populate_offline_buffer_from_csv(
+                data_dir=cfg.offline_data.csv_data_dir,
+                rb=offline_rb,
+                split_file=cfg.offline_data.split_file if cfg.offline_data.split_file else None,
+                split=cfg.offline_data.split,
+                image_keys=image_keys,
+                image_size=(ecfg.image_size_h, ecfg.image_size_w),
+                max_episodes=cfg.offline_data.num_episodes,
+            )
+        _log(f"Offline buffer: {n_offline} transitions, size={len(offline_rb)}")
     else:
-        print("Skipping offline buffer (offline_fraction=0 or no offline_data config)")
+        _log("Skipping offline buffer (offline_fraction=0 or no offline_data config)")
 
     # ── Warm-up ──
-    print(f"Warm-up: filling online buffer with {acfg.learning_starts} random steps...")
+    _set_phase("warmup")
+    _log(f"Warm-up: filling online buffer with {acfg.learning_starts} random steps...")
+    warmup_last_log = time.time()
     obs, _ = env.reset()
     while len(online_rb) < acfg.learning_starts:
         if acfg.use_base_policy_for_warmup:
@@ -301,13 +391,18 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         obs = next_obs
 
         if len(online_rb) % 1000 == 0:
-            print(f"  warm-up: {len(online_rb)}/{acfg.learning_starts}")
+            _log(f"warm-up progress: {len(online_rb)}/{acfg.learning_starts}")
+        now = time.time()
+        if now - warmup_last_log >= heartbeat_interval_sec:
+            _log(f"heartbeat warm-up: online_rb={len(online_rb)}/{acfg.learning_starts}")
+            warmup_last_log = now
 
-    print(f"Warm-up done. Online buffer: {len(online_rb)}")
+    _log(f"Warm-up done. Online buffer: {len(online_rb)}")
 
     # ── Critic warmup ──
     if acfg.critic_warmup_steps > 0:
-        print(f"Critic warmup: {acfg.critic_warmup_steps} steps...")
+        _log(f"Critic warmup: {acfg.critic_warmup_steps} steps...")
+        critic_last_log = time.time()
         for i in range(acfg.critic_warmup_steps):
             batch = online_rb.sample(online_batch_size).to(device, non_blocking=True)
             if offline_batch_size > 0 and len(offline_rb) > 0:
@@ -315,8 +410,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 batch = torch.cat([batch, obatch], dim=0)
             agent.update(batch, stddev=0.0, update_actor=False, bc_batch=None, ref_agent=agent)
             if i % 500 == 0:
-                print(f"  critic warmup: {i}/{acfg.critic_warmup_steps}")
-        print("Critic warmup done.")
+                _log(f"critic warmup progress: {i}/{acfg.critic_warmup_steps}")
+            now = time.time()
+            if now - critic_last_log >= heartbeat_interval_sec:
+                _log(f"heartbeat critic warmup: {i}/{acfg.critic_warmup_steps}")
+                critic_last_log = now
+        _log("Critic warmup done.")
 
     # ── W&B ──
     run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
@@ -337,6 +436,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         )
 
     # ── Main training loop ──
+    _set_phase("training_loop")
     obs, _ = env.reset()
     global_step = 0
     episode_count = 0
@@ -345,7 +445,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     train_start = time.time()
     actor_updates = 0
 
-    print(f"Starting training for {acfg.total_timesteps} steps...")
+    _log(f"Starting training for {acfg.total_timesteps} steps...")
+    train_last_log = time.time()
 
     while global_step <= acfg.total_timesteps:
         # (1) Collect
@@ -405,7 +506,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             )
             if "train/actor_loss_base" in metrics:
                 msg += f" actor_loss={metrics['train/actor_loss_base']:.4f}"
-            print(msg)
+            _log(msg)
 
             if wandb is not None and wandb.run is not None:
                 log_dict = {
@@ -418,8 +519,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 log_dict.update(ts)
                 wandb.log(log_dict, step=global_step)
 
+        now = time.time()
+        if now - train_last_log >= heartbeat_interval_sec:
+            _log(
+                "heartbeat train: "
+                f"step={global_step}/{acfg.total_timesteps} "
+                f"online_rb={len(online_rb)} episodes={int(episode_count)}"
+            )
+            train_last_log = now
+
     total_time = time.time() - train_start
-    print(f"Training finished in {total_time:.1f}s ({global_step} steps, {episode_count} episodes)")
+    _log(f"Training finished in {total_time:.1f}s ({global_step} steps, {episode_count} episodes)")
 
     env.close()
     if wandb is not None and wandb.run is not None:
@@ -444,6 +554,10 @@ if __name__ == "__main__":
         cfg.algo.offline_fraction = args_cli.offline_fraction
     cfg.groot_policy.host = args_cli.gr00t_host
     cfg.groot_policy.port = args_cli.gr00t_port
+    cfg.groot_policy.model_path = args_cli.groot_model_path
+    cfg.groot_policy.embodiment_tag = args_cli.groot_embodiment_tag
+    cfg.groot_policy.policy_device = args_cli.groot_policy_device
+    cfg.groot_policy.strict = args_cli.groot_policy_strict
     if args_cli.task_description is not None:
         cfg.groot_policy.task_description = args_cli.task_description
     if args_cli.language_override is not None:
@@ -455,6 +569,8 @@ if __name__ == "__main__":
     cfg.seed = args_cli.seed
     cfg.device = args_cli.device
     cfg.wandb.mode = args_cli.wandb_mode
+    cfg.heartbeat_interval_sec = args_cli.heartbeat_interval_sec
+    cfg.stack_dump_interval_sec = args_cli.stack_dump_interval_sec
 
     main(cfg)
     simulation_app.close()

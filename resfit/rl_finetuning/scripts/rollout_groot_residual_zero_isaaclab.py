@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import traceback
 
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
@@ -23,7 +24,7 @@ from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="GR00T residual-zero rollout on IsaacLab")
 parser.add_argument("--num_envs", type=int, default=1)
-parser.add_argument("--max_steps", type=int, default=1200)
+parser.add_argument("--max_steps", type=int, default=1000)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--heartbeat_interval", type=int, default=25)
 
@@ -69,8 +70,14 @@ def main() -> None:
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(args_cli.seed)
 
+    if not args_cli.groot_model_path:
+        raise ValueError(
+            "Local GR00T mode requires --groot_model_path. "
+            "Server mode is disabled for this rollout entrypoint."
+        )
+
     extra_cfg_overrides = {
-        "use_api_for_pose": True,
+        "use_api_for_pose": False,
         "gr00t_host": args_cli.gr00t_host,
         "gr00t_port": args_cli.gr00t_port,
     }
@@ -89,6 +96,7 @@ def main() -> None:
     print("[rollout] env created", flush=True)
 
     policy_device = args_cli.groot_policy_device if args_cli.groot_policy_device else args_cli.device
+    print("[rollout] creating base policy", flush=True)
     base_policy = GR00TBasePolicy(
         host=args_cli.gr00t_host,
         port=args_cli.gr00t_port,
@@ -132,5 +140,10 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except BaseException as e:
+        print(f"[rollout] fatal: {type(e).__name__}: {e}", flush=True)
+        print(traceback.format_exc(), flush=True)
+        raise
     finally:
+        print("[rollout] closing simulation app", flush=True)
         simulation_app.close()

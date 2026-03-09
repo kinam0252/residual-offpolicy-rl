@@ -29,7 +29,7 @@ import argparse
 import importlib.util
 from pathlib import Path
 import sys
-from typing import Any, Protocol
+from typing import Any
 
 
 def _bootstrap_typing_extensions_override() -> None:
@@ -159,6 +159,12 @@ parser.add_argument(
     help="Emit runtime heartbeat logs every N sim steps (0 disables).",
 )
 parser.add_argument(
+    "--max_steps",
+    type=int,
+    default=1000,
+    help="Maximum sim steps per episode before forced stop.",
+)
+parser.add_argument(
     "--rl_bootstrap",
     action="store_true",
     help="Step-1 RL migration switch: keep current non-RL behavior but write outputs to RL bootstrap folder.",
@@ -199,6 +205,13 @@ parser.add_argument(
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
+
 # cameras needed
 args_cli.enable_cameras = True
 
@@ -227,6 +240,8 @@ except ImportError:
     raise ImportError(
         "gr00t local policy API not found. Add Isaac-GR00T to PYTHONPATH or install dependencies in this env."
     )
+
+from resfit.rl_finetuning.policies.base_policy_interface import BaseChunkPolicy
 
 import isaaclab.sim as sim_utils
 from isaaclab.assets import AssetBaseCfg
@@ -266,6 +281,7 @@ DEBUG_MODE = bool(getattr(args_cli, "debug", False))
 COMPARE_DEBUG_DUMP = bool(getattr(args_cli, "compare_debug_dump", False))
 COMPARE_DEBUG_INTERVAL = int(getattr(args_cli, "compare_debug_interval", 60))
 HEARTBEAT_LOG_INTERVAL = int(getattr(args_cli, "heartbeat_log_interval", 100))
+MAX_STEPS = int(getattr(args_cli, "max_steps", 1000))
 RL_BOOTSTRAP = bool(getattr(args_cli, "rl_bootstrap", False))
 RL_EPISODE_LIMIT = int(getattr(args_cli, "rl_episode_limit", 0))
 RL_DISABLE_RETRIES = bool(getattr(args_cli, "rl_disable_retries", False))
@@ -545,14 +561,6 @@ def _resolve_embodiment_tag(tag_str: str) -> EmbodimentTag:
     raise ValueError(f"Unknown embodiment_tag='{tag_str}'. Valid values: {valid}")
 
 
-class BaseChunkPolicy(Protocol):
-    def get_modality_config(self) -> Any:
-        ...
-
-    def infer_action_chunk(self, obs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
-        ...
-
-
 class LocalGr00tChunkPolicyAdapter:
     def __init__(self, policy: Gr00tPolicy):
         self._policy = policy
@@ -612,7 +620,7 @@ def _log_heartbeat(step: int, tag: str = "") -> None:
             msg += f" cuda_mem_query_failed={e}"
     if tag:
         msg += f" tag={tag}"
-    print(msg)
+    print(msg, flush=True)
 
 
 # -----------------------------
@@ -1071,8 +1079,8 @@ def run_simulator(
                 pass
 
             count += 1
-            if count >= 1000:
-                print("[INFO] reached max steps, stopping.")
+            if count >= MAX_STEPS:
+                print(f"[INFO] reached max steps ({MAX_STEPS}), stopping.")
                 break
     finally:
         try:
@@ -1160,6 +1168,7 @@ def main():
     print(f"[INFO] max_attempts_per_episode={MAX_ATTEMPTS_PER_EPISODE}")
     print(f"[INFO] success_log_csv={success_log_csv}")
     print(f"[INFO] heartbeat_log_interval={HEARTBEAT_LOG_INTERVAL}")
+    print(f"[INFO] max_steps={MAX_STEPS}")
     _log_heartbeat(0, tag="before_sim_init")
 
     # Create a single sim + scene and reuse them across episodes

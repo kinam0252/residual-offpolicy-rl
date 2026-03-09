@@ -102,6 +102,7 @@ class GR00TBasePolicy:
         if self.mode == "local":
             if Gr00tPolicy is None or EmbodimentTag is None:
                 raise ImportError("gr00t local policy not found. Add Isaac-GR00T to PYTHONPATH.")
+            self._ensure_typing_extensions_compat()
             resolved_tag = self._resolve_embodiment_tag(embodiment_tag)
             self.local_policy = Gr00tPolicy(
                 embodiment_tag=resolved_tag,
@@ -176,6 +177,33 @@ class GR00TBasePolicy:
         for eid in ids:
             self._cached_chunks[eid] = None
             self._chunk_idx[eid] = 0
+
+    def get_modality_config(self) -> Any:
+        if self.mode == "local":
+            return self.local_policy.get_modality_config()
+        return self.client.get_modality_config()
+
+    def infer_action_chunk(self, obs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        info: dict[str, Any] = {}
+
+        # Path A: prebuilt GR00T observation dict
+        if "video" in obs and "state" in obs and "language" in obs:
+            if self.mode == "local":
+                pred_action, raw_info = self.local_policy.get_action(obs)
+            else:
+                pred = self.client.get_action(obs)
+                pred_action = pred[0] if isinstance(pred, (tuple, list)) and len(pred) == 2 else pred
+                raw_info = pred[1] if isinstance(pred, (tuple, list)) and len(pred) == 2 else {}
+            if raw_info is not None:
+                info = raw_info
+            chunk = self._parse_action(pred_action)
+            return chunk, info
+
+        # Path B: raw IsaacLab-style single-env observation dict (batch dim=1)
+        chunk = self._call_local(obs, 0) if self.mode == "local" else self._call_server(obs, 0)
+        if chunk is None:
+            chunk = np.zeros((self.action_horizon, 7), dtype=np.float32)
+        return chunk, info
 
     # ------------------------------------------------------------------
     # Server call
@@ -291,6 +319,21 @@ class GR00TBasePolicy:
             return None
         arr = np.array(pred_action, dtype=np.float32)
         return arr[0] if arr.ndim == 3 else arr
+
+    @staticmethod
+    def _ensure_typing_extensions_compat():
+        try:
+            import typing_extensions as te
+        except Exception:
+            return
+
+        class _SentinelType:
+            pass
+
+        if not hasattr(te, "NoDefault"):
+            te.NoDefault = _SentinelType()
+        if not hasattr(te, "NoExtraItems"):
+            te.NoExtraItems = _SentinelType()
 
     @staticmethod
     def _resolve_embodiment_tag(tag_str: str):

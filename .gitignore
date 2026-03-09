@@ -33,3 +33,6 @@ workspace/.venv_groot_iso/
 workspace/__pycache__/
 workspace/logs/
 *.mp4
+workspace/online_buffer_exports/
+workspace/offline_buffer_exports/
+workspace/offline_preview_png/

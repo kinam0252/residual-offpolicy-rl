@@ -21,6 +21,8 @@ Usage (inside the IsaacLab Python runtime launched via isaaclab.sh):
 
 from __future__ import annotations
 
+import time
+
 import gymnasium as gym
 import numpy as np
 import torch
@@ -172,15 +174,7 @@ class IsaacLabVecEnvWrapper:
         isaac_env = self._unwrapped  # DirectRLEnv
 
         for isaac_key, resfit_key in self.CAMERA_MAP.items():
-            cam = None
-            # Try scene sensors first
-            if hasattr(isaac_env, "scene") and hasattr(isaac_env.scene, "sensors"):
-                cam = isaac_env.scene.sensors.get(isaac_key, None)
-            # Fallback to private attributes
-            if cam is None:
-                cam = getattr(isaac_env, f"_{isaac_key}", None)
-            if cam is None:
-                cam = getattr(isaac_env, isaac_key, None)
+            cam = self._find_rgb_camera(preferred_key=isaac_key)
 
             if cam is not None and hasattr(cam, "data") and hasattr(cam.data, "output"):
                 rgb = cam.data.output.get("rgb", None)
@@ -216,6 +210,47 @@ class IsaacLabVecEnvWrapper:
                 device=self.device, dtype=torch.uint8,
             )
 
+    def _find_rgb_camera(self, preferred_key: str | None = None):
+        isaac_env = self._unwrapped
+
+        def has_rgb(candidate) -> bool:
+            return (
+                candidate is not None
+                and hasattr(candidate, "data")
+                and hasattr(candidate.data, "output")
+                and candidate.data.output.get("rgb", None) is not None
+            )
+
+        # 1) Preferred named sensor in scene.sensors
+        if hasattr(isaac_env, "scene") and hasattr(isaac_env.scene, "sensors"):
+            sensors = isaac_env.scene.sensors
+            if preferred_key:
+                preferred = sensors.get(preferred_key, None)
+                if has_rgb(preferred):
+                    return preferred
+
+        # 2) Preferred private/public attributes
+        if preferred_key:
+            for attr_name in (f"_{preferred_key}", preferred_key):
+                cam = getattr(isaac_env, attr_name, None)
+                if has_rgb(cam):
+                    return cam
+
+        # 3) Any camera-like common names
+        for attr_name in ("_camera_front", "camera_front", "_front_camera", "front_camera"):
+            cam = getattr(isaac_env, attr_name, None)
+            if has_rgb(cam):
+                return cam
+
+        # 4) Any scene sensor with rgb output
+        if hasattr(isaac_env, "scene") and hasattr(isaac_env.scene, "sensors"):
+            sensors = isaac_env.scene.sensors
+            for _, sensor in sensors.items():
+                if has_rgb(sensor):
+                    return sensor
+
+        return None
+
     # ------------------------------------------------------------------
     # Convenience properties expected by resfit code
     # ------------------------------------------------------------------
@@ -226,12 +261,7 @@ class IsaacLabVecEnvWrapper:
 
     def render(self) -> np.ndarray:
         """Return (num_envs, H, W, 3) uint8 array for video recording."""
-        isaac_env = self._unwrapped
-        cam = None
-        if hasattr(isaac_env, "scene") and hasattr(isaac_env.scene, "sensors"):
-            cam = isaac_env.scene.sensors.get("camera_front", None)
-        if cam is None:
-            cam = getattr(isaac_env, "_camera_front", None)
+        cam = self._find_rgb_camera(preferred_key="camera_front")
         if cam is not None and hasattr(cam, "data") and hasattr(cam.data, "output"):
             rgb = cam.data.output.get("rgb", None)
             if rgb is not None:
@@ -297,22 +327,41 @@ def create_isaaclab_env(
     """
     import gymnasium as gym  # noqa: F811 — needed at call-time after AppLauncher
 
+    t0 = time.time()
+    print(
+        f"[isaaclab_env_wrapper] create_isaaclab_env start task={task} num_envs={num_envs} device={device}",
+        flush=True,
+    )
+
     # isaaclab_tasks must have been imported (which triggers gym.register) before this call.
     import isaaclab_tasks  # noqa: F401
     from isaaclab_tasks.utils import parse_env_cfg
 
     # Parse the env config from the gymnasium registry (handles cfg entry point resolution)
-    env_cfg = parse_env_cfg(task, num_envs=num_envs, device=device, use_fabric=True)
+    print("[isaaclab_env_wrapper] parsing env cfg...", flush=True)
+    env_cfg = parse_env_cfg(
+        task,
+        num_envs=num_envs,
+        device=device,
+        use_fabric=True,
+        enable_cameras=enable_cameras,
+    )
+    print(f"[isaaclab_env_wrapper] env cfg parsed in {time.time() - t0:.2f}s", flush=True)
 
     # Apply extra config overrides if any
     if extra_cfg_overrides:
+        print(f"[isaaclab_env_wrapper] applying overrides: {sorted(extra_cfg_overrides.keys())}", flush=True)
         for k, v in extra_cfg_overrides.items():
             if hasattr(env_cfg, k):
                 setattr(env_cfg, k, v)
 
     # Build the env via gymnasium registry with the resolved config
+    t_make = time.time()
+    print("[isaaclab_env_wrapper] gym.make start...", flush=True)
     env = gym.make(task, cfg=env_cfg)
+    print(f"[isaaclab_env_wrapper] gym.make done in {time.time() - t_make:.2f}s", flush=True)
 
     # Use the gym-wrapped env (not .unwrapped) so reset/step go through
     # the proper IsaacLab DirectRLEnv lifecycle
+    print(f"[isaaclab_env_wrapper] create_isaaclab_env done total={time.time() - t0:.2f}s", flush=True)
     return IsaacLabVecEnvWrapper(env=env, image_size=image_size, device=device)

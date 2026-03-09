@@ -227,9 +227,7 @@ def populate_offline_buffer_from_csv(
             # For residual RL: base_action = GT delta, residual = 0
             # So the stored action IS the combined action (base + 0)
             is_last = (t == T - 2)
-            # Reward: 1.0 only at terminal success — for offline we don't know,
-            # use 0.0 (conservative); the critic will learn from online successes.
-            reward = 0.0
+            reward = 1.0 if is_last else 0.0
 
             curr_obs = {
                 "observation.state": torch.tensor(state_t),

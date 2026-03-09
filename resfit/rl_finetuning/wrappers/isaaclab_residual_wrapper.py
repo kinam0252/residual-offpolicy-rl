@@ -29,9 +29,14 @@ Usage
 
 from __future__ import annotations
 
+import os
+import time
+
 import gymnasium as gym
 import numpy as np
 import torch
+
+from resfit.rl_finetuning.policies.base_policy_interface import BaseChunkPolicy
 
 
 class IsaacLabResidualWrapper:
@@ -46,7 +51,7 @@ class IsaacLabResidualWrapper:
     def __init__(
         self,
         vec_env,       # IsaacLabVecEnvWrapper (Phase 1)
-        base_policy,   # GR00TBasePolicy (Phase 2)
+        base_policy: BaseChunkPolicy,   # GR00T-compatible base policy
         state_standardizer=None,  # optional; if None, state is passed raw
         action_clip: float = 1.0,  # clip combined action to [-clip, clip]
     ):
@@ -66,6 +71,10 @@ class IsaacLabResidualWrapper:
 
         # Internal state
         self._last_base_action: torch.Tensor | None = None
+        self._cached_chunks: list[np.ndarray | None] = [None] * self.num_envs
+        self._chunk_idx: list[int] = [0] * self.num_envs
+        self.debug_base_policy = str(os.environ.get("RESFIT_DEBUG_BASE_POLICY", "0")).lower() in {"1", "true", "yes", "on"}
+        self.base_policy_warn_sec = float(os.environ.get("RESFIT_BASE_POLICY_WARN_SEC", "10.0"))
 
     # ------------------------------------------------------------------
     # Observation / action spaces
@@ -102,11 +111,13 @@ class IsaacLabResidualWrapper:
         raw_obs, info = self.vec_env.reset(**kwargs)
 
         # Reset base policy caches
-        self.base_policy.reset()
+        if hasattr(self.base_policy, "reset"):
+            self.base_policy.reset()
+        self._invalidate_chunks()
 
         # Get first base action
         with torch.no_grad():
-            base_action = self.base_policy.select_action(raw_obs)
+            base_action = self._next_base_action(raw_obs)
 
         self._last_base_action = base_action
         augmented_obs = self._augment_obs(raw_obs, base_action)
@@ -142,16 +153,18 @@ class IsaacLabResidualWrapper:
 
         # Get next base action
         with torch.no_grad():
-            base_action = self.base_policy.select_action(raw_obs)
+            base_action = self._next_base_action(raw_obs)
 
         # Reset base policy for terminated envs
         done = terminated | truncated
         if done.any():
             reset_ids = torch.where(done)[0]
-            self.base_policy.reset(env_ids=reset_ids)
+            if hasattr(self.base_policy, "reset"):
+                self.base_policy.reset(env_ids=reset_ids)
+            self._invalidate_chunks(env_ids=reset_ids)
             # Re-query base action for reset envs (they got a fresh obs from auto-reset)
             with torch.no_grad():
-                fresh_base = self.base_policy.select_action(raw_obs)
+                fresh_base = self._next_base_action(raw_obs)
             # Overwrite only the reset envs
             base_action[reset_ids] = fresh_base[reset_ids]
 
@@ -175,6 +188,88 @@ class IsaacLabResidualWrapper:
             out["observation.state"] = self.state_standardizer.standardize(out["observation.state"])
 
         return out
+
+    def _invalidate_chunks(self, env_ids: torch.Tensor | list[int] | None = None):
+        if env_ids is None:
+            ids = range(self.num_envs)
+        elif isinstance(env_ids, torch.Tensor):
+            ids = env_ids.detach().cpu().tolist()
+        else:
+            ids = env_ids
+        for env_id in ids:
+            self._cached_chunks[env_id] = None
+            self._chunk_idx[env_id] = 0
+
+    def _next_base_action(self, raw_obs: dict[str, torch.Tensor]) -> torch.Tensor:
+        actions = torch.zeros((self.num_envs, self.action_dim), device=self.vec_env.device, dtype=torch.float32)
+        for env_id in range(self.num_envs):
+            chunk = self._cached_chunks[env_id]
+            idx = self._chunk_idx[env_id]
+            if chunk is None or idx >= chunk.shape[0]:
+                env_obs = self._slice_env_obs(raw_obs, env_id)
+                if self.debug_base_policy:
+                    print(f"[residual-wrapper] env={env_id} requesting new base action chunk", flush=True)
+                t0 = time.time()
+                pred_action, _info = self.base_policy.infer_action_chunk(env_obs)
+                infer_dt = time.time() - t0
+                if infer_dt >= self.base_policy_warn_sec:
+                    print(
+                        f"[residual-wrapper] env={env_id} base policy inference took {infer_dt:.2f}s",
+                        flush=True,
+                    )
+                parsed = self._parse_action_chunk(pred_action)
+                if parsed is None:
+                    parsed = np.zeros((1, self.action_dim), dtype=np.float32)
+                self._cached_chunks[env_id] = parsed
+                self._chunk_idx[env_id] = 0
+                chunk = parsed
+                idx = 0
+
+            actions[env_id] = torch.as_tensor(chunk[idx], device=self.vec_env.device, dtype=torch.float32)
+            self._chunk_idx[env_id] += 1
+        return actions
+
+    @staticmethod
+    def _slice_env_obs(raw_obs: dict[str, torch.Tensor], env_id: int) -> dict[str, torch.Tensor]:
+        out: dict[str, torch.Tensor] = {}
+        for key, value in raw_obs.items():
+            if isinstance(value, torch.Tensor) and value.dim() > 0 and value.shape[0] > env_id:
+                out[key] = value[env_id: env_id + 1]
+            else:
+                out[key] = value
+        return out
+
+    def _parse_action_chunk(self, pred_action) -> np.ndarray | None:
+        if pred_action is None:
+            return None
+
+        if isinstance(pred_action, dict):
+            if "action" in pred_action:
+                arr = np.asarray(pred_action["action"], dtype=np.float32)
+                arr = arr[0] if arr.ndim == 3 else arr
+                return arr if arr.ndim == 2 and arr.shape[-1] == self.action_dim else None
+            if "action.ee_delta" in pred_action and "action.gripper_pos" in pred_action:
+                ee = np.asarray(pred_action["action.ee_delta"], dtype=np.float32)
+                gr = np.asarray(pred_action["action.gripper_pos"], dtype=np.float32)
+                ee = ee[0] if ee.ndim == 3 else ee
+                gr = gr[0] if gr.ndim == 3 else gr
+                if ee.ndim != 2:
+                    return None
+                if gr.ndim == 1:
+                    gr = gr[:, None]
+                return np.concatenate([ee, gr], axis=-1).astype(np.float32)
+            return None
+
+        arr = np.asarray(pred_action, dtype=np.float32)
+        arr = arr[0] if arr.ndim == 3 else arr
+        if arr.ndim != 2:
+            return None
+        if arr.shape[-1] > self.action_dim:
+            return arr[:, : self.action_dim]
+        if arr.shape[-1] < self.action_dim:
+            pad = np.zeros((arr.shape[0], self.action_dim - arr.shape[-1]), dtype=np.float32)
+            return np.concatenate([arr, pad], axis=-1)
+        return arr
 
     # ------------------------------------------------------------------
     # Pass-through

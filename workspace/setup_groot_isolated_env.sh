@@ -65,4 +65,4 @@ echo "[INFO] Installing into isolated target: ${DEPS_DIR}"
   scipy==1.15.3
 
 echo "[DONE] Isolated dependency folder ready: ${DEPS_DIR}"
-echo "[NEXT] Run: bash ${WORKSPACE_DIR}/run_franka_gr00t_basic_workspace.sh"
+echo "[NEXT] Run: bash ${WORKSPACE_DIR}/run_franka_gr00t_iface_workspace.sh"

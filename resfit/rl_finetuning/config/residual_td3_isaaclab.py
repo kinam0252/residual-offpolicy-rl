@@ -29,6 +29,10 @@ class GR00TBasePolicyConfig:
     task_description: str = "Pick up the white object."
     language_override: str | None = None
     action_horizon: int = 16
+    model_path: str | None = None
+    embodiment_tag: str = "new_embodiment"
+    strict: bool = False
+    policy_device: str | None = None
 
 
 # ── IsaacLab environment config ──
@@ -47,11 +51,11 @@ class IsaacLabEnvConfig:
     max_episode_steps: int = 1000
 
 
-# ── Offline data from CSV episodes ──
+# ── Offline data (CSV episodes or local LeRobot-format dataset folder) ──
 @dataclass
 class IsaacLabOfflineDataConfig:
-    csv_data_dir: str = "/home/kinam/Desktop/DATA/dataset_from_Namiko/0_Raw_dataset/pickMushroom"
-    split_file: str = "/home/kinam/Desktop/DATA/dataset_from_Namiko/0_Raw_dataset/pickMushroom/train_test_split.txt"
+    csv_data_dir: str = "/home/t-kinamkim/Repos/VLA_RL/Data/lerobot/pickMushroom_train_libero_replay_poseinit"
+    split_file: str = ""
     split: str = "training"  # "training" or "testing"
     num_episodes: int | None = None  # None = use all
 
