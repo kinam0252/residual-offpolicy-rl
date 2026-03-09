@@ -11,12 +11,12 @@ mkdir -p "${LOG_DIR}"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 RUN_LOG="${LOG_DIR}/gr00t_basic_${RUN_TS}.log"
 
-# Isaac Lab root (adjust only if your repo location changes)
-ISAACLAB_ROOT="/home/kinam/Desktop/Repos/VLA_RL/Honda_IsaacLab"
-ISAACLAB_SH="${ISAACLAB_ROOT}/isaaclab.sh"
+# Isaac Lab root / launcher
+ISAACLAB_ROOT="${ISAACLAB_ROOT:-${WORKSPACE_DIR}/../../Honda_IsaacLab}"
+ISAACLAB_SH="${ISAACLAB_SH:-${ISAACLAB_ROOT}/isaaclab.sh}"
 
 # GR00T package path
-ISAAC_GROOT_PATH="/home/kinam/Desktop/Repos/VLA_RL/Isaac-GR00T"
+ISAAC_GROOT_PATH="${ISAAC_GROOT_PATH:-${WORKSPACE_DIR}/../../Isaac-GR00T}"
 
 # Isolated workspace deps (does not touch existing environments)
 ISO_DEPS_DIR="${ISO_DEPS_DIR:-${WORKSPACE_DIR}/.pydeps_groot_iso}"
@@ -47,10 +47,10 @@ else
 fi
 
 # Default episode CSV folder (can be overridden by env var CSV_DIR)
-CSV_DIR="${CSV_DIR:-/home/kinam/Desktop/DATA/dataset_from_Namiko/0_Raw_dataset/pickMushroom/pickMushroom_20251209_081744_174}"
+CSV_DIR="${CSV_DIR:-/home/t-kinamkim/Repos/VLA_RL/Data/pickMushroom}"
 
 # Optional knobs (override by env vars)
-MODEL_PATH="${MODEL_PATH:-/home/kinam/Desktop/Repos/VLA_RL/Isaac-GR00T/outputs/checkpoint-100000}"
+MODEL_PATH="${MODEL_PATH:-/home/t-kinamkim/Repos/VLA_RL/Isaac-GR00T/outputs/pickMushroom_train/checkpoint-100000}"
 EMBODIMENT_TAG="${EMBODIMENT_TAG:-new_embodiment}"
 POLICY_DEVICE="${POLICY_DEVICE:-cuda}"
 COMPARE_INTERVAL="${COMPARE_INTERVAL:-1}"

@@ -5,12 +5,40 @@ set -euo pipefail
 WORKSPACE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEPS_DIR="${WORKSPACE_DIR}/.pydeps_groot_iso"
 
-ISAACLAB_ROOT="/home/kinam/Desktop/Repos/VLA_RL/Honda_IsaacLab"
+ISAACLAB_ROOT="${ISAACLAB_ROOT:-}"
+
+if [[ -z "${ISAACLAB_ROOT}" ]]; then
+  CANDIDATES=(
+    "${WORKSPACE_DIR}/../../Honda_IsaacLab"
+    "/home/kinam/Desktop/Repos/VLA_RL/Honda_IsaacLab"
+  )
+
+  for candidate in "${CANDIDATES[@]}"; do
+    if [[ -d "${candidate}" ]]; then
+      ISAACLAB_ROOT="${candidate}"
+      break
+    fi
+  done
+fi
+
+if [[ -z "${ISAACLAB_ROOT}" ]]; then
+  echo "[ERROR] Could not resolve ISAACLAB_ROOT." >&2
+  echo "[HINT] Export ISAACLAB_ROOT, e.g.:" >&2
+  echo "       export ISAACLAB_ROOT=\"${WORKSPACE_DIR}/../../Honda_IsaacLab\"" >&2
+  exit 1
+fi
+
 ISAACLAB_PYTHON="${ISAACLAB_ROOT}/_isaac_sim/python.sh"
 if [[ ! -x "${ISAACLAB_PYTHON}" ]]; then
   echo "[ERROR] Isaac python not found: ${ISAACLAB_PYTHON}" >&2
+  if [[ -L "${ISAACLAB_ROOT}/_isaac_sim" ]]; then
+    echo "[HINT] ${ISAACLAB_ROOT}/_isaac_sim is a symlink. Verify its target exists." >&2
+  fi
+  echo "[HINT] Set a valid install root via ISAACLAB_ROOT (must contain _isaac_sim/python.sh)." >&2
   exit 1
 fi
+
+echo "[INFO] Using IsaacLab root: ${ISAACLAB_ROOT}"
 
 mkdir -p "${DEPS_DIR}"
 
