@@ -165,6 +165,18 @@ parser.add_argument(
     help="Maximum sim steps per episode before forced stop.",
 )
 parser.add_argument(
+    "--lift_reward_threshold_m",
+    type=float,
+    default=0.01,
+    help="Lift threshold in meters for online reward=1.",
+)
+parser.add_argument(
+    "--online_buffer_npz",
+    type=str,
+    default=None,
+    help="Optional output npz path for per-step online buffer (front_image/lift_delta/reward).",
+)
+parser.add_argument(
     "--rl_bootstrap",
     action="store_true",
     help="Step-1 RL migration switch: keep current non-RL behavior but write outputs to RL bootstrap folder.",
@@ -282,6 +294,8 @@ COMPARE_DEBUG_DUMP = bool(getattr(args_cli, "compare_debug_dump", False))
 COMPARE_DEBUG_INTERVAL = int(getattr(args_cli, "compare_debug_interval", 60))
 HEARTBEAT_LOG_INTERVAL = int(getattr(args_cli, "heartbeat_log_interval", 100))
 MAX_STEPS = int(getattr(args_cli, "max_steps", 1000))
+LIFT_REWARD_THRESHOLD_M = float(getattr(args_cli, "lift_reward_threshold_m", 0.01))
+ONLINE_BUFFER_NPZ = getattr(args_cli, "online_buffer_npz", None)
 RL_BOOTSTRAP = bool(getattr(args_cli, "rl_bootstrap", False))
 RL_EPISODE_LIMIT = int(getattr(args_cli, "rl_episode_limit", 0))
 RL_DISABLE_RETRIES = bool(getattr(args_cli, "rl_disable_retries", False))
@@ -537,6 +551,20 @@ def _rgb_to_uint8(rgb_tensor):
     return arr
 
 
+def _hwc_to_chw84(frame_hwc: np.ndarray) -> np.ndarray:
+    t = torch.from_numpy(frame_hwc)
+    if t.dtype != torch.uint8:
+        if t.max() <= 1.0:
+            t = (t.clamp(0, 1) * 255).to(torch.uint8)
+        else:
+            t = t.clamp(0, 255).to(torch.uint8)
+    if t.shape[-1] == 4:
+        t = t[..., :3]
+    t = t.permute(2, 0, 1).contiguous().float().unsqueeze(0)
+    t = torch.nn.functional.interpolate(t, size=(84, 84), mode="bilinear", align_corners=False)
+    return t.squeeze(0).to(torch.uint8).cpu().numpy()
+
+
 def quat_mul_wxyz(q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
     """Quaternion multiply (wxyz): returns q = q1 * q2."""
     w1, x1, y1, z1 = q1[:, 0], q1[:, 1], q1[:, 2], q1[:, 3]
@@ -633,6 +661,7 @@ def run_simulator(
     video_path: Path,
     policy: BaseChunkPolicy,
     debug_dir: Path | None = None,
+    online_buffer_npz: Path | None = None,
 ):
     """Runs the simulation loop with GR00T inference (3 cameras + state + language) for one episode.
 
@@ -834,6 +863,15 @@ def run_simulator(
     # main loop
     count = 0
     joint_pos_des = q_init_t.clone()
+    current_action_7 = np.zeros((7,), dtype=np.float32)
+    buffer_timestep: list[int] = []
+    buffer_state: list[np.ndarray] = []
+    buffer_base_action: list[np.ndarray] = []
+    buffer_action: list[np.ndarray] = []
+    buffer_reward: list[float] = []
+    buffer_done: list[bool] = []
+    buffer_lift_delta: list[float] = []
+    buffer_front_image: list[np.ndarray] = []
     debug_compare_file = None
     debug_compare_last_ts = time.time()
     if COMPARE_DEBUG_DUMP:
@@ -972,6 +1010,7 @@ def run_simulator(
                 if control_tick:
                     # pick current token (no intra-token interpolation; target is held for steps_per_action sim steps)
                     interp = action_windows[current_window_idx]  # (7,)
+                    current_action_7 = interp.astype(np.float32)
                 
                     # advance token index (one per control tick)
                     if current_window_idx < num_windows - 1:
@@ -1072,11 +1111,40 @@ def run_simulator(
             scene.update(sim_dt)
 
             try:
+                front_for_buffer = _rgb_to_uint8(camera_front.data.output["rgb"])
+                front_chw84 = _hwc_to_chw84(front_for_buffer)
+            except Exception:
+                front_chw84 = np.zeros((3, 84, 84), dtype=np.uint8)
+
+            try:
                 curr_cube_z = float(cube.data.root_state_w[0, 2].detach().cpu().item())
                 if curr_cube_z > max_cube_z:
                     max_cube_z = curr_cube_z
             except Exception:
-                pass
+                curr_cube_z = initial_cube_z
+
+            lift_delta_now = float(curr_cube_z - initial_cube_z)
+            reward_now = 1.0 if lift_delta_now >= LIFT_REWARD_THRESHOLD_M else 0.0
+
+            try:
+                state_now = robot.data.joint_pos[0, arm_joint_ids].detach().cpu().numpy().astype(np.float32)
+                grip_now = (
+                    np.array([float(robot.data.joint_pos[0, hand_joint_ids[0]].detach().cpu().item())], dtype=np.float32)
+                    if hand_joint_ids
+                    else np.zeros((1,), dtype=np.float32)
+                )
+                state_buf = np.concatenate([state_now, grip_now], axis=0).astype(np.float32)
+            except Exception:
+                state_buf = np.zeros((8,), dtype=np.float32)
+
+            buffer_timestep.append(int(count))
+            buffer_state.append(state_buf)
+            buffer_base_action.append(current_action_7.copy())
+            buffer_action.append(current_action_7.copy())
+            buffer_reward.append(float(reward_now))
+            buffer_done.append(False)
+            buffer_lift_delta.append(float(lift_delta_now))
+            buffer_front_image.append(front_chw84)
 
             count += 1
             if count >= MAX_STEPS:
@@ -1102,6 +1170,32 @@ def run_simulator(
                 print(f"[INFO] Saved debug {name} video under {debug_dir}")
             except Exception as e:
                 print(f"[WARN] Failed to close debug writer {name}: {e}")
+
+    if buffer_done:
+        buffer_done[-1] = True
+
+    if online_buffer_npz is not None:
+        online_buffer_npz.parent.mkdir(parents=True, exist_ok=True)
+        np.savez_compressed(
+            online_buffer_npz,
+            timestep=np.asarray(buffer_timestep, dtype=np.int32),
+            state=np.asarray(buffer_state, dtype=np.float32),
+            base_action=np.asarray(buffer_base_action, dtype=np.float32),
+            action=np.asarray(buffer_action, dtype=np.float32),
+            reward=np.asarray(buffer_reward, dtype=np.float32),
+            done=np.asarray(buffer_done, dtype=np.bool_),
+            lift_delta=np.asarray(buffer_lift_delta, dtype=np.float32),
+            front_image=np.asarray(buffer_front_image, dtype=np.uint8),
+            lift_reward_threshold_m=np.asarray(LIFT_REWARD_THRESHOLD_M, dtype=np.float32),
+            initial_cube_z=np.asarray(initial_cube_z, dtype=np.float32),
+            max_cube_z=np.asarray(max_cube_z, dtype=np.float32),
+            max_lift_delta=np.asarray(float(max_cube_z - initial_cube_z), dtype=np.float32),
+            reward_trigger_step=np.asarray(
+                int(np.argmax(np.asarray(buffer_reward, dtype=np.float32) >= 1.0)) if np.any(np.asarray(buffer_reward, dtype=np.float32) >= 1.0) else -1,
+                dtype=np.int32,
+            ),
+        )
+        print(f"[INFO] Saved online buffer npz: {online_buffer_npz}")
 
     lift_delta = float(max_cube_z - initial_cube_z)
     success = bool(lift_delta >= LIFT_SUCCESS_THRESHOLD)
@@ -1169,6 +1263,8 @@ def main():
     print(f"[INFO] success_log_csv={success_log_csv}")
     print(f"[INFO] heartbeat_log_interval={HEARTBEAT_LOG_INTERVAL}")
     print(f"[INFO] max_steps={MAX_STEPS}")
+    print(f"[INFO] lift_reward_threshold_m={LIFT_REWARD_THRESHOLD_M}")
+    print(f"[INFO] online_buffer_npz={ONLINE_BUFFER_NPZ}")
     _log_heartbeat(0, tag="before_sim_init")
 
     # Create a single sim + scene and reuse them across episodes
@@ -1202,11 +1298,20 @@ def main():
         for attempt in range(1, attempts_this_episode + 1):
             out_path = out_root / f"{ep_dir.name}.try{attempt:02d}.mp4"
             debug_dir = (debug_root / ep_dir.name / f"try{attempt:02d}") if debug_root is not None else None
+            online_buffer_npz = None
+            if ONLINE_BUFFER_NPZ:
+                base_npz = Path(ONLINE_BUFFER_NPZ).expanduser().resolve()
+                if len(csv_dirs) == 1 and attempts_this_episode == 1:
+                    online_buffer_npz = base_npz
+                else:
+                    online_buffer_npz = base_npz.with_name(f"{base_npz.stem}.{ep_dir.name}.try{attempt:02d}.npz")
             print(f"[INFO] Running episode={ep_dir.name} attempt={attempt}/{attempts_this_episode} -> video={out_path}")
             if debug_dir is not None:
                 print(f"[INFO] Debug videos (left/right/wrist) will be saved under: {debug_dir}")
+            if online_buffer_npz is not None:
+                print(f"[INFO] Online buffer npz path: {online_buffer_npz}")
 
-            result = run_simulator(sim, scene, ep_dir, out_path, policy, debug_dir)
+            result = run_simulator(sim, scene, ep_dir, out_path, policy, debug_dir, online_buffer_npz)
             result["attempt"] = attempt
             trial_results.append(result)
             print(

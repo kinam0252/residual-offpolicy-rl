@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING, Any
 
 import imageio
 import matplotlib.pyplot as plt
@@ -13,8 +14,15 @@ import torch
 from PIL import Image, ImageDraw
 
 import wandb
-from resfit.dexmg.environments.dexmg import VectorizedEnvWrapper
-from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
+from resfit.rl_finetuning.off_policy.common_utils import utils
+from resfit.rl_finetuning.utils.isaaclab_rollout_step import rollout_step_with_export_path
+
+if TYPE_CHECKING:
+    from resfit.dexmg.environments.dexmg import VectorizedEnvWrapper
+    from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
+else:
+    VectorizedEnvWrapper = Any
+    QAgent = Any
 
 
 def run_dexmg_evaluation(
@@ -28,6 +36,9 @@ def run_dexmg_evaluation(
     save_q_plots: bool = False,
     run_name: str | None = None,
     output_dir: str | Path | None = "outputs",
+    force_zero_residual: bool = False,
+    debug_action_stats: bool = True,
+    max_steps_per_episode: int = 1000,
 ) -> tuple[dict[str, float], float]:
     """Extended evaluation to match the richer functionality available in
     the *residual_td3_dexmg* evaluator.  In particular, this version:
@@ -144,11 +155,21 @@ def run_dexmg_evaluation(
     device = torch.device(device)
     agent.eval()
 
+    wandb_step = global_step
+    if wandb.run is not None:
+        try:
+            current_wandb_step = int(getattr(wandb.run, "step", 0) or 0)
+            target_step = int(global_step if global_step is not None else 0)
+            wandb_step = max(current_wandb_step, target_step)
+        except Exception:
+            wandb_step = global_step
+
     num_envs: int = env.num_envs if hasattr(env, "num_envs") else 1
 
     # Per-environment episode buffers ----------------------------------
     ep_rewards: list[list[float]] = [[] for _ in range(num_envs)]
     ep_q_preds: list[list[float]] = [[] for _ in range(num_envs)]
+    ep_steps: list[int] = [0 for _ in range(num_envs)]
 
     successes: list[bool] = []  # episode-level success flags
     returns: list[float] = []  # episode-level undiscounted returns
@@ -172,8 +193,12 @@ def run_dexmg_evaluation(
         # --------------------------------------------------------------
         # 1. Policy inference + Q-value prediction ---------------------
         # --------------------------------------------------------------
-        with torch.no_grad():
-            actions = q_actions = agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
+        with torch.no_grad(), utils.eval_mode(agent):
+            if force_zero_residual and isinstance(obs, dict) and "observation.base_action" in obs:
+                actions = torch.zeros_like(obs["observation.base_action"])
+            else:
+                actions = agent.act(obs, eval_mode=False, stddev=0.0, cpu=False)
+            q_actions = actions
 
             # Build features on-the-fly to obtain Q-predictions --------
             obs_q = {k: v.clone() if isinstance(v, torch.Tensor) else v for k, v in obs.items()}
@@ -183,6 +208,22 @@ def run_dexmg_evaluation(
             if agent.residual_actor:
                 q_actions = torch.clamp(obs["observation.base_action"] + actions, -1.0, 1.0)
 
+            if debug_action_stats and isinstance(obs, dict) and "observation.base_action" in obs:
+                step_idx = int(len(ep_q_preds[0])) if num_envs > 0 else 0
+                if step_idx % 100 == 0:
+                    base = obs["observation.base_action"]
+                    res = actions
+                    comb = torch.clamp(base + res, -1.0, 1.0)
+                    print(
+                        "[eval-action] "
+                        f"step={step_idx} "
+                        f"base_abs_mean={base.abs().mean().item():.4f} "
+                        f"res_abs_mean={res.abs().mean().item():.4f} "
+                        f"comb_abs_mean={comb.abs().mean().item():.4f} "
+                        f"force_zero_residual={force_zero_residual}",
+                        flush=True,
+                    )
+
             q_pred = (
                 agent.critic.q_value(obs_q["feat"], obs_q["observation.state"], q_actions).detach().cpu().squeeze(-1)
             )
@@ -190,23 +231,37 @@ def run_dexmg_evaluation(
         # --------------------------------------------------------------
         # 2. Environment step ------------------------------------------
         # --------------------------------------------------------------
-        next_obs, reward, terminated, truncated, _ = env.step(actions)
+        step_out = rollout_step_with_export_path(env=env, obs=obs, residual_action=actions, env_idx=0)
+        next_obs = step_out["next_obs"]
+        reward = step_out["reward"]
+        terminated = step_out["terminated"]
+        truncated = step_out["truncated"]
+        frame_chw = step_out["front_image_chw"]
         done_flags = terminated | truncated
 
         # Capture frames ------------------------------------------------
         if save_video and frame_buffer is not None:
-            frame = env.render()
+            frame_hwc = np.transpose(frame_chw, (1, 2, 0))
             for env_idx in range(num_envs):
-                frame_buffer[env_idx].append(frame[env_idx])
+                frame_buffer[env_idx].append(frame_hwc)
 
         # --------------------------------------------------------------
         # 3. Per-environment bookkeeping -------------------------------
         # --------------------------------------------------------------
         for env_idx in range(num_envs):
+            ep_steps[env_idx] += 1
             ep_rewards[env_idx].append(reward[env_idx].item())
             ep_q_preds[env_idx].append(q_pred[env_idx].item())
 
-            if done_flags[env_idx]:
+            timeout_done = ep_steps[env_idx] >= int(max_steps_per_episode)
+            if timeout_done:
+                print(
+                    f"\n[eval] timeout env={env_idx} steps={ep_steps[env_idx]} "
+                    f"(max_steps_per_episode={int(max_steps_per_episode)})",
+                    flush=True,
+                )
+
+            if done_flags[env_idx] or timeout_done:
                 # Episode finished -- aggregate results ----------------
                 ep_return = float(sum(ep_rewards[env_idx]))
                 is_success = bool(reward[env_idx].item() == 1.0)
@@ -250,6 +305,7 @@ def run_dexmg_evaluation(
                 # Reset per-env caches --------------------------------
                 ep_rewards[env_idx].clear()
                 ep_q_preds[env_idx].clear()
+                ep_steps[env_idx] = 0
 
                 done_episodes += 1
 
@@ -286,7 +342,7 @@ def run_dexmg_evaluation(
     }
 
     if wandb.run is not None:
-        wandb.log(metrics, step=global_step)
+        wandb.log(metrics, step=wandb_step)
 
     # ------------------------------------------------------------------
     # 5. Q-trajectory plots --------------------------------------------
@@ -308,7 +364,7 @@ def run_dexmg_evaluation(
 
         # Log to W&B if available
         if wandb.run is not None:
-            wandb.log({"value/q_trajectories": wandb.Image(str(plot_path))}, step=global_step)
+            wandb.log({"value/q_trajectories": wandb.Image(str(plot_path))}, step=wandb_step)
 
     # ------------------------------------------------------------------
     # 6. Video dump + W&B logging --------------------------------------
@@ -328,7 +384,7 @@ def run_dexmg_evaluation(
         writer.close()
 
         if wandb.run is not None:
-            wandb.log({"eval/video": wandb.Video(str(video_path), format="mp4")}, step=global_step)
+            wandb.log({"eval/video": wandb.Video(str(video_path), format="mp4")}, step=wandb_step)
 
     # Restore training mode --------------------------------------------
     agent.train(True)

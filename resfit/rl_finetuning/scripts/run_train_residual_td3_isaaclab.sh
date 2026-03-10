@@ -4,6 +4,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VLA_RL_ROOT="$(cd "${SCRIPT_DIR}/../../../../" && pwd)"
 RESFIT_REPO_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
+CONFIG_DIR="${SCRIPT_DIR}/../configs"
+DEFAULT_CONFIG_FILE="${CONFIG_DIR}/coffee_default.env"
+CONFIG_FILE="${CONFIG_FILE:-${DEFAULT_CONFIG_FILE}}"
+
+if [[ -f "${CONFIG_FILE}" ]]; then
+  set -a
+  # shellcheck source=/dev/null
+  source "${CONFIG_FILE}"
+  set +a
+fi
+
 LOG_DIR="${LOG_DIR:-${RESFIT_REPO_ROOT}/workspace/logs}"
 RUN_TS="$(date +%Y%m%d_%H%M%S)"
 LOG_FILE="${LOG_FILE:-${LOG_DIR}/resfit_train_${RUN_TS}.log}"
@@ -31,20 +42,13 @@ fi
 
 mkdir -p "${LOG_DIR}"
 exec > >(tee -a "${LOG_FILE}") 2>&1
-echo "[launch] log_file=${LOG_FILE}"
 
 py_parts=()
 if [[ -d "${ISO_DEPS_DIR}" ]]; then
   py_parts+=("${ISO_DEPS_DIR}")
-  echo "[launch] iso_deps_dir=${ISO_DEPS_DIR}"
-else
-  echo "[launch] iso_deps_dir=<none>"
 fi
 if [[ "${USE_GROOT_ISO_DEPS}" == "1" && -d "${GROOT_ISO_DEPS_DIR}" ]]; then
   py_parts+=("${GROOT_ISO_DEPS_DIR}")
-  echo "[launch] groot_iso_deps_dir=${GROOT_ISO_DEPS_DIR}"
-else
-  echo "[launch] groot_iso_deps_dir=<disabled>"
 fi
 py_parts+=("${RESFIT_REPO_ROOT}" "${ISAAC_GROOT_ROOT}")
 if [[ -n "${PYTHONPATH:-}" ]]; then
@@ -53,14 +57,14 @@ fi
 export PYTHONPATH="$(IFS=:; echo "${py_parts[*]}")"
 export PYTHONUNBUFFERED=1
 
-echo "[launch] run_train_residual_td3_isaaclab.sh"
-echo "[launch] run_in_docker=${RUN_IN_DOCKER} container=${DOCKER_CONTAINER}"
-echo "[launch] headless=${HEADLESS:-0} num_envs=${NUM_ENVS:-1} total_timesteps=${TOTAL_TIMESTEPS:-5000}"
-echo "[launch] csv_base_dir=${CSV_BASE_DIR:-<none>}"
-echo "[launch] groot_model_path=${GROOT_MODEL_PATH:-<server-mode>}"
-echo "[launch] docker_iso_deps_dir=${DOCKER_ISO_DEPS_DIR}"
-echo "[launch] docker_groot_iso_deps_dir=${DOCKER_GROOT_ISO_DEPS_DIR}"
-echo "[launch] heartbeat_interval_sec=${HEARTBEAT_INTERVAL_SEC:-20}"
+if [[ "${ALLOW_CONCURRENT_TRAIN:-0}" != "1" ]]; then
+  existing_pids="$(ps -eo pid,cmd | grep -F "train_residual_td3_isaaclab.py" | grep -v grep | awk '{print $1}' | tr '\n' ' ' | xargs || true)"
+  if [[ -n "${existing_pids}" ]]; then
+    echo "[ERROR] Existing train_residual_td3_isaaclab.py process(es) detected: ${existing_pids}" >&2
+    echo "[ERROR] Stop previous run first or set ALLOW_CONCURRENT_TRAIN=1 to override." >&2
+    exit 1
+  fi
+fi
 
 cmd=(
   "${ISAACLAB_SH}" -p "${TRAIN_SCRIPT}"
@@ -83,6 +87,12 @@ fi
 if [[ -n "${CSV_BASE_DIR:-}" ]]; then
   cmd+=(--csv_base_dir "${CSV_BASE_DIR}")
 fi
+if [[ -n "${MAX_EPISODE_STEPS:-}" ]]; then
+  cmd+=(--max_episode_steps "${MAX_EPISODE_STEPS}")
+fi
+if [[ -n "${STACK_DUMP_INTERVAL_SEC:-}" ]]; then
+  cmd+=(--stack_dump_interval_sec "${STACK_DUMP_INTERVAL_SEC}")
+fi
 
 if [[ -n "${LANGUAGE_OVERRIDE:-}" ]]; then
   cmd+=(--language_override "${LANGUAGE_OVERRIDE}")
@@ -102,6 +112,48 @@ fi
 
 if [[ -n "${GROOT_POLICY_DEVICE:-}" ]]; then
   cmd+=(--groot_policy_device "${GROOT_POLICY_DEVICE}")
+fi
+
+if [[ -n "${WANDB_PROJECT:-}" ]]; then
+  cmd+=(--wandb_project "${WANDB_PROJECT}")
+fi
+
+if [[ -n "${WANDB_ENTITY:-}" ]]; then
+  cmd+=(--wandb_entity "${WANDB_ENTITY}")
+fi
+
+if [[ -n "${WANDB_NAME:-}" ]]; then
+  cmd+=(--wandb_name "${WANDB_NAME}")
+fi
+
+if [[ -n "${WANDB_GROUP:-}" ]]; then
+  cmd+=(--wandb_group "${WANDB_GROUP}")
+fi
+
+if [[ -n "${WANDB_NOTES:-}" ]]; then
+  cmd+=(--wandb_notes "${WANDB_NOTES}")
+fi
+
+if [[ -n "${WANDB_CONTINUE_RUN_ID:-}" ]]; then
+  cmd+=(--wandb_continue_run_id "${WANDB_CONTINUE_RUN_ID}")
+fi
+  if [[ -n "${WANDB_LOG_EVERY_STEPS:-}" ]]; then
+    cmd+=(--wandb_log_every_steps "${WANDB_LOG_EVERY_STEPS}")
+  fi
+if [[ -n "${EVAL_INTERVAL_EVERY_STEPS:-}" ]]; then
+  cmd+=(--eval_interval_every_steps "${EVAL_INTERVAL_EVERY_STEPS}")
+fi
+if [[ -n "${EVAL_NUM_EPISODES:-}" ]]; then
+  cmd+=(--eval_num_episodes "${EVAL_NUM_EPISODES}")
+fi
+if [[ "${EVAL_FIRST:-0}" == "1" ]]; then
+  cmd+=(--eval_first)
+fi
+if [[ "${SAVE_VIDEO:-0}" == "1" ]]; then
+  cmd+=(--save_video)
+fi
+if [[ -n "${OUTPUT_DIR:-}" ]]; then
+  cmd+=(--output_dir "${OUTPUT_DIR}")
 fi
 
 if [[ "${GROOT_POLICY_STRICT:-0}" == "1" ]]; then
@@ -138,6 +190,12 @@ if [[ "${RUN_IN_DOCKER}" == "1" ]]; then
   if [[ -n "${CSV_BASE_DIR:-}" ]]; then
     args+=(--csv_base_dir "${CSV_BASE_DIR}")
   fi
+  if [[ -n "${MAX_EPISODE_STEPS:-}" ]]; then
+    args+=(--max_episode_steps "${MAX_EPISODE_STEPS}")
+  fi
+  if [[ -n "${STACK_DUMP_INTERVAL_SEC:-}" ]]; then
+    args+=(--stack_dump_interval_sec "${STACK_DUMP_INTERVAL_SEC}")
+  fi
   if [[ -n "${LANGUAGE_OVERRIDE:-}" ]]; then
     args+=(--language_override "${LANGUAGE_OVERRIDE}")
   fi
@@ -152,6 +210,42 @@ if [[ "${RUN_IN_DOCKER}" == "1" ]]; then
   fi
   if [[ -n "${GROOT_POLICY_DEVICE:-}" ]]; then
     args+=(--groot_policy_device "${GROOT_POLICY_DEVICE}")
+  fi
+  if [[ -n "${WANDB_PROJECT:-}" ]]; then
+    args+=(--wandb_project "${WANDB_PROJECT}")
+  fi
+  if [[ -n "${WANDB_ENTITY:-}" ]]; then
+    args+=(--wandb_entity "${WANDB_ENTITY}")
+  fi
+  if [[ -n "${WANDB_NAME:-}" ]]; then
+    args+=(--wandb_name "${WANDB_NAME}")
+  fi
+  if [[ -n "${WANDB_GROUP:-}" ]]; then
+    args+=(--wandb_group "${WANDB_GROUP}")
+  fi
+  if [[ -n "${WANDB_NOTES:-}" ]]; then
+    args+=(--wandb_notes "${WANDB_NOTES}")
+  fi
+  if [[ -n "${WANDB_CONTINUE_RUN_ID:-}" ]]; then
+    args+=(--wandb_continue_run_id "${WANDB_CONTINUE_RUN_ID}")
+  fi
+  if [[ -n "${WANDB_LOG_EVERY_STEPS:-}" ]]; then
+    args+=(--wandb_log_every_steps "${WANDB_LOG_EVERY_STEPS}")
+  fi
+  if [[ -n "${EVAL_INTERVAL_EVERY_STEPS:-}" ]]; then
+    args+=(--eval_interval_every_steps "${EVAL_INTERVAL_EVERY_STEPS}")
+  fi
+  if [[ -n "${EVAL_NUM_EPISODES:-}" ]]; then
+    args+=(--eval_num_episodes "${EVAL_NUM_EPISODES}")
+  fi
+  if [[ "${EVAL_FIRST:-0}" == "1" ]]; then
+    args+=(--eval_first)
+  fi
+  if [[ "${SAVE_VIDEO:-0}" == "1" ]]; then
+    args+=(--save_video)
+  fi
+  if [[ -n "${OUTPUT_DIR:-}" ]]; then
+    args+=(--output_dir "${OUTPUT_DIR}")
   fi
   if [[ "${GROOT_POLICY_STRICT:-0}" == "1" ]]; then
     args+=(--groot_policy_strict)
@@ -168,7 +262,15 @@ if [[ "${RUN_IN_DOCKER}" == "1" ]]; then
     container_pythonpath="${DOCKER_GROOT_ISO_DEPS_DIR}:${container_pythonpath}"
   fi
 
-  exec docker exec "${DOCKER_CONTAINER}" bash -lc "export TERM=xterm; export PYTHONUNBUFFERED=1; export PYTHONPATH='${container_pythonpath}'; cd /workspace/isaaclab; ${args_quoted}"
+  wandb_env_exports=""
+  if [[ -n "${WANDB_API_KEY:-}" ]]; then
+    wandb_env_exports+="export WANDB_API_KEY='${WANDB_API_KEY}'; "
+  fi
+  if [[ -n "${WANDB_ANONYMOUS:-}" ]]; then
+    wandb_env_exports+="export WANDB_ANONYMOUS='${WANDB_ANONYMOUS}'; "
+  fi
+
+  exec docker exec "${DOCKER_CONTAINER}" bash -lc "export TERM=xterm; export PYTHONUNBUFFERED=1; export PYTHONPATH='${container_pythonpath}'; ${wandb_env_exports}cd /workspace/isaaclab; ${args_quoted}"
 fi
 
 exec "${cmd[@]}" "$@"

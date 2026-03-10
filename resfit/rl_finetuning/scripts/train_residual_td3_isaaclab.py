@@ -39,6 +39,15 @@ parser.add_argument("--critic_warmup_steps", type=int, default=None)
 parser.add_argument("--update_every_n_steps", type=int, default=None)
 parser.add_argument("--num_updates_per_iteration", type=int, default=None)
 parser.add_argument("--offline_fraction", type=float, default=None)
+parser.add_argument("--batch_size", type=int, default=None)
+parser.add_argument("--buffer_size", type=int, default=None)
+parser.add_argument("--gamma", type=float, default=None)
+parser.add_argument("--n_step", type=int, default=None)
+parser.add_argument("--stddev_max", type=float, default=None)
+parser.add_argument("--stddev_min", type=float, default=None)
+parser.add_argument("--actor_lr", type=float, default=None)
+parser.add_argument("--action_scale", type=float, default=None)
+parser.add_argument("--random_action_noise_scale", type=float, default=None)
 parser.add_argument("--gr00t_host", type=str, default="127.0.0.1")
 parser.add_argument("--gr00t_port", type=int, default=5555)
 parser.add_argument("--groot_model_path", type=str, default=None)
@@ -49,8 +58,21 @@ parser.add_argument("--task_description", type=str, default=None)
 parser.add_argument("--language_override", type=str, default=None)
 parser.add_argument("--csv_base_dir", type=str, default=None)
 parser.add_argument("--csv_init_row_index", type=int, default=None)
+parser.add_argument("--max_episode_steps", type=int, default=None)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--wandb_mode", type=str, default="disabled")
+parser.add_argument("--wandb_project", type=str, default=None)
+parser.add_argument("--wandb_entity", type=str, default=None)
+parser.add_argument("--wandb_name", type=str, default=None)
+parser.add_argument("--wandb_group", type=str, default=None)
+parser.add_argument("--wandb_notes", type=str, default=None)
+parser.add_argument("--wandb_continue_run_id", type=str, default=None)
+parser.add_argument("--wandb_log_every_steps", type=int, default=10)
+parser.add_argument("--eval_interval_every_steps", type=int, default=None)
+parser.add_argument("--eval_num_episodes", type=int, default=None)
+parser.add_argument("--eval_first", action="store_true")
+parser.add_argument("--save_video", action="store_true")
+parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--heartbeat_interval_sec", type=int, default=20)
 parser.add_argument("--stack_dump_interval_sec", type=int, default=180)
 AppLauncher.add_app_launcher_args(parser)
@@ -96,7 +118,10 @@ from resfit.rl_finetuning.utils.dtype import to_uint8
 from resfit.rl_finetuning.utils.rb_transforms import MultiStepTransform
 from resfit.rl_finetuning.utils.offline_buffer_csv import populate_offline_buffer_from_csv
 from resfit.rl_finetuning.utils.offline_buffer_lerobot_local import populate_offline_buffer_from_lerobot_local
+from resfit.rl_finetuning.utils.evaluate_dexmg import run_dexmg_evaluation
+from resfit.rl_finetuning.utils.iface_eval_runner import run_iface_evaluation
 from resfit.rl_finetuning.wrappers.isaaclab_env_wrapper import IsaacLabVecEnvWrapper, create_isaaclab_env
+from resfit.rl_finetuning.wrappers.isaaclab_groot_rollout_env import IsaacLabGrootRolloutEnv
 from resfit.rl_finetuning.wrappers.isaaclab_residual_wrapper import IsaacLabResidualWrapper
 from resfit.rl_finetuning.policies.groot_policy import GR00TBasePolicy
 
@@ -156,6 +181,7 @@ class TrainingTimer:
             s = sum(tl)
             stats[f"timing/{name}_percentage"] = (s / total) * 100
             stats[f"timing/{name}_avg_ms"] = (s / len(tl)) * 1000 if tl else 0
+            stats[f"timing/{name}_total_s"] = s
         return stats
 
     def reset(self):
@@ -286,8 +312,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         vec_env=isaac_env,
         base_policy=groot,
     )
+    eval_env = IsaacLabGrootRolloutEnv(
+        vec_env=isaac_env,
+        base_policy=groot,
+    )
     _set_phase("residual_wrapper_ready")
-    _log("Residual wrapper ready.")
+    _log("Residual wrapper ready. Eval uses rollout wrapper parity path.")
 
     # ── Dimensions ──
     image_keys = list(cfg.rl_camera)
@@ -309,6 +339,10 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         residual_actor=True,
     )
 
+    run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
+    if getattr(cfg.wandb, "name", None):
+        run_name = f"{cfg.wandb.name}__{run_name}"
+
     # ── Replay buffers ──
     acfg = cfg.algo
     online_batch_size = int(acfg.batch_size * (1 - acfg.offline_fraction))
@@ -323,32 +357,36 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         batch_size=max(online_batch_size, 1),
     )
 
-    offline_rb = TensorDictPrioritizedReplayBuffer(
-        storage=LazyTensorStorage(max_size=max(1, acfg.buffer_size), device="cpu"),
-        alpha=0.0, beta=0.0, eps=1e-6,
-        priority_key="_priority",
-        transform=MultiStepTransform(n_steps=acfg.n_step, gamma=acfg.gamma),
-        pin_memory=True,
-        batch_size=max(offline_batch_size, 1),
-    )
+    def _make_offline_rb(max_size: int):
+        return TensorDictPrioritizedReplayBuffer(
+            storage=LazyTensorStorage(max_size=max(1, int(max_size)), device="cpu"),
+            alpha=0.0, beta=0.0, eps=1e-6,
+            priority_key="_priority",
+            transform=MultiStepTransform(n_steps=acfg.n_step, gamma=acfg.gamma),
+            pin_memory=True,
+            batch_size=max(offline_batch_size, 1),
+        )
+
+    offline_rb = _make_offline_rb(acfg.buffer_size)
 
     # ── Populate offline buffer from CSV episodes ──
     if cfg.offline_data is not None and acfg.offline_fraction > 0.0:
         offline_root = Path(cfg.offline_data.csv_data_dir)
         is_lerobot_local = (offline_root / "data" / "chunk-000").exists() and (offline_root / "videos" / "chunk-000").exists()
 
-        if is_lerobot_local:
-            _log(f"Populating offline buffer from LeRobot local dataset: {offline_root}")
-            n_offline = populate_offline_buffer_from_lerobot_local(
-                data_dir=offline_root,
-                rb=offline_rb,
-                image_keys=image_keys,
-                image_size=(ecfg.image_size_h, ecfg.image_size_w),
-                max_episodes=cfg.offline_data.num_episodes,
-            )
-        else:
+        def _populate_current_offline_rb():
+            if is_lerobot_local:
+                _log(f"Populating offline buffer from LeRobot local dataset: {offline_root}")
+                return populate_offline_buffer_from_lerobot_local(
+                    data_dir=offline_root,
+                    rb=offline_rb,
+                    image_keys=image_keys,
+                    image_size=(ecfg.image_size_h, ecfg.image_size_w),
+                    max_episodes=cfg.offline_data.num_episodes,
+                )
+
             _log("Populating offline buffer from CSV episodes...")
-            n_offline = populate_offline_buffer_from_csv(
+            return populate_offline_buffer_from_csv(
                 data_dir=cfg.offline_data.csv_data_dir,
                 rb=offline_rb,
                 split_file=cfg.offline_data.split_file if cfg.offline_data.split_file else None,
@@ -357,9 +395,47 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 image_size=(ecfg.image_size_h, ecfg.image_size_w),
                 max_episodes=cfg.offline_data.num_episodes,
             )
+
+        n_offline = _populate_current_offline_rb()
+
+        n_step_drop_tolerance = max(0, int(acfg.n_step) - 1)
+        expected_min_size = max(0, int(n_offline) - n_step_drop_tolerance)
+        if len(offline_rb) < expected_min_size:
+            _log(
+                f"Offline buffer truncated ({len(offline_rb)} < {expected_min_size}, "
+                f"raw={n_offline}, n_step={acfg.n_step}); "
+                f"rebuilding storage to max_size={n_offline} and repopulating."
+            )
+            offline_rb = _make_offline_rb(n_offline)
+            n_offline = _populate_current_offline_rb()
+
         _log(f"Offline buffer: {n_offline} transitions, size={len(offline_rb)}")
     else:
         _log("Skipping offline buffer (offline_fraction=0 or no offline_data config)")
+
+    # ── W&B ──
+    if wandb is not None:
+        if is_dataclass(cfg):
+            wandb_cfg = asdict(cfg)
+        else:
+            try:
+                wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
+            except Exception:
+                wandb_cfg = {}
+        if wandb.run is not None:
+            wandb.finish()
+        wandb.init(
+            id=cfg.wandb.continue_run_id,
+            resume=None if cfg.wandb.continue_run_id is None else "allow",
+            project=cfg.wandb.project,
+            entity=cfg.wandb.entity,
+            config=wandb_cfg,
+            name=run_name,
+            mode=cfg.wandb.mode,
+            notes=cfg.wandb.notes,
+            group=cfg.wandb.group,
+            reinit=True,
+        )
 
     # ── Warm-up ──
     _set_phase("warmup")
@@ -417,38 +493,27 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 critic_last_log = now
         _log("Critic warmup done.")
 
-    # ── W&B ──
-    run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
-    if wandb is not None:
-        if is_dataclass(cfg):
-            wandb_cfg = asdict(cfg)
-        else:
-            try:
-                wandb_cfg = OmegaConf.to_container(cfg, resolve=True)
-            except Exception:
-                wandb_cfg = {}
-        wandb.init(
-            project=cfg.wandb.project,
-            entity=cfg.wandb.entity,
-            config=wandb_cfg,
-            name=run_name,
-            mode=cfg.wandb.mode,
-        )
-
     # ── Main training loop ──
     _set_phase("training_loop")
     obs, _ = env.reset()
     global_step = 0
     episode_count = 0
     best_success = 0.0
+    eval_metrics = {}
     timer = TrainingTimer()
     train_start = time.time()
     actor_updates = 0
+    training_cum_time = 0.0
+    outputs_dir = Path(getattr(cfg, "output_dir", "outputs"))
+    outputs_dir.mkdir(parents=True, exist_ok=True)
+    last_eval_video_path = None
 
     _log(f"Starting training for {acfg.total_timesteps} steps...")
     train_last_log = time.time()
+    wandb_log_every_steps = max(1, int(getattr(cfg, "wandb_log_every_steps", 10)))
 
     while global_step <= acfg.total_timesteps:
+        iter_start = time.time()
         # (1) Collect
         with timer.time("env_step"):
             with torch.no_grad(), utils.eval_mode(agent):
@@ -464,6 +529,52 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
         if done.any():
             episode_count += done.float().sum().item()
+            if wandb is not None and wandb.run is not None:
+                done_rewards = reward[done]
+                episode_return = float(done_rewards.mean().detach().cpu().item()) if done_rewards.numel() > 0 else 0.0
+                episode_steps = 0.0
+                try:
+                    final_info = info.get("final_info", None) if isinstance(info, dict) else None
+                    if final_info is not None:
+                        if (
+                            isinstance(final_info, dict)
+                            and "episode_steps" in final_info
+                            and "_episode_steps" in final_info
+                            and done_rewards.numel() > 0
+                        ):
+                            all_steps = torch.as_tensor(final_info["episode_steps"]).detach().cpu().reshape(-1)
+                            episode_indices = torch.as_tensor(final_info["_episode_steps"]).detach().cpu().reshape(-1).bool()
+                            if all_steps.numel() == episode_indices.numel() and episode_indices.any():
+                                selected_steps = all_steps[episode_indices].float()
+                                selected_rewards = reward.detach().cpu().reshape(-1)[episode_indices].float()
+                                discount_factor = torch.pow(torch.full_like(selected_steps, float(acfg.gamma)), selected_steps)
+                                episode_return = float((discount_factor * selected_rewards).mean().item())
+                                episode_steps = float(selected_steps.mean().item())
+                        elif isinstance(final_info, (list, tuple)) and done_rewards.numel() > 0:
+                            done_indices = torch.where(done)[0].detach().cpu().tolist()
+                            selected_steps_list = []
+                            for env_idx in done_indices:
+                                if env_idx < len(final_info):
+                                    item = final_info[env_idx]
+                                    if isinstance(item, dict) and "episode_steps" in item:
+                                        selected_steps_list.append(float(item["episode_steps"]))
+                            if len(selected_steps_list) == int(done_rewards.numel()) and selected_steps_list:
+                                selected_steps = np.asarray(selected_steps_list, dtype=np.float32)
+                                selected_rewards = done_rewards.detach().cpu().numpy().astype(np.float32)
+                                discount_factor = np.power(float(acfg.gamma), selected_steps)
+                                episode_return = float(np.mean(discount_factor * selected_rewards))
+                                episode_steps = float(np.mean(selected_steps))
+                except Exception:
+                    pass
+
+                wandb.log(
+                    {
+                        "training/episode_return": episode_return,
+                        "training/episode_steps": episode_steps,
+                        "training/episode_count": episode_count,
+                    },
+                    step=global_step,
+                )
 
         combined_action = info.get("scaled_action", action)
         _add_transitions(
@@ -473,9 +584,64 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             num_envs=num_envs, online_rb=online_rb,
         )
         obs = next_obs
+
+        # (2) Periodic evaluation (same condition pattern as original resfit)
+        eval_interval = max(1, int(cfg.eval_interval_every_steps))
+        should_eval_now = (global_step % eval_interval == 0) and (bool(cfg.eval_first) or global_step > 0)
+        if should_eval_now:
+            _set_phase("evaluation")
+            _log(
+                f"Eval start: episodes={int(cfg.eval_episodes)}, "
+                f"save_video={bool(getattr(cfg, 'save_video', False))}"
+            )
+            eval_video_path = None
+            with timer.time("evaluation"):
+                if bool(getattr(cfg, "eval_use_iface_runner", False)):
+                    eval_metrics, eval_video_path = run_iface_evaluation(
+                        csv_base_dir=str(ecfg.csv_base_dir),
+                        groot_model_path=str(gcfg.model_path),
+                        num_episodes=int(cfg.eval_episodes),
+                        max_steps=int(getattr(cfg.isaaclab_env, "max_episode_steps", 1000)),
+                        output_dir=outputs_dir,
+                        run_name=run_name,
+                        global_step=global_step,
+                        num_envs=int(ecfg.num_envs),
+                        policy_device=gcfg.policy_device,
+                        embodiment_tag=str(gcfg.embodiment_tag),
+                        task_description=str(gcfg.task_description),
+                        language_override=gcfg.language_override,
+                        headless=bool(getattr(args_cli, "headless", True)),
+                        save_video=bool(getattr(cfg, "save_video", False)),
+                    )
+                else:
+                    eval_metrics = run_dexmg_evaluation(
+                        env=eval_env,
+                        agent=agent,
+                        num_episodes=int(cfg.eval_episodes),
+                        device=device,
+                        global_step=global_step,
+                        save_video=bool(getattr(cfg, "save_video", False)),
+                        save_q_plots=bool(getattr(cfg, "save_video", False)),
+                        run_name=run_name,
+                        output_dir=outputs_dir,
+                        force_zero_residual=False,
+                        max_steps_per_episode=int(getattr(cfg.isaaclab_env, "max_episode_steps", 1000)),
+                    )
+            current_success = float(eval_metrics.get("eval/success_rate", 0.0))
+            last_eval_video_path = eval_video_path
+            if current_success > best_success:
+                _log(f"🎉 New best success rate: {current_success:.4f} (prev: {best_success:.4f})")
+                best_success = current_success
+            _log(
+                f"Eval done: success_rate={float(eval_metrics.get('eval/success_rate', 0.0)):.3f} "
+                f"mean_return={float(eval_metrics.get('eval/mean_return', 0.0)):.3f}"
+            )
+            obs, _ = env.reset()
+            _set_phase("training_loop")
+
         global_step += num_envs
 
-        # (2) Update
+        # (3) Update
         if global_step % acfg.update_every_n_steps == 0 or global_step == num_envs:
             actor_cadence = max(1, acfg.num_updates_per_iteration // acfg.actor_updates_per_iteration)
             for i in range(acfg.num_updates_per_iteration):
@@ -487,36 +653,72 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
                 update_actor = (i + 1) % actor_cadence == 0
                 if update_actor:
+                    actor_lr_warmup_steps = int(getattr(acfg, "actor_lr_warmup_steps", 0))
+                    if actor_lr_warmup_steps > 0:
+                        warmup_progress = min(1.0, actor_updates / max(1, actor_lr_warmup_steps))
+                        current_lr = float(cfg.agent.actor_lr) * warmup_progress
+                        for param_group in agent.actor_opt.param_groups:
+                            param_group["lr"] = current_lr
                     actor_updates += 1
 
                 with timer.time("gradient_update"):
                     metrics = agent.update(batch, stddev, update_actor, bc_batch=None, ref_agent=agent)
 
-        # (3) Logging
-        if global_step % 500 == 0:
-            sps = int(global_step / (time.time() - train_start)) if (time.time() - train_start) > 0 else 0
+                metrics["data/batch_terminal_R"] = batch["next"]["reward"][~batch["nonterminal"]].mean()
+                metrics["data/terminal_share"] = (~batch["nonterminal"]).float().mean()
+
+        training_cum_time += time.time() - iter_start
+
+        # (4) Logging
+        should_log_console = (global_step % 500 == 0)
+        should_log_wandb = (
+            wandb is not None
+            and wandb.run is not None
+            and (global_step % wandb_log_every_steps == 0)
+        )
+
+        if should_log_console or should_log_wandb:
+            sps = int(global_step / training_cum_time) if training_cum_time > 0 else 0
             ts = timer.get_timing_stats()
             env_pct = ts.get("timing/env_step_percentage", 0)
             grad_pct = ts.get("timing/gradient_update_percentage", 0)
 
-            msg = (
-                f"[{global_step}] episodes={int(episode_count)} SPS={sps} "
-                f"critic_loss={metrics.get('train/critic_loss', 0):.4f} "
-                f"| time%: env={env_pct:.1f} grad={grad_pct:.1f}"
-            )
-            if "train/actor_loss_base" in metrics:
-                msg += f" actor_loss={metrics['train/actor_loss_base']:.4f}"
-            _log(msg)
+            if should_log_console:
+                msg = (
+                    f"[{global_step}] episodes={int(episode_count)} SPS={sps} "
+                    f"critic_loss={metrics.get('train/critic_loss', 0):.4f} "
+                    f"| time%: env={env_pct:.1f} grad={grad_pct:.1f}"
+                )
+                if "train/actor_loss_base" in metrics:
+                    msg += f" actor_loss={metrics['train/actor_loss_base']:.4f}"
+                _log(msg)
 
-            if wandb is not None and wandb.run is not None:
+            if should_log_wandb:
                 log_dict = {
                     "training/global_step": global_step,
                     "training/SPS": sps,
                     "training/episode_count": episode_count,
                     "buffer/online_size": len(online_rb),
+                    "buffer/offline_size": len(offline_rb),
+                    "timing/training_total_time": time.time() - train_start,
+                    "timing/aggregate_steps_per_second": global_step / max(1e-6, (time.time() - train_start)),
+                    "training/actor_lr": agent.actor_opt.param_groups[0]["lr"],
                 }
                 log_dict.update({k: v for k, v in metrics.items() if not k.startswith("_")})
+                if "_actions" in metrics:
+                    actions = metrics["_actions"]
+                    log_dict["train/residual_l1_magnitude"] = torch.mean(torch.abs(actions)).item()
+                    log_dict["train/residual_l2_magnitude"] = torch.mean(torch.square(actions)).item()
+                    log_dict["histograms/residual_actions"] = wandb.Histogram(actions.detach().cpu().numpy().reshape(-1))
+                if "_target_q" in metrics:
+                    target_q = metrics["_target_q"]
+                    log_dict["histograms/critic_qt"] = wandb.Histogram(target_q.detach().cpu().numpy().reshape(-1))
+                if acfg.progressive_clipping_steps > 0:
+                    log_dict["training/progressive_clipping_factor"] = min(1.0, global_step / acfg.progressive_clipping_steps)
+                log_dict.update(eval_metrics)
                 log_dict.update(ts)
+                if should_eval_now and bool(getattr(cfg, "save_video", False)) and last_eval_video_path is not None and last_eval_video_path.exists():
+                    log_dict["eval/video"] = wandb.Video(str(last_eval_video_path), format="mp4")
                 wandb.log(log_dict, step=global_step)
 
         now = time.time()
@@ -552,6 +754,24 @@ if __name__ == "__main__":
         cfg.algo.num_updates_per_iteration = args_cli.num_updates_per_iteration
     if args_cli.offline_fraction is not None:
         cfg.algo.offline_fraction = args_cli.offline_fraction
+    if args_cli.batch_size is not None:
+        cfg.algo.batch_size = args_cli.batch_size
+    if args_cli.buffer_size is not None:
+        cfg.algo.buffer_size = args_cli.buffer_size
+    if args_cli.gamma is not None:
+        cfg.algo.gamma = args_cli.gamma
+    if args_cli.n_step is not None:
+        cfg.algo.n_step = args_cli.n_step
+    if args_cli.stddev_max is not None:
+        cfg.algo.stddev_max = args_cli.stddev_max
+    if args_cli.stddev_min is not None:
+        cfg.algo.stddev_min = args_cli.stddev_min
+    if args_cli.random_action_noise_scale is not None:
+        cfg.algo.random_action_noise_scale = args_cli.random_action_noise_scale
+    if args_cli.actor_lr is not None:
+        cfg.agent.actor_lr = args_cli.actor_lr
+    if args_cli.action_scale is not None:
+        cfg.agent.actor.action_scale = args_cli.action_scale
     cfg.groot_policy.host = args_cli.gr00t_host
     cfg.groot_policy.port = args_cli.gr00t_port
     cfg.groot_policy.model_path = args_cli.groot_model_path
@@ -566,9 +786,34 @@ if __name__ == "__main__":
         cfg.isaaclab_env.csv_base_dir = args_cli.csv_base_dir
     if args_cli.csv_init_row_index is not None:
         cfg.isaaclab_env.csv_init_row_index = args_cli.csv_init_row_index
+    if args_cli.max_episode_steps is not None:
+        cfg.isaaclab_env.max_episode_steps = max(1, int(args_cli.max_episode_steps))
     cfg.seed = args_cli.seed
     cfg.device = args_cli.device
     cfg.wandb.mode = args_cli.wandb_mode
+    if args_cli.wandb_project is not None:
+        cfg.wandb.project = args_cli.wandb_project
+    if args_cli.wandb_entity is not None:
+        cfg.wandb.entity = args_cli.wandb_entity
+    if args_cli.wandb_name is not None:
+        cfg.wandb.name = args_cli.wandb_name
+    if args_cli.wandb_group is not None:
+        cfg.wandb.group = args_cli.wandb_group
+    if args_cli.wandb_notes is not None:
+        cfg.wandb.notes = args_cli.wandb_notes
+    if args_cli.wandb_continue_run_id is not None:
+        cfg.wandb.continue_run_id = args_cli.wandb_continue_run_id
+    cfg.wandb_log_every_steps = max(1, int(args_cli.wandb_log_every_steps))
+    if args_cli.eval_interval_every_steps is not None:
+        cfg.eval_interval_every_steps = max(1, int(args_cli.eval_interval_every_steps))
+    if args_cli.eval_num_episodes is not None:
+        cfg.eval_episodes = max(1, int(args_cli.eval_num_episodes))
+    if args_cli.eval_first:
+        cfg.eval_first = True
+    if args_cli.save_video:
+        cfg.save_video = True
+    if args_cli.output_dir is not None:
+        cfg.output_dir = args_cli.output_dir
     cfg.heartbeat_interval_sec = args_cli.heartbeat_interval_sec
     cfg.stack_dump_interval_sec = args_cli.stack_dump_interval_sec
 

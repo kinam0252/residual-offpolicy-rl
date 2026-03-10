@@ -145,6 +145,9 @@ class ResidualTD3IsaacLabConfig:
     eval_interval_every_steps: int = 10_000
     eval_episodes: int = 20
     eval_first: bool = True
+    eval_use_iface_runner: bool = True
+    save_video: bool = False
+    output_dir: str = "outputs"
 
     # ------------------------------------------------------------------
     # Checkpointing

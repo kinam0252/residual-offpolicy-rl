@@ -24,6 +24,10 @@ Usage
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import importlib.util
+import os
+from pathlib import Path
+import sys
 from typing import Any
 
 import numpy as np
@@ -33,6 +37,42 @@ try:
     from gr00t.policy.server_client import PolicyClient
 except ImportError:
     PolicyClient = None  # graceful fallback for py_compile
+
+
+def _bootstrap_typing_extensions_override() -> None:
+    """Force-load newer typing_extensions from ISO_DEPS_DIR when available.
+
+    This mirrors the standalone iface script behavior and avoids failures when
+    Isaac prebundle ships an older typing_extensions missing newer symbols.
+    """
+    try:
+        deps_dir = Path(
+            os.environ.get(
+                "ISO_DEPS_DIR",
+                str(Path(__file__).resolve().parents[3] / "workspace" / ".pydeps_groot_iso"),
+            )
+        ).expanduser().resolve()
+        te_file = deps_dir / "typing_extensions.py"
+        if not te_file.exists():
+            return
+
+        deps_dir_str = str(deps_dir)
+        if deps_dir_str in sys.path:
+            sys.path.remove(deps_dir_str)
+        sys.path.insert(0, deps_dir_str)
+
+        spec = importlib.util.spec_from_file_location("typing_extensions", str(te_file))
+        if spec is None or spec.loader is None:
+            return
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        if hasattr(module, "NoExtraItems"):
+            sys.modules["typing_extensions"] = module
+    except Exception:
+        return
+
+
+_bootstrap_typing_extensions_override()
 
 try:
     from gr00t.policy.gr00t_policy import Gr00tPolicy
@@ -131,6 +171,19 @@ class GR00TBasePolicy:
                 pass
             print(f"[GR00TBasePolicy] action_horizon={self.action_horizon}")
 
+        self._video_modality_keys = ["wrist_view", "left_view", "right_view"]
+        self._state_modality_keys = [_STATE_JOINT_KEY, _STATE_GRIPPER_KEY]
+        self._language_key = _LANGUAGE_KEY
+        try:
+            mod_cfg = self.get_modality_config()
+            self._video_modality_keys = list(getattr(mod_cfg["video"], "modality_keys", self._video_modality_keys))
+            self._state_modality_keys = list(getattr(mod_cfg["state"], "modality_keys", self._state_modality_keys))
+            lang_keys = list(getattr(mod_cfg["language"], "modality_keys", []))
+            if len(lang_keys) > 0:
+                self._language_key = str(lang_keys[0])
+        except Exception:
+            pass
+
         # Per-env action chunk cache
         self._cached_chunks: list[np.ndarray | None] = [None] * num_envs  # (H, 7)
         self._chunk_idx: list[int] = [0] * num_envs
@@ -218,7 +271,7 @@ class GR00TBasePolicy:
             video_dict = self._build_video_dict(obs, env_id)
             state_dict = self._build_state_dict(obs, env_id)
             lang_str = self.language_override if self.language_override is not None else self.task_description
-            language_dict = {_LANGUAGE_KEY: [[str(lang_str)]]}
+            language_dict = {self._language_key: [[str(lang_str)]]}
 
             groot_obs = {"video": video_dict, "state": state_dict, "language": language_dict}
             pred = self.client.get_action(groot_obs)
@@ -239,7 +292,7 @@ class GR00TBasePolicy:
             video_dict = self._build_video_dict(obs, env_id)
             state_dict = self._build_state_dict(obs, env_id)
             lang_str = self.language_override if self.language_override is not None else self.task_description
-            language_dict = {_LANGUAGE_KEY: [[str(lang_str)]]}
+            language_dict = {self._language_key: [[str(lang_str)]]}
 
             groot_obs = {"video": video_dict, "state": state_dict, "language": language_dict}
             pred_action, _info = self.local_policy.get_action(groot_obs)
@@ -259,45 +312,83 @@ class GR00TBasePolicy:
 
     def _build_video_dict(self, obs: dict[str, torch.Tensor], env_id: int) -> dict[str, np.ndarray]:
         """Extract camera images for one env and format for GR00T."""
-        video = {}
-        for resfit_key, groot_key in self.VIEW_MAP.items():
-            img_t = obs.get(resfit_key, None)
-            if img_t is not None:
-                # img_t: (num_envs, C, H, W) uint8
-                img = img_t[env_id].detach().cpu().numpy()  # (C, H, W)
-                if img.dtype != np.uint8:
-                    img = np.clip(img, 0, 255).astype(np.uint8)
-                # (C, H, W) -> (H, W, C)
+        def _extract_hwc(key: str) -> np.ndarray:
+            img_t = obs.get(key, None)
+            if img_t is None:
+                return np.zeros((84, 84, 3), dtype=np.uint8)
+            img = img_t[env_id].detach().cpu().numpy()
+            if img.dtype != np.uint8:
+                img = np.clip(img, 0, 255).astype(np.uint8)
+            if img.ndim == 3 and img.shape[0] == 3:
                 img = np.transpose(img, (1, 2, 0))
-                # GR00T expects (1, 1, H, W, C)
-                video[groot_key] = img[None, None, ...].astype(np.uint8)
-            else:
-                # Fallback: 84x84 black
-                video[groot_key] = np.zeros((1, 1, 84, 84, 3), dtype=np.uint8)
+            if img.ndim == 3 and img.shape[-1] == 4:
+                img = img[..., :3]
+            return img.astype(np.uint8)
 
-        # Alias ego_view -> wrist_view
-        if "wrist_view" in video:
-            video["ego_view"] = video["wrist_view"]
+        wrist = _extract_hwc("observation.images.wrist")
+        left = _extract_hwc("observation.images.back")
+        right = _extract_hwc("observation.images.front")
+
+        def _pick_video_for_key(key: str) -> np.ndarray:
+            lk = str(key).lower()
+            if "wrist" in lk or "ego" in lk:
+                return wrist
+            if "left" in lk or "back" in lk:
+                return left
+            if "right" in lk or "front" in lk:
+                return right
+            return wrist
+
+        keys = self._video_modality_keys if len(self._video_modality_keys) > 0 else ["wrist_view", "left_view", "right_view"]
+        video = {k: _pick_video_for_key(k)[None, None, ...].astype(np.uint8) for k in keys}
+        if "ego_view" not in video:
+            video["ego_view"] = wrist[None, None, ...].astype(np.uint8)
         return video
 
     def _build_state_dict(self, obs: dict[str, torch.Tensor], env_id: int) -> dict[str, np.ndarray]:
         """Extract proprioceptive state for one env."""
-        state = obs.get("observation.state", None)
-        if state is not None:
-            state_np = state[env_id].detach().cpu().numpy().astype(np.float32)
-            # First 9 dims are joint_pos_scaled, but GR00T wants raw 7 arm joints
-            # We'll pass the first 7 as joint_pos (arm) and derive gripper from dim 7/8
-            joint_pos_7 = state_np[:7]  # arm joints (scaled)
-            # Gripper: average of two finger joints (dims 7,8), rescale to [0,1]
-            gripper_frac = float(np.clip((state_np[7] + 1.0) / 2.0, 0.0, 1.0))
-        else:
-            joint_pos_7 = np.zeros(7, dtype=np.float32)
-            gripper_frac = 0.0
+        joint_pos_7 = np.zeros(7, dtype=np.float32)
+        gripper_frac = 0.0
 
-        return {
-            _STATE_JOINT_KEY: joint_pos_7[None, None, :].astype(np.float32),
-            _STATE_GRIPPER_KEY: np.array([[[gripper_frac]]], dtype=np.float32),
-        }
+        raw_joint = obs.get("observation.raw_joint_pos", None)
+        raw_gripper = obs.get("observation.raw_gripper_frac", None)
+
+        if raw_joint is not None:
+            joint_np = raw_joint[env_id].detach().cpu().numpy().astype(np.float32)
+            if joint_np.shape[0] >= 7:
+                joint_pos_7 = joint_np[:7]
+            if raw_gripper is None and joint_np.shape[0] >= 9:
+                gripper_frac = float(np.clip(np.mean(joint_np[7:9]) / 0.04, 0.0, 1.0))
+
+        if raw_gripper is not None:
+            g = raw_gripper[env_id].detach().cpu().numpy().reshape(-1)
+            if g.size > 0:
+                gripper_frac = float(np.clip(g[0], 0.0, 1.0))
+
+        if raw_joint is None:
+            state = obs.get("observation.state", None)
+            if state is not None:
+                state_np = state[env_id].detach().cpu().numpy().astype(np.float32)
+                if state_np.shape[0] >= 7:
+                    joint_pos_7 = state_np[:7]
+                if state_np.shape[0] >= 8:
+                    gripper_frac = float(np.clip((state_np[7] + 1.0) / 2.0, 0.0, 1.0))
+
+        def _pick_state_for_key(key: str) -> np.ndarray:
+            lk = str(key).lower()
+            if "joint" in lk:
+                return joint_pos_7[None, None, :].astype(np.float32)
+            if "gripper" in lk:
+                return np.array([[[gripper_frac]]], dtype=np.float32)
+            return np.zeros((1, 1, 1), dtype=np.float32)
+
+        keys = self._state_modality_keys if len(self._state_modality_keys) > 0 else [_STATE_JOINT_KEY, _STATE_GRIPPER_KEY]
+        state_dict = {k: _pick_state_for_key(k) for k in keys}
+        if _STATE_JOINT_KEY not in state_dict:
+            state_dict[_STATE_JOINT_KEY] = joint_pos_7[None, None, :].astype(np.float32)
+        if _STATE_GRIPPER_KEY not in state_dict:
+            state_dict[_STATE_GRIPPER_KEY] = np.array([[[gripper_frac]]], dtype=np.float32)
+        return state_dict
 
     # ------------------------------------------------------------------
     # Action parsing

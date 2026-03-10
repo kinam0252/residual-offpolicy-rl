@@ -21,12 +21,72 @@ Usage (inside the IsaacLab Python runtime launched via isaaclab.sh):
 
 from __future__ import annotations
 
+import os
 import time
+import traceback
 
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn.functional as F
+
+
+_LIFT_REWARD_THRESHOLD_M = 0.01
+
+
+def _hide_overlapping_ground_prims() -> None:
+    """Hide common default ground prims to avoid floor overlap.
+
+    Some task setups instantiate both a terrain plane (e.g. ``/World/ground``)
+    and a custom floor mesh/cuboid (e.g. ``/World/Environment/floor``), which
+    causes doubled-floor visuals in renders/videos.
+    """
+    try:
+        from isaacsim.core.utils.stage import get_current_stage
+        from pxr import UsdGeom
+
+        stage = get_current_stage()
+        hidden = []
+        explicit_roots = {
+            "/World/ground",
+            "/World/defaultGroundPlane",
+            "/World/GroundPlane",
+            "/World/terrain",
+        }
+
+        def _is_ground_like(path: str) -> bool:
+            p = path.lower()
+            if p.startswith("/world/environment/floor"):
+                return False
+            if path in explicit_roots:
+                return True
+            return any(tok in p for tok in ("ground", "groundplane", "terrain"))
+
+        for prim in stage.TraverseAll():
+            try:
+                path = str(prim.GetPath())
+            except Exception:
+                continue
+            if not _is_ground_like(path):
+                continue
+            try:
+                imageable = UsdGeom.Imageable(prim)
+                if imageable:
+                    imageable.MakeInvisible()
+                    hidden.append(path)
+            except Exception:
+                continue
+
+        if hidden:
+            print(
+                f"[isaaclab_env_wrapper] hid overlapping ground prims: {sorted(set(hidden))}",
+                flush=True,
+            )
+    except Exception as exc:
+        print(
+            f"[isaaclab_env_wrapper][warn] failed to hide overlapping ground prims: {exc}",
+            flush=True,
+        )
 
 
 class IsaacLabVecEnvWrapper:
@@ -104,6 +164,9 @@ class IsaacLabVecEnvWrapper:
 
         # Internal bookkeeping
         self._cameras_ready = False
+        self._ground_hide_attempted_after_reset = False
+        self._initial_cube_z: torch.Tensor | None = None
+        self._lift_reward_threshold_m = _LIFT_REWARD_THRESHOLD_M
 
     # ------------------------------------------------------------------
     # Core API
@@ -112,6 +175,10 @@ class IsaacLabVecEnvWrapper:
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
         """Reset all environments and return augmented obs dict."""
         obs_raw, info = self.env.reset()
+        self._update_initial_cube_z()
+        if not self._ground_hide_attempted_after_reset:
+            _hide_overlapping_ground_prims()
+            self._ground_hide_attempted_after_reset = True
         obs_dict = self._build_obs_dict(obs_raw)
         return obs_dict, info if isinstance(info, dict) else {}
 
@@ -134,7 +201,62 @@ class IsaacLabVecEnvWrapper:
         if not isinstance(truncated, torch.Tensor):
             truncated = torch.as_tensor(truncated, device=self.device, dtype=torch.bool)
 
+        rewards = self._compute_sparse_lift_reward(default_rewards=rewards)
+
+        done = terminated | truncated
+        if done.any():
+            self._update_initial_cube_z(done_mask=done)
+
         return obs_dict, rewards, terminated, truncated, info
+
+    def _read_cube_z(self) -> torch.Tensor | None:
+        cube = getattr(self._unwrapped, "cube", None)
+        if cube is None and hasattr(self._unwrapped, "scene") and hasattr(self._unwrapped.scene, "rigid_objects"):
+            rigid_objects = self._unwrapped.scene.rigid_objects
+            if isinstance(rigid_objects, dict):
+                cube = rigid_objects.get("cube", None)
+        if cube is None:
+            return None
+        if not hasattr(cube, "data") or not hasattr(cube.data, "root_state_w"):
+            return None
+
+        root_state_w = cube.data.root_state_w
+        if not isinstance(root_state_w, torch.Tensor) or root_state_w.ndim < 2 or root_state_w.shape[1] < 3:
+            return None
+
+        cube_z = root_state_w[:, 2]
+        if cube_z.shape[0] != self.num_envs:
+            return None
+        return cube_z.to(dtype=torch.float32)
+
+    def _update_initial_cube_z(self, done_mask: torch.Tensor | None = None) -> None:
+        cube_z = self._read_cube_z()
+        if cube_z is None:
+            return
+
+        if self._initial_cube_z is None or self._initial_cube_z.shape != cube_z.shape:
+            self._initial_cube_z = cube_z.detach().clone()
+            return
+
+        if done_mask is None:
+            self._initial_cube_z = cube_z.detach().clone()
+            return
+
+        mask = done_mask.to(device=cube_z.device, dtype=torch.bool)
+        if mask.any():
+            self._initial_cube_z[mask] = cube_z[mask].detach()
+
+    def _compute_sparse_lift_reward(self, default_rewards: torch.Tensor) -> torch.Tensor:
+        cube_z = self._read_cube_z()
+        if cube_z is None:
+            return default_rewards
+
+        if self._initial_cube_z is None or self._initial_cube_z.shape != cube_z.shape:
+            self._initial_cube_z = cube_z.detach().clone()
+
+        lift_delta = cube_z - self._initial_cube_z.to(device=cube_z.device)
+        sparse_reward = (lift_delta >= self._lift_reward_threshold_m).to(dtype=torch.float32)
+        return sparse_reward.to(device=default_rewards.device)
 
     def close(self):
         self.env.close()
@@ -162,6 +284,18 @@ class IsaacLabVecEnvWrapper:
         out: dict[str, torch.Tensor] = {
             "observation.state": state,
         }
+
+        try:
+            robot = getattr(self._unwrapped, "robot", None)
+            if robot is not None and hasattr(robot, "data") and hasattr(robot.data, "joint_pos"):
+                joint_pos = robot.data.joint_pos.to(device=self.device, dtype=torch.float32)
+                if joint_pos.dim() == 2 and joint_pos.shape[0] == self.num_envs:
+                    out["observation.raw_joint_pos"] = joint_pos
+                    if joint_pos.shape[1] >= 8:
+                        grip = torch.clamp(joint_pos[:, 7:8] / 0.04, 0.0, 1.0)
+                        out["observation.raw_gripper_frac"] = grip
+        except Exception:
+            pass
 
         # ── Camera images ──
         self._append_camera_obs(out)
@@ -274,6 +408,33 @@ class IsaacLabVecEnvWrapper:
                 if img.shape[-1] == 4:
                     img = img[..., :3]
                 return img.cpu().numpy()
+
+        # Fallback to gym env render if available
+        for candidate in (self.env, self._unwrapped):
+            try:
+                if hasattr(candidate, "render"):
+                    rendered = candidate.render()
+                    if rendered is None:
+                        continue
+                    arr = np.asarray(rendered)
+                    if arr.size == 0:
+                        continue
+                    # Accept (H,W,C) or (N,H,W,C)
+                    if arr.ndim == 3 and arr.shape[-1] in (3, 4):
+                        arr = arr[None, ...]
+                    if arr.ndim == 4 and arr.shape[-1] in (3, 4):
+                        if arr.dtype != np.uint8:
+                            if arr.max() <= 1.0:
+                                arr = np.clip(arr, 0.0, 1.0) * 255.0
+                            else:
+                                arr = np.clip(arr, 0.0, 255.0)
+                            arr = arr.astype(np.uint8)
+                        if arr.shape[-1] == 4:
+                            arr = arr[..., :3]
+                        return arr
+            except Exception:
+                continue
+
         return np.zeros((self.num_envs, 480, 640, 3), dtype=np.uint8)
 
     @property
@@ -333,22 +494,78 @@ def create_isaaclab_env(
         flush=True,
     )
 
+    use_fabric_env = os.environ.get("RESFIT_PARSE_USE_FABRIC", "1").strip().lower()
+    use_fabric = use_fabric_env not in {"0", "false", "no", "off"}
+    print(
+        f"[isaaclab_env_wrapper] parse config enable_cameras={enable_cameras} use_fabric={use_fabric}",
+        flush=True,
+    )
+
     # isaaclab_tasks must have been imported (which triggers gym.register) before this call.
+    t_import = time.time()
+    print("[isaaclab_env_wrapper] importing isaaclab_tasks...", flush=True)
     import isaaclab_tasks  # noqa: F401
+    print(f"[isaaclab_env_wrapper] imported isaaclab_tasks in {time.time() - t_import:.2f}s", flush=True)
+
+    t_utils = time.time()
+    print("[isaaclab_env_wrapper] importing parse_env_cfg...", flush=True)
     from isaaclab_tasks.utils import parse_env_cfg
+    print(f"[isaaclab_env_wrapper] imported parse_env_cfg in {time.time() - t_utils:.2f}s", flush=True)
 
     # Parse the env config from the gymnasium registry (handles cfg entry point resolution)
     print("[isaaclab_env_wrapper] parsing env cfg...", flush=True)
-    env_cfg = parse_env_cfg(
-        task,
-        num_envs=num_envs,
-        device=device,
-        use_fabric=True,
-        enable_cameras=enable_cameras,
-    )
+    try:
+        try:
+            env_cfg = parse_env_cfg(
+                task,
+                num_envs=num_envs,
+                device=device,
+                use_fabric=use_fabric,
+                enable_cameras=enable_cameras,
+            )
+        except TypeError as sig_exc:
+            if "enable_cameras" not in str(sig_exc):
+                raise
+            print(
+                "[isaaclab_env_wrapper] parse_env_cfg signature has no enable_cameras; retrying without it",
+                flush=True,
+            )
+            env_cfg = parse_env_cfg(
+                task,
+                num_envs=num_envs,
+                device=device,
+                use_fabric=use_fabric,
+            )
+            if hasattr(env_cfg, "enable_cameras"):
+                setattr(env_cfg, "enable_cameras", enable_cameras)
+    except BaseException as exc:
+        print(
+            f"[isaaclab_env_wrapper][error] parse_env_cfg raised {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        traceback.print_exc()
+        raise
     print(f"[isaaclab_env_wrapper] env cfg parsed in {time.time() - t0:.2f}s", flush=True)
+    try:
+        cfg_attrs = dir(env_cfg)
+        cam_attrs = [name for name in cfg_attrs if "camera" in name.lower() or "image" in name.lower()]
+        print(f"[isaaclab_env_wrapper] env_cfg camera-like attrs: {cam_attrs[:20]}", flush=True)
+        if hasattr(env_cfg, "enable_cameras"):
+            print(f"[isaaclab_env_wrapper] env_cfg.enable_cameras={getattr(env_cfg, 'enable_cameras')}", flush=True)
+        if hasattr(env_cfg, "scene"):
+            scene = getattr(env_cfg, "scene")
+            scene_attrs = [name for name in dir(scene) if "camera" in name.lower() or "image" in name.lower()]
+            print(f"[isaaclab_env_wrapper] env_cfg.scene camera-like attrs: {scene_attrs[:20]}", flush=True)
+    except Exception as cfg_diag_exc:
+        print(f"[isaaclab_env_wrapper][warn] env_cfg diagnostics failed: {cfg_diag_exc}", flush=True)
 
     # Apply extra config overrides if any
+    if enable_cameras:
+        for cam_flag_name in ("enable_cameras", "use_camera", "use_cameras"):
+            if hasattr(env_cfg, cam_flag_name):
+                setattr(env_cfg, cam_flag_name, True)
+                print(f"[isaaclab_env_wrapper] forced {cam_flag_name}=True", flush=True)
+
     if extra_cfg_overrides:
         print(f"[isaaclab_env_wrapper] applying overrides: {sorted(extra_cfg_overrides.keys())}", flush=True)
         for k, v in extra_cfg_overrides.items():
@@ -358,8 +575,20 @@ def create_isaaclab_env(
     # Build the env via gymnasium registry with the resolved config
     t_make = time.time()
     print("[isaaclab_env_wrapper] gym.make start...", flush=True)
-    env = gym.make(task, cfg=env_cfg)
+    try:
+        env = gym.make(task, cfg=env_cfg)
+    except BaseException as exc:
+        print(
+            f"[isaaclab_env_wrapper][error] gym.make raised {type(exc).__name__}: {exc}",
+            flush=True,
+        )
+        traceback.print_exc()
+        raise
     print(f"[isaaclab_env_wrapper] gym.make done in {time.time() - t_make:.2f}s", flush=True)
+
+    # Hide default terrain/ground prims if a custom floor is also present.
+    if task == "Isaac-Franka-Pickup-Direct-v0":
+        _hide_overlapping_ground_prims()
 
     # Use the gym-wrapped env (not .unwrapped) so reset/step go through
     # the proper IsaacLab DirectRLEnv lifecycle
