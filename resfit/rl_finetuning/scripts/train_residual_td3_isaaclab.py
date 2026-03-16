@@ -1168,6 +1168,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
     action_dim = env.action_space.shape[1]
     lowdim_keys = ["observation.state", "observation.base_action"]
+    # Check if VLM latent is available from env
+    vlm_latent_dim = 0
+    if "observation.vlm_latent" in env.observation_space.spaces:
+        vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
+        lowdim_keys.append("observation.vlm_latent")
+        _log(f"VLM latent enabled: {vlm_latent_dim}D (raw, projected in agent)")
     # Warmup uses 1 env; main training loop will expand to all train envs
     num_envs = 1  # warmup with single env
     train_env_ids = [0]  # warmup: env 0 only
@@ -1192,6 +1198,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         rl_cameras=image_keys,
         cfg=cfg.agent,
         residual_actor=True,
+        vlm_latent_dim=vlm_latent_dim,
     )
 
     run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
@@ -1282,6 +1289,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     _log(f"  num_train_envs = {num_envs}")
     if cfg.offline_data is not None:
         _log(f"  offline_data_dir = {cfg.offline_data.csv_data_dir}")
+    # VLM latent status
+    if vlm_latent_dim > 0:
+        _log(f"  VLM ENABLED: raw_dim={vlm_latent_dim}, projected=128, in critic_opt")
+        _log(f"  vlm_projector params: {sum(p.numel() for p in agent.vlm_projector.parameters())}")
+    else:
+        _log(f"  VLM DISABLED (vlm_latent_dim=0)")
     _log("════════════════════════════════════════════════════════")
 
     # ── W&B ──
@@ -1768,6 +1781,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                     hc = debug_info['has_contact'][eid].item()
                     ch = debug_info['cube_height'][eid].item()
                     _log(f"  contact_force={cf:.3f}N has_contact={'ON' if hc > 0.5 else 'OFF'} cube_h={ch*100:.2f}cm")
+                # VLM latent debug
+                if "observation.vlm_latent" in obs:
+                    vlm = obs["observation.vlm_latent"][eid].detach().cpu()
+                    vlm_nz = (vlm.abs() > 1e-8).sum().item()
+                    vlm_norm = vlm.norm().item()
+                    _log(f"  vlm_latent: dim={vlm.shape[0]} nonzero={vlm_nz}/{vlm.shape[0]} norm={vlm_norm:.2f}")
 
         # ── Strict assertions on EVERY step (not just debug logs) ──
         # Check base+res=combined for ALL valid transitions using exact match
@@ -1955,6 +1974,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                     log_dict["env/mean_cube_height"] = float(debug_info['cube_height'].mean().item())
                     log_dict["env/mean_reward"] = float(debug_info['reward'].mean().item())
                     log_dict["env/mean_finger_cube_dist"] = float(debug_info['finger_cube_dist'].mean().item())
+                # VLM latent wandb logging
+                if vlm_latent_dim > 0 and "observation.vlm_latent" in obs:
+                    vlm_env = obs["observation.vlm_latent"][:num_envs].detach()
+                    log_dict["vlm/mean_norm"] = float(vlm_env.norm(dim=-1).mean().item())
+                    log_dict["vlm/nonzero_rate"] = float((vlm_env.abs() > 1e-8).any(dim=-1).float().mean().item())
+                    # VLM projector weight norm (if learnable)
+                    if hasattr(agent, 'vlm_projector') and agent.vlm_projector is not None:
+                        proj_w = next(agent.vlm_projector.parameters())
+                        log_dict["vlm/projector_weight_norm"] = float(proj_w.norm().item())
+                        if proj_w.grad is not None:
+                            log_dict["vlm/projector_grad_norm"] = float(proj_w.grad.norm().item())
                 log_dict.update(ts)
                 filtered = {k: v for k, v in metrics.items() if not k.startswith("_")}
                 log_dict.update(filtered)
@@ -1986,6 +2016,13 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 if "_actions" in metrics:
                     actions_np = metrics['_actions'].numpy()
                     msg += f" res_l1={float(np.mean(np.abs(actions_np))):.4f} res_l2={float(np.mean(actions_np**2)):.4f}"
+                # VLM summary in console log
+                if vlm_latent_dim > 0 and "observation.vlm_latent" in obs:
+                    vlm_env = obs["observation.vlm_latent"][:num_envs].detach()
+                    msg += f" vlm_norm={vlm_env.norm(dim=-1).mean().item():.1f}"
+                    if hasattr(agent, 'vlm_projector') and agent.vlm_projector is not None:
+                        pw = next(agent.vlm_projector.parameters())
+                        msg += f" proj_w={pw.norm().item():.2f}"
                 _log(msg)
 
         now = time.time()

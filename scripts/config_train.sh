@@ -6,9 +6,9 @@
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Experiment name / tags ──
-export EXP_NAME="pickMushroom_resid_v16_l2reg"         # wandb run name
+export EXP_NAME="pickMushroom_resid_v17_vlm"             # wandb run name
 export EXP_GROUP="multi_env"                       # wandb group
-export EXP_NOTES="v16: L2_reg=10.0, from v15 best ckpt, 10D+contact, offline=0.5, exact match"
+export EXP_NOTES="v17: VLM latent 2048D, projector in critic_opt, L2=10, 10D+contact, offline=0.5"
 export SEED=42
 
 # ── W&B ──
@@ -39,7 +39,7 @@ export BUFFER_SIZE=200000
 export GAMMA=0.99
 export N_STEP=3
 export OFFLINE_FRACTION=0.5                       # 50% offline from dense_clipped data
-export OFFLINE_DATA_DIR="/home/t-kinamkim/Repos/VLA_RL/Data/lerobot/pickMushroom_train_dense_clipped_3cm"
+export OFFLINE_DATA_DIR="/home/t-kinamkim/Repos/VLA_RL/Data/lerobot/pickMushroom_train_dense_clipped_3cm_vlm"
 export SUCCESS_THRESHOLD=0.03                     # cube lift success threshold (meters)
 export REWARD_TYPE=dense_clipped                  # sparse, dense, dense_clipped
 export CUBE_PERTURB_RANGE=0.05                    # cube XY perturbation range (meters)

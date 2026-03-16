@@ -27,6 +27,7 @@ class QAgent(nn.Module):
         rl_cameras: list[str] | str,
         cfg: QAgentConfig,
         residual_actor: bool = False,
+        vlm_latent_dim: int = 0,
     ):
         """Initialize the Q-agent.
 
@@ -75,15 +76,30 @@ class QAgent(nn.Module):
         assert len(prop_shape) == 1
         prop_dim = prop_shape[0] if cfg.use_prop else 0
 
-        # create critics & actor
+        # VLM latent projector (2048D raw → 128D projected)
+        self.vlm_latent_dim = vlm_latent_dim
+        self.vlm_projected_dim = 128 if vlm_latent_dim > 0 else 0
+        if vlm_latent_dim > 0:
+            self.vlm_projector = nn.Sequential(
+                nn.Linear(vlm_latent_dim, 128),
+                nn.LayerNorm(128),
+            )
+            print(f"VLM projector: {vlm_latent_dim}D -> 128D (learnable, in critic_opt)")
+        else:
+            self.vlm_projector = None
+
+        # Total prop dim seen by actor/critic includes projected VLM
+        total_prop_dim = prop_dim + self.vlm_projected_dim
+
+        # create critics & actor (with extended prop_dim)
         self.critic = Critic(
             repr_dim=repr_dim,
             patch_repr_dim=patch_repr_dim,
-            prop_dim=prop_dim,
+            prop_dim=total_prop_dim,
             action_dim=action_dim,
             cfg=self.cfg.critic,
         )
-        self.actor = Actor(repr_dim, patch_repr_dim, prop_dim, action_dim, cfg.actor, residual_actor=residual_actor)
+        self.actor = Actor(repr_dim, patch_repr_dim, total_prop_dim, action_dim, cfg.actor, residual_actor=residual_actor)
 
         self.critic_target = copy.deepcopy(self.critic)
         self.actor_target = copy.deepcopy(self.actor)
@@ -109,7 +125,11 @@ class QAgent(nn.Module):
 
         # Create optimizers (PyTorch will ignore frozen parameters)
         self.encoder_opt = torch.optim.AdamW(self.encoders.parameters(), lr=self.cfg.critic_lr)
-        self.critic_opt = torch.optim.AdamW(self.critic.parameters(), lr=self.cfg.critic_lr)
+        # Include VLM projector in critic optimizer (if present)
+        critic_params = list(self.critic.parameters())
+        if self.vlm_projector is not None:
+            critic_params += list(self.vlm_projector.parameters())
+        self.critic_opt = torch.optim.AdamW(critic_params, lr=self.cfg.critic_lr)
         self.actor_opt = torch.optim.AdamW(self.actor.parameters(), lr=self.cfg.actor_lr)
 
         # LR schedulers for warmup (if warmup is enabled)
@@ -257,6 +277,49 @@ class QAgent(nn.Module):
 
         self.cfg.act_method = original_method
 
+    def _prepare_prop(self, obs: dict[str, torch.Tensor], detach_vlm: bool = False) -> None:
+        """Prepare observation.state by concatenating projected VLM latent (if available).
+
+        Modifies obs in-place: obs["observation.state"] becomes [state_10D, vlm_128D].
+        For actor: detach_vlm=True (VLM projector gradient only from critic).
+        For critic: detach_vlm=False.
+        """
+        if self.vlm_projector is not None and "observation.vlm_latent" in obs:
+            vlm_raw = obs["observation.vlm_latent"]  # (B, 2048)
+            # ── VLM input validation ──
+            assert vlm_raw.dim() == 2, f"_prepare_prop: vlm_latent must be 2D, got {vlm_raw.shape}"
+            assert vlm_raw.shape[-1] == self.vlm_latent_dim, (
+                f"_prepare_prop: vlm_latent dim {vlm_raw.shape[-1]} != expected {self.vlm_latent_dim}"
+            )
+            assert not torch.isnan(vlm_raw).any(), "_prepare_prop: NaN in vlm_latent input"
+            assert not torch.isinf(vlm_raw).any(), "_prepare_prop: Inf in vlm_latent input"
+
+            vlm_proj = self.vlm_projector(vlm_raw)  # (B, 128)
+
+            # ── VLM projection validation ──
+            assert vlm_proj.shape == (vlm_raw.shape[0], self.vlm_projected_dim), (
+                f"_prepare_prop: vlm_proj shape {vlm_proj.shape} != expected (B, {self.vlm_projected_dim})"
+            )
+            assert not torch.isnan(vlm_proj).any(), "_prepare_prop: NaN in vlm_proj output (projector broken?)"
+
+            if detach_vlm:
+                vlm_proj = vlm_proj.detach()
+            state = obs["observation.state"]  # (B, 10)
+
+            # ── State pre-concat validation ──
+            assert state.shape[-1] == 10, (
+                f"_prepare_prop: state should be 10D before VLM concat, got {state.shape[-1]}. "
+                f"Was _prepare_prop called twice?"
+            )
+
+            obs["observation.state"] = torch.cat([state, vlm_proj], dim=-1)  # (B, 138)
+
+            # ── State post-concat validation ──
+            assert obs["observation.state"].shape[-1] == 10 + self.vlm_projected_dim, (
+                f"_prepare_prop: state after concat = {obs['observation.state'].shape[-1]} "
+                f"!= {10 + self.vlm_projected_dim}"
+            )
+
     def _encode(self, obs: dict[str, torch.Tensor], augment: bool) -> torch.Tensor:
         r"""This function encodes the observation into feature tensor.
 
@@ -321,6 +384,7 @@ class QAgent(nn.Module):
 
         assert "feat" not in obs
         obs["feat"] = self._encode(obs, augment=False)
+        self._prepare_prop(obs, detach_vlm=True)  # actor: VLM gradient blocked
 
         action = self._act_default(
             obs=obs,
@@ -726,9 +790,11 @@ class QAgent(nn.Module):
         assert "observation.base_action" in obs, "update: missing observation.base_action in batch obs"
         state = obs["observation.state"]
         assert state.dim() == 2 and state.shape[0] == B, f"update: state shape {state.shape} vs batch {B}"
-        assert state.shape[1] == 10, (
-            f"update: state dim {state.shape[1]} != 10. "
-            f"State must be 10D (EEF3+quat4+grip2+contact_force1). Old 9D data?"
+        expected_state_dim = 10  # base state dim (before VLM concat)
+        assert state.shape[1] == expected_state_dim, (
+            f"update: state dim {state.shape[1]} != {expected_state_dim}. "
+            f"State must be 10D (EEF3+quat4+grip2+contact_force1). "
+            f"VLM concat happens later via _prepare_prop()."
         )
         ba = obs["observation.base_action"]
         assert ba.dim() == 2 and ba.shape == (B, 7), f"update: base_action shape {ba.shape} != ({B},7)"
@@ -749,13 +815,35 @@ class QAgent(nn.Module):
         assert not torch.isnan(state).any(), "update: NaN in state"
         assert not torch.isinf(reward).any(), "update: Inf in reward"
 
+        # ── VLM latent batch validation ──
+        if self.vlm_projector is not None:
+            assert "observation.vlm_latent" in obs, (
+                "update: VLM projector enabled but 'observation.vlm_latent' missing in batch obs. "
+                "Check lowdim_keys and offline buffer."
+            )
+            vlm_batch = obs["observation.vlm_latent"]
+            assert vlm_batch.dim() == 2 and vlm_batch.shape == (B, self.vlm_latent_dim), (
+                f"update: vlm_latent shape {vlm_batch.shape} != expected ({B}, {self.vlm_latent_dim})"
+            )
+            assert not torch.isnan(vlm_batch).any(), "update: NaN in vlm_latent"
+            # Check vlm_latent is not all zeros (at least some should be non-zero)
+            vlm_nonzero = (vlm_batch.abs() > 1e-8).any(dim=-1).float().mean().item()
+            assert vlm_nonzero > 0.1, (
+                f"update: vlm_latent is mostly zeros ({vlm_nonzero*100:.0f}% non-zero rows). "
+                f"VLM features not being extracted properly."
+            )
+            # Same for next_obs
+            assert "observation.vlm_latent" in next_obs, "update: vlm_latent missing in next_obs"
+
         # To not bootstrap on terminal states we zero out the discount factor for terminal next states
         effective_discount = discount * next_nonterminal
 
         obs["feat"] = self._encode(obs, augment=True)
+        self._prepare_prop(obs, detach_vlm=False)  # critic: VLM gradient flows
 
         with torch.no_grad():
             next_obs["feat"] = self._encode(next_obs, augment=True)
+            self._prepare_prop(next_obs, detach_vlm=False)  # next_obs for target Q
 
         metrics = {}
         metrics["data/batch_R"] = reward.mean().item()
@@ -778,8 +866,9 @@ class QAgent(nn.Module):
         if not update_actor:
             return metrics
 
-        # NOTE: actor loss does not backprop into the encoder
+        # NOTE: actor loss does not backprop into the encoder or VLM projector
         obs["feat"] = obs["feat"].detach()
+        obs["observation.state"] = obs["observation.state"].detach()  # detach VLM proj gradient for actor
 
         if bc_batch is None:
             actor_metric = self.update_actor(obs, stddev)

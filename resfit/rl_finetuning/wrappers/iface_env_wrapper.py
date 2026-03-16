@@ -386,16 +386,21 @@ class IfaceEnvWrapper:
         # ── Gym spaces (match original IsaacLabVecEnvWrapper: 34D state) ──
         # state = [dof_pos_scaled(9), dof_vel_scaled(9), cogact_reference(7), contact_obs(3), ee_xyzrpy(6)]
         self._state_dim = 10  # eef_pos(3) + eef_quat(4) + gripper_qpos(2) + contact_force(1)
+        self._vlm_latent_dim = 2048  # GR00T VLM backbone hidden dim (raw, before projection)
         self.action_dim = 7
         self.action_space = gym.spaces.Box(low=-1.0, high=1.0, shape=(N, 7), dtype=np.float32)
         obs_spaces = {
             "observation.state": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(N, self._state_dim), dtype=np.float32),
             "observation.base_action": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(N, 7), dtype=np.float32),
+            "observation.vlm_latent": gym.spaces.Box(low=-np.inf, high=np.inf, shape=(N, self._vlm_latent_dim), dtype=np.float32),
             "observation.images.front": gym.spaces.Box(low=0, high=255, shape=(N, 3, 84, 84), dtype=np.uint8),
             "observation.images.back": gym.spaces.Box(low=0, high=255, shape=(N, 3, 84, 84), dtype=np.uint8),
             "observation.images.wrist": gym.spaces.Box(low=0, high=255, shape=(N, 3, 84, 84), dtype=np.uint8),
         }
         self.observation_space = gym.spaces.Dict(obs_spaces)
+
+        # ── VLM latent cache (updated on GR00T inference, cached between) ──
+        self._cached_vlm_latent = torch.zeros(N, self._vlm_latent_dim, device=self.device, dtype=torch.float32)
 
         # ── Active env control (for train=1 / eval=N) ──
         self._active_env_ids: list[int] = list(range(N))
@@ -942,7 +947,33 @@ class IfaceEnvWrapper:
         lang_batch = {self.language_key: [[str(lang_str)]] * B}
 
         obs = {"video": vid_batch, "state": state_batch, "language": lang_batch}
-        pred_action, _ = self.groot_policy.get_action(obs)
+        pred_action, groot_info = self.groot_policy.get_action(obs)
+
+        # Cache VLM backbone features (mean-pooled over seq_len → [B, 2048])
+        if "backbone_features" in groot_info:
+            bf = groot_info["backbone_features"]  # [B, seq_len, 2048] float32
+            if "backbone_attention_mask" in groot_info:
+                mask = groot_info["backbone_attention_mask"].unsqueeze(-1).float()  # [B, seq_len, 1]
+                vlm_pooled = (bf * mask).sum(dim=1) / mask.sum(dim=1).clamp(min=1)  # [B, 2048]
+            else:
+                vlm_pooled = bf.mean(dim=1)  # [B, 2048]
+
+            # ── VLM latent validation ──
+            assert vlm_pooled.shape == (B, self._vlm_latent_dim), (
+                f"VLM pooled shape {vlm_pooled.shape} != expected ({B}, {self._vlm_latent_dim})"
+            )
+            assert not torch.isnan(vlm_pooled).any(), "VLM pooled contains NaN!"
+            vlm_nonzero = (vlm_pooled.abs() > 1e-8).any(dim=-1).all().item()
+            if not vlm_nonzero:
+                print(f"[IfaceEnvWrapper] WARNING: VLM latent is all zeros for some envs!")
+            if not hasattr(self, '_vlm_first_log_done'):
+                print(f"[IfaceEnvWrapper] VLM latent extracted: shape={vlm_pooled.shape} "
+                      f"norm={vlm_pooled.norm(dim=-1).mean().item():.2f} "
+                      f"range=[{vlm_pooled.min().item():.3f}, {vlm_pooled.max().item():.3f}]")
+                self._vlm_first_log_done = True
+
+            for i, eid in enumerate(env_ids_to_infer):
+                self._cached_vlm_latent[eid] = vlm_pooled[i].detach().to(self.device)
 
         # Parse batched action chunks
         chunks = self._parse_batched_action(pred_action, B)  # (B, H, 7)
@@ -1002,6 +1033,7 @@ class IfaceEnvWrapper:
         obs = {
             "observation.state": torch.tensor(states, device=self.device, dtype=torch.float32),
             "observation.base_action": torch.tensor(base_actions_norm, device=self.device, dtype=torch.float32),
+            "observation.vlm_latent": self._cached_vlm_latent[:N].clone(),  # (N, 2048) cached from GR00T
             "observation.images.front": torch.tensor(np.stack(front_frames), device=self.device, dtype=torch.uint8),
             "observation.images.back": torch.tensor(np.stack(back_frames), device=self.device, dtype=torch.uint8),
             "observation.images.wrist": torch.tensor(np.stack(wrist_frames), device=self.device, dtype=torch.uint8),
@@ -1010,6 +1042,9 @@ class IfaceEnvWrapper:
         # ── Strict output validation ──
         assert obs["observation.state"].shape == (N, self._state_dim), (
             f"_build_obs: state shape {obs['observation.state'].shape} != expected ({N}, {self._state_dim})"
+        )
+        assert obs["observation.vlm_latent"].shape == (N, self._vlm_latent_dim), (
+            f"_build_obs: vlm_latent shape {obs['observation.vlm_latent'].shape} != expected ({N}, {self._vlm_latent_dim})"
         )
         assert obs["observation.base_action"].shape == (N, 7), (
             f"_build_obs: base_action shape {obs['observation.base_action'].shape} != expected ({N}, 7)"

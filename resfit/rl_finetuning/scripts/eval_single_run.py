@@ -120,6 +120,7 @@ def main():
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
     action_dim = env.action_space.shape[1]
 
+    vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1] if "observation.vlm_latent" in env.observation_space.spaces else 0
     agent_cfg = QAgentConfig(
         actor_lr=3e-7, critic_lr=1e-4, critic_target_tau=0.005,
         clip_q_target_to_reward_range=True,
@@ -128,6 +129,7 @@ def main():
     agent = QAgent(
         obs_shape=(img_c, img_h, img_w), prop_shape=(lowdim_dim,),
         action_dim=action_dim, rl_cameras=image_keys, cfg=agent_cfg, residual_actor=True,
+        vlm_latent_dim=vlm_latent_dim,
     )
     agent.to(device)
     ckpt = torch.load(args_cli.checkpoint, map_location=device)

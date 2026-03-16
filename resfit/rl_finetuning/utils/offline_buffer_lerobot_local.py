@@ -175,6 +175,13 @@ def populate_offline_buffer_from_lerobot_local(
         has_contact_force = "contact_force" in df.columns
         contact_forces = df["contact_force"].to_numpy().astype(np.float32) if has_contact_force else np.zeros(T, dtype=np.float32)
 
+        # Extract VLM latent if available in parquet (2048D)
+        has_vlm_latent = "vlm_latent" in df.columns
+        if has_vlm_latent:
+            vlm_latents = np.stack(df["vlm_latent"].to_numpy()).astype(np.float32)  # (T, 2048)
+        else:
+            vlm_latents = None  # will use zeros
+
         for t in range(T - 1):
             state_t = _to_state34(states[t], contact_force=contact_forces[t])
             state_next = _to_state34(states[t + 1], contact_force=contact_forces[min(t + 1, T - 1)])
@@ -189,6 +196,14 @@ def populate_offline_buffer_from_lerobot_local(
                 "observation.state": torch.tensor(state_next, dtype=torch.float32),
                 "observation.base_action": torch.tensor(next_action, dtype=torch.float32),
             }
+
+            # VLM latent (2048D raw — projected in agent)
+            if has_vlm_latent:
+                curr_obs["observation.vlm_latent"] = torch.tensor(vlm_latents[t], dtype=torch.float32)
+                next_obs["observation.vlm_latent"] = torch.tensor(vlm_latents[min(t+1, T-1)], dtype=torch.float32)
+            else:
+                curr_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
+                next_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
 
             for obs_key in image_keys:
                 curr_obs[obs_key] = view_frames[obs_key][t]

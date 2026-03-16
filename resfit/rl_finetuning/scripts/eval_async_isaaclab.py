@@ -111,6 +111,7 @@ def make_agent(env, device):
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
     action_dim = env.action_space.shape[1]
+    vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1] if "observation.vlm_latent" in env.observation_space.spaces else 0
 
     agent_cfg = QAgentConfig(
         actor_lr=1e-6,
@@ -130,6 +131,7 @@ def make_agent(env, device):
         rl_cameras=image_keys,
         cfg=agent_cfg,
         residual_actor=True,
+        vlm_latent_dim=vlm_latent_dim,
     )
     return agent, image_keys
 
