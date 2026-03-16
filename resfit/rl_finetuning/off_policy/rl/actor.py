@@ -148,6 +148,22 @@ class Actor(nn.Module):
                 )
 
     def forward(self, obs: dict[str, torch.Tensor], std: float):
+        # ── Strict input validation ──
+        assert "feat" in obs, "Actor: missing 'feat' in obs"
+        assert "observation.state" in obs, "Actor: missing 'observation.state' in obs"
+        state = obs["observation.state"]
+        assert state.dim() == 2, f"Actor: observation.state must be 2D (B, D), got {state.shape}"
+        expected_state_dim = self.prop_dim - (obs['observation.base_action'].shape[-1] if self.residual_actor else 0)
+        assert state.shape[-1] == expected_state_dim, (
+            f"Actor: observation.state dim mismatch: got {state.shape[-1]}, "
+            f"expected {expected_state_dim} (prop_dim={self.prop_dim}, residual={self.residual_actor})"
+        )
+        if self.residual_actor:
+            assert "observation.base_action" in obs, "Actor (residual): missing 'observation.base_action' in obs"
+            ba = obs["observation.base_action"]
+            assert ba.dim() == 2, f"Actor: observation.base_action must be 2D, got {ba.shape}"
+            assert ba.shape[0] == state.shape[0], "Actor: batch size mismatch between state and base_action"
+
         if isinstance(self.compress, SpatialEmb):
             assert not self.residual_actor, "Not implemented"
             feat = self.compress.forward(obs["feat"], obs["observation.state"])

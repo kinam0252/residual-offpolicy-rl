@@ -56,23 +56,11 @@ def rollout_step_with_export_path(
     residual_action: torch.Tensor,
     env_idx: int = 0,
 ) -> dict[str, Any]:
-    front_chw: np.ndarray | None = None
-    source = "none"
-
-    rendered = env.render()
-    if isinstance(rendered, np.ndarray) and rendered.ndim == 4 and rendered.shape[0] > env_idx:
-        render_chw = _to_chw_uint8_84(rendered[env_idx])
-        if int(render_chw.max()) > 0:
-            front_chw = render_chw
-            source = "render"
-
+    front_chw = _obs_front_to_chw_uint8(obs, env_idx)
     if front_chw is None:
-        front_chw = _obs_front_to_chw_uint8(obs, env_idx)
-        if front_chw is not None:
-            source = "obs"
-
-    if front_chw is None:
-        front_chw = np.zeros((3, 84, 84), dtype=np.uint8)
+        raise RuntimeError("rollout_step_with_export_path failed to capture observation.images.front frame")
+    front_hwc = np.transpose(front_chw, (1, 2, 0)).astype(np.uint8)
+    source = "obs"
 
     next_obs, reward, terminated, truncated, info = env.step(residual_action)
     combined = info.get("scaled_action", residual_action)
@@ -85,5 +73,6 @@ def rollout_step_with_export_path(
         "info": info,
         "combined_action": combined,
         "front_image_chw": front_chw,
+        "front_image_hwc": front_hwc,
         "front_image_source": source,
     }

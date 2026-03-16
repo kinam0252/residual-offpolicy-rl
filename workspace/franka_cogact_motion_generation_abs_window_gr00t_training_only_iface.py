@@ -27,6 +27,7 @@ Run:
 """Launch Isaac Sim Simulator first."""
 import argparse
 import importlib.util
+import hashlib
 from pathlib import Path
 import sys
 from typing import Any
@@ -165,6 +166,18 @@ parser.add_argument(
     help="Maximum sim steps per episode before forced stop.",
 )
 parser.add_argument(
+    "--camera_warmup_steps",
+    type=int,
+    default=10,
+    help="Number of pre-reset camera warmup sim steps before setting camera poses.",
+)
+parser.add_argument(
+    "--post_reset_settle_steps",
+    type=int,
+    default=200,
+    help="Number of settle sim steps after reset/state write and before rollout.",
+)
+parser.add_argument(
     "--lift_reward_threshold_m",
     type=float,
     default=0.01,
@@ -175,6 +188,45 @@ parser.add_argument(
     type=str,
     default=None,
     help="Optional output npz path for per-step online buffer (front_image/lift_delta/reward).",
+)
+parser.add_argument(
+    "--online_buffer_shm_name",
+    type=str,
+    default=None,
+    help="Optional shared-memory block name for per-step online buffer IPC transfer.",
+)
+parser.add_argument(
+    "--online_buffer_shm_size",
+    type=int,
+    default=0,
+    help="Shared-memory size in bytes for online buffer IPC transfer.",
+)
+parser.add_argument(
+    "--replay_actions_npz",
+    type=str,
+    default=None,
+    help="Optional npz path containing action/base_action arrays to replay instead of GR00T inference.",
+)
+parser.add_argument(
+    "--groot_input_dump_jsonl",
+    type=str,
+    default=None,
+    help="Optional JSONL path to dump GR00T input fingerprints at each inference call.",
+)
+parser.add_argument(
+    "--force_infer_on_reset",
+    action="store_true",
+    help="Force one GR00T inference call immediately after reset for parity debugging.",
+)
+parser.add_argument(
+    "--skip_groot_model_load",
+    action="store_true",
+    help="Skip local GR00T model load and return zero actions (for lightweight input-dump parity debug).",
+)
+parser.add_argument(
+    "--exit_after_reset_infer",
+    action="store_true",
+    help="Exit episode loop right after reset-time forced inference call.",
 )
 parser.add_argument(
     "--rl_bootstrap",
@@ -234,6 +286,7 @@ simulation_app = app_launcher.app
 # imports after AppLauncher
 # -----------------------------
 import os
+import io
 import json
 import time
 import faulthandler
@@ -241,6 +294,7 @@ import traceback
 import numpy as np
 import pandas as pd
 import torch
+from multiprocessing import shared_memory
 from scipy.spatial.transform import Rotation
 import omni.timeline
 import imageio
@@ -249,9 +303,8 @@ try:
     from gr00t.policy.gr00t_policy import Gr00tPolicy
     from gr00t.data.embodiment_tags import EmbodimentTag
 except ImportError:
-    raise ImportError(
-        "gr00t local policy API not found. Add Isaac-GR00T to PYTHONPATH or install dependencies in this env."
-    )
+    Gr00tPolicy = None
+    EmbodimentTag = None
 
 from resfit.rl_finetuning.policies.base_policy_interface import BaseChunkPolicy
 
@@ -294,8 +347,19 @@ COMPARE_DEBUG_DUMP = bool(getattr(args_cli, "compare_debug_dump", False))
 COMPARE_DEBUG_INTERVAL = int(getattr(args_cli, "compare_debug_interval", 60))
 HEARTBEAT_LOG_INTERVAL = int(getattr(args_cli, "heartbeat_log_interval", 100))
 MAX_STEPS = int(getattr(args_cli, "max_steps", 1000))
+CAMERA_WARMUP_STEPS = int(getattr(args_cli, "camera_warmup_steps", 10))
+POST_RESET_SETTLE_STEPS = int(getattr(args_cli, "post_reset_settle_steps", 200))
 LIFT_REWARD_THRESHOLD_M = float(getattr(args_cli, "lift_reward_threshold_m", 0.01))
 ONLINE_BUFFER_NPZ = getattr(args_cli, "online_buffer_npz", None)
+ONLINE_BUFFER_SHM_NAME = getattr(args_cli, "online_buffer_shm_name", None)
+ONLINE_BUFFER_SHM_SIZE = int(getattr(args_cli, "online_buffer_shm_size", 0))
+REPLAY_ACTIONS_NPZ = getattr(args_cli, "replay_actions_npz", None)
+GROOT_INPUT_DUMP_JSONL = getattr(args_cli, "groot_input_dump_jsonl", None)
+FORCE_INFER_ON_RESET = bool(getattr(args_cli, "force_infer_on_reset", False))
+EXIT_AFTER_RESET_INFER = bool(getattr(args_cli, "exit_after_reset_infer", False))
+SKIP_GROOT_MODEL_LOAD = bool(getattr(args_cli, "skip_groot_model_load", False)) or (
+    str(os.environ.get("RESFIT_SKIP_GROOT_MODEL_LOAD", "0")).lower() in {"1", "true", "yes", "on"}
+)
 RL_BOOTSTRAP = bool(getattr(args_cli, "rl_bootstrap", False))
 RL_EPISODE_LIMIT = int(getattr(args_cli, "rl_episode_limit", 0))
 RL_DISABLE_RETRIES = bool(getattr(args_cli, "rl_disable_retries", False))
@@ -603,6 +667,25 @@ class LocalGr00tChunkPolicyAdapter:
         return pred_action, info
 
 
+class DummyGr00tChunkPolicyAdapter:
+    def __init__(self, action_horizon: int = 16):
+        self._action_horizon = max(1, int(action_horizon))
+
+    def get_modality_config(self) -> Any:
+        from types import SimpleNamespace
+
+        return {
+            "video": SimpleNamespace(modality_keys=VIDEO_KEYS),
+            "state": SimpleNamespace(modality_keys=[STATE_JOINT_KEY, STATE_GRIPPER_KEY]),
+            "language": SimpleNamespace(modality_keys=[LANGUAGE_KEY]),
+            "action": SimpleNamespace(delta_indices=list(range(self._action_horizon))),
+        }
+
+    def infer_action_chunk(self, obs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
+        chunk = np.zeros((self._action_horizon, 7), dtype=np.float32)
+        return chunk, {"skip_model_load": True}
+
+
 def _pick_video_for_key(key: str, wrist: np.ndarray, left: np.ndarray, right: np.ndarray) -> np.ndarray:
     lk = key.lower()
     if "wrist" in lk or "ego" in lk:
@@ -611,7 +694,7 @@ def _pick_video_for_key(key: str, wrist: np.ndarray, left: np.ndarray, right: np
         return left
     if "right" in lk or "front" in lk:
         return right
-    return wrist
+    raise KeyError(f"Unsupported video modality key: {key}")
 
 
 def _pick_state_for_key(key: str, joint_pos_np: np.ndarray, gripper_frac: float) -> np.ndarray:
@@ -651,6 +734,49 @@ def _log_heartbeat(step: int, tag: str = "") -> None:
     print(msg, flush=True)
 
 
+def _array_fingerprint(arr: np.ndarray) -> dict[str, Any]:
+    a = np.ascontiguousarray(arr)
+    a64 = a.astype(np.float64, copy=False)
+    return {
+        "shape": list(a.shape),
+        "dtype": str(a.dtype),
+        "md5": hashlib.md5(a.tobytes()).hexdigest(),
+        "mean": float(np.mean(a64)),
+        "std": float(np.std(a64)),
+        "min": float(np.min(a64)),
+        "max": float(np.max(a64)),
+    }
+
+
+def _dump_groot_obs(
+    *,
+    dump_path: Path | None,
+    step: int,
+    call_index: int,
+    video_dict: dict[str, np.ndarray],
+    state_dict: dict[str, np.ndarray],
+    language_dict: dict[str, Any],
+    source: str,
+) -> None:
+    if dump_path is None:
+        return
+    row: dict[str, Any] = {
+        "step": int(step),
+        "call_index": int(call_index),
+        "source": str(source),
+        "video": {k: _array_fingerprint(np.asarray(v)) for k, v in video_dict.items()},
+        "state": {k: _array_fingerprint(np.asarray(v)) for k, v in state_dict.items()},
+        "state_sample": {
+            k: np.asarray(v, dtype=np.float32).reshape(-1)[:8].tolist()
+            for k, v in state_dict.items()
+        },
+        "language": language_dict,
+    }
+    dump_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(dump_path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
 # -----------------------------
 # main simulator loop
 # -----------------------------
@@ -662,6 +788,12 @@ def run_simulator(
     policy: BaseChunkPolicy,
     debug_dir: Path | None = None,
     online_buffer_npz: Path | None = None,
+    online_buffer_shm_name: str | None = None,
+    online_buffer_shm_size: int = 0,
+    replay_actions_npz: Path | None = None,
+    groot_input_dump_jsonl: Path | None = None,
+    force_infer_on_reset: bool = False,
+    exit_after_reset_infer: bool = False,
 ):
     """Runs the simulation loop with GR00T inference (3 cameras + state + language) for one episode.
 
@@ -690,7 +822,7 @@ def run_simulator(
 
     # ---- init cameras (set_world_poses_from_view to match dataset capture) [1](https://microsoftapc-my.sharepoint.com/personal/t-kinamkim_microsoft_com/Documents/Microsoft%20Copilot%20Chat%20Files/franka_motion_from_pose_csv.py)
     timeline = omni.timeline.get_timeline_interface()
-    for _ in range(10):
+    for _ in range(max(0, int(CAMERA_WARMUP_STEPS))):
         scene.write_data_to_sim()
         sim.step()
         scene.update(sim_dt)
@@ -831,7 +963,7 @@ def run_simulator(
     cube.write_root_pose_to_sim(cube_pose, env_ids=env_ids_gpu)
 
     # settle
-    for _ in range(200):
+    for _ in range(max(0, int(POST_RESET_SETTLE_STEPS))):
         scene.write_data_to_sim()
         sim.step()
         scene.update(sim_dt)
@@ -872,7 +1004,27 @@ def run_simulator(
     buffer_done: list[bool] = []
     buffer_lift_delta: list[float] = []
     buffer_front_image: list[np.ndarray] = []
+    buffer_back_image: list[np.ndarray] = []
+    buffer_wrist_image: list[np.ndarray] = []
+    replay_actions: np.ndarray | None = None
+    if replay_actions_npz is not None:
+        replay_actions_npz = Path(replay_actions_npz).expanduser().resolve()
+        with np.load(replay_actions_npz, allow_pickle=False) as replay_data:
+            if "action" in replay_data:
+                replay_actions = np.asarray(replay_data["action"], dtype=np.float32)
+            elif "base_action" in replay_data:
+                replay_actions = np.asarray(replay_data["base_action"], dtype=np.float32)
+            else:
+                raise RuntimeError(
+                    f"replay npz missing action/base_action arrays: {replay_actions_npz}"
+                )
+        if replay_actions.ndim != 2 or replay_actions.shape[1] != 7:
+            raise RuntimeError(
+                f"replay action shape must be (T,7), got {getattr(replay_actions, 'shape', None)}"
+            )
+        print(f"[INFO] Replay actions loaded: {replay_actions_npz} shape={replay_actions.shape}")
     debug_compare_file = None
+    groot_call_index = 0
     debug_compare_last_ts = time.time()
     if COMPARE_DEBUG_DUMP:
         compare_dir = Path(__file__).resolve().parents[2] / "outputs_gr00t" / "debug_compare"
@@ -882,8 +1034,49 @@ def run_simulator(
             debug_compare_file.unlink()
         print(f"[INFO] compare debug dump file: {debug_compare_file}")
 
+    def _build_groot_obs_once() -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], dict[str, Any]] | tuple[None, None, None]:
+        try:
+            wrist = _rgb_to_uint8(camera_wrist.data.output["rgb"])
+            left = _rgb_to_uint8(camera_back.data.output["rgb"])
+            right = _rgb_to_uint8(camera_front.data.output["rgb"])
+        except Exception as e:
+            raise RuntimeError(f"failed to read required cameras (front/back/wrist): {e}") from e
+
+        video_dict = {}
+        for vkey in video_modality_keys:
+            frame = _pick_video_for_key(vkey, wrist=wrist, left=left, right=right)
+            video_dict[vkey] = frame[None, None, ...].astype(np.uint8)
+
+        joint_pos_np = robot.data.joint_pos[0, arm_joint_ids].detach().cpu().numpy().astype(np.float32)
+        gripper_joint = float(robot.data.joint_pos[0, hand_joint_ids[0]].detach().cpu().item()) if hand_joint_ids else 0.0
+        gripper_frac = float(np.clip(gripper_joint / 0.04, 0.0, 1.0))
+
+        state_dict = {}
+        for skey in state_modality_keys:
+            sval = _pick_state_for_key(skey, joint_pos_np=joint_pos_np, gripper_frac=gripper_frac)
+            state_dict[skey] = sval[None, None, :].astype(np.float32)
+
+        lang_str = LANGUAGE_OVERRIDE if (LANGUAGE_OVERRIDE is not None) else TASK_DESCRIPTION
+        language_dict = {language_key: [[str(lang_str)]]}
+        return video_dict, state_dict, language_dict
+
+    if force_infer_on_reset:
+        video_dict, state_dict, language_dict = _build_groot_obs_once()
+        obs_reset = {"video": video_dict, "state": state_dict, "language": language_dict}
+        _dump_groot_obs(
+            dump_path=groot_input_dump_jsonl,
+            step=0,
+            call_index=groot_call_index,
+            video_dict=video_dict,
+            state_dict=state_dict,
+            language_dict=language_dict,
+            source="iface_reset",
+        )
+        groot_call_index += 1
+        policy.infer_action_chunk(obs_reset)
+
     try:
-        while simulation_app.is_running():
+        while simulation_app.is_running() and (not exit_after_reset_infer):
             if sim.is_stopped():
                 break
             if not sim.is_playing():
@@ -922,32 +1115,20 @@ def run_simulator(
             # periodically run inference
             if steps_since_infer >= inference_interval:
                 # build video dict by modality key (mapped from available cameras)
-                video_dict = {}
-                try:
-                    wrist = _rgb_to_uint8(camera_wrist.data.output["rgb"])
-                    left = _rgb_to_uint8(camera_back.data.output["rgb"])
-                    right = _rgb_to_uint8(camera_front.data.output["rgb"])
-                    for vkey in video_modality_keys:
-                        frame = _pick_video_for_key(vkey, wrist=wrist, left=left, right=right)
-                        video_dict[vkey] = frame[None, None, ...].astype(np.uint8)
-                except Exception as e:
-                    print(f"[WARN] failed to read cameras: {e}")
-                    video_dict = None
-
+                video_dict, state_dict, language_dict = _build_groot_obs_once()
                 if video_dict is not None:
-                    joint_pos_np = robot.data.joint_pos[0, arm_joint_ids].detach().cpu().numpy().astype(np.float32)
-                    gripper_joint = float(robot.data.joint_pos[0, hand_joint_ids[0]].detach().cpu().item()) if hand_joint_ids else 0.0
-                    gripper_frac = float(np.clip(gripper_joint / 0.04, 0.0, 1.0))
-
-                    state_dict = {}
-                    for skey in state_modality_keys:
-                        sval = _pick_state_for_key(skey, joint_pos_np=joint_pos_np, gripper_frac=gripper_frac)
-                        state_dict[skey] = sval[None, None, :].astype(np.float32)
-
-                    lang_str = LANGUAGE_OVERRIDE if (LANGUAGE_OVERRIDE is not None) else TASK_DESCRIPTION
-                    language_dict = {language_key: [[str(lang_str)]]}
-
                     obs = {"video": video_dict, "state": state_dict, "language": language_dict}
+
+                    _dump_groot_obs(
+                        dump_path=groot_input_dump_jsonl,
+                        step=count,
+                        call_index=groot_call_index,
+                        video_dict=video_dict,
+                        state_dict=state_dict,
+                        language_dict=language_dict,
+                        source="iface",
+                    )
+                    groot_call_index += 1
 
                     try:
                         pred_action, _info = policy.infer_action_chunk(obs)
@@ -975,6 +1156,9 @@ def run_simulator(
                             arr = np.array(pred_action, dtype=np.float32)
                             chunk = arr[0] if arr.ndim == 3 else arr
 
+                        if replay_actions is not None:
+                            chunk = None
+
                         if chunk is not None and chunk.ndim == 2 and chunk.shape[1] == 7:
                             action_windows_full = chunk
                             # Use full horizon predicted by the model (clipped only by actual chunk length).
@@ -1001,7 +1185,68 @@ def run_simulator(
             # - GR00T returns a chunk (H_pred=16), we execute only action_windows (H=EXEC_HORIZON=8)  [1](blob:https://www.microsoft365.com/68498443-4572-4d6f-9c10-40fcacef96ea)
             # - steps_per_action=5 (20Hz) so one token should be applied once per 5 sim steps, not every sim step  [1](blob:https://www.microsoft365.com/68498443-4572-4d6f-9c10-40fcacef96ea)
 
-            if action_windows is not None and num_windows is not None:
+            if replay_actions is not None:
+                if count < replay_actions.shape[0]:
+                    current_action_7 = replay_actions[count].astype(np.float32)
+                else:
+                    current_action_7 = np.zeros((7,), dtype=np.float32)
+
+                if not hasattr(robot, "_last_grip_open"):
+                    robot._last_grip_open = 1.0
+
+                if control_tick:
+                    interp = current_action_7
+                    dp = interp[:3].astype(np.float32)
+                    drot = interp[3:6].astype(np.float32)
+                    rot_norm = float(np.linalg.norm(drot))
+                    if rot_norm > ROT_CLAMP_RAD and rot_norm > 1e-6:
+                        drot = drot * (ROT_CLAMP_RAD / rot_norm)
+                    grip = float(interp[6])
+
+                    env_ids = torch.arange(scene.num_envs, device=sim.device, dtype=torch.long)
+                    ee_pose_w = robot.data.body_state_w[env_ids, robot_entity_cfg.body_ids[0], :7]
+                    ee_pos_w = ee_pose_w[:, 0:3]
+                    ee_quat_w = ee_pose_w[:, 3:7]
+
+                    if not hasattr(robot, "_smoothed_dp"):
+                        robot._smoothed_dp = torch.tensor(dp, device=sim.device, dtype=torch.float32).unsqueeze(0).repeat(scene.num_envs, 1)
+                        robot._smoothed_drot = torch.tensor(drot, device=sim.device, dtype=torch.float32).unsqueeze(0).repeat(scene.num_envs, 1)
+                    smooth_a = 0.35
+                    dp_t = torch.tensor(dp, device=sim.device, dtype=torch.float32).unsqueeze(0).repeat(scene.num_envs, 1)
+                    drot_t = torch.tensor(drot, device=sim.device, dtype=torch.float32).unsqueeze(0).repeat(scene.num_envs, 1)
+                    robot._smoothed_dp = (1.0 - smooth_a) * robot._smoothed_dp + smooth_a * dp_t
+                    robot._smoothed_drot = (1.0 - smooth_a) * robot._smoothed_drot + smooth_a * drot_t
+
+                    target_pos_w = ee_pos_w + robot._smoothed_dp
+                    dq_xyzw = Rotation.from_rotvec(robot._smoothed_drot[0].detach().cpu().numpy()).as_quat()
+                    dq_wxyz = np.array([dq_xyzw[3], dq_xyzw[0], dq_xyzw[1], dq_xyzw[2]], dtype=np.float32)
+                    dq = torch.tensor(dq_wxyz, device=sim.device, dtype=torch.float32).unsqueeze(0).repeat(scene.num_envs, 1)
+                    target_quat_w = quat_mul_wxyz(dq, ee_quat_w)
+                    target_quat_w = target_quat_w / torch.linalg.norm(target_quat_w, dim=-1, keepdim=True).clamp(min=1e-6)
+                    target_pose_w = torch.cat([target_pos_w, target_quat_w], dim=-1)
+                    diff_ik.set_command(target_pose_w)
+                    robot._last_grip_open = float(np.clip(grip, 0.0, 1.0))
+
+                env_ids = torch.arange(scene.num_envs, device=sim.device, dtype=torch.long)
+                ee_pose_w = robot.data.body_state_w[env_ids, robot_entity_cfg.body_ids[0], :7]
+                ee_pos_w = ee_pose_w[:, 0:3]
+                ee_quat_w = ee_pose_w[:, 3:7]
+                ee_jacobi_idx = robot_entity_cfg.body_ids[0] - 1
+                jacobian = robot.root_physx_view.get_jacobians()[env_ids, ee_jacobi_idx, :, :]
+                jacobian = jacobian[:, :, arm_joint_ids]
+                joint_pos = robot.data.joint_pos[env_ids, arm_joint_ids]
+                joint_pos_arm = diff_ik.compute(ee_pos_w, ee_quat_w, jacobian, joint_pos)
+
+                prev = robot.data.joint_pos_target[env_ids, arm_joint_ids]
+                max_step = 0.05
+                delta = torch.clamp(joint_pos_arm - prev, -max_step, max_step)
+                joint_pos_arm = prev + delta
+
+                finger_joint = float(robot._last_grip_open) * 0.04
+                joint_pos_gripper = torch.full((scene.num_envs, len(hand_joint_ids)), finger_joint, device=sim.device, dtype=torch.float32)
+                joint_pos_des = torch.cat([joint_pos_arm, joint_pos_gripper], dim=-1)
+
+            elif action_windows is not None and num_windows is not None:
                 # initialize last gripper (hold across sim steps)
                 if not hasattr(robot, "_last_grip_open"):
                     robot._last_grip_open = 1.0
@@ -1112,9 +1357,14 @@ def run_simulator(
 
             try:
                 front_for_buffer = _rgb_to_uint8(camera_front.data.output["rgb"])
-                front_chw84 = _hwc_to_chw84(front_for_buffer)
-            except Exception:
-                front_chw84 = np.zeros((3, 84, 84), dtype=np.uint8)
+                back_for_buffer = _rgb_to_uint8(camera_back.data.output["rgb"])
+                wrist_for_buffer = _rgb_to_uint8(camera_wrist.data.output["rgb"])
+            except Exception as e:
+                raise RuntimeError(f"failed to read required buffer cameras (front/back/wrist): {e}") from e
+
+            front_chw84 = _hwc_to_chw84(front_for_buffer)
+            back_chw84 = _hwc_to_chw84(back_for_buffer)
+            wrist_chw84 = _hwc_to_chw84(wrist_for_buffer)
 
             try:
                 curr_cube_z = float(cube.data.root_state_w[0, 2].detach().cpu().item())
@@ -1145,6 +1395,8 @@ def run_simulator(
             buffer_done.append(False)
             buffer_lift_delta.append(float(lift_delta_now))
             buffer_front_image.append(front_chw84)
+            buffer_back_image.append(back_chw84)
+            buffer_wrist_image.append(wrist_chw84)
 
             count += 1
             if count >= MAX_STEPS:
@@ -1174,28 +1426,54 @@ def run_simulator(
     if buffer_done:
         buffer_done[-1] = True
 
+    online_payload = {
+        "timestep": np.asarray(buffer_timestep, dtype=np.int32),
+        "state": np.asarray(buffer_state, dtype=np.float32),
+        "base_action": np.asarray(buffer_base_action, dtype=np.float32),
+        "action": np.asarray(buffer_action, dtype=np.float32),
+        "reward": np.asarray(buffer_reward, dtype=np.float32),
+        "done": np.asarray(buffer_done, dtype=np.bool_),
+        "lift_delta": np.asarray(buffer_lift_delta, dtype=np.float32),
+        "front_image": np.asarray(buffer_front_image, dtype=np.uint8),
+        "back_image": np.asarray(buffer_back_image, dtype=np.uint8),
+        "wrist_image": np.asarray(buffer_wrist_image, dtype=np.uint8),
+        "lift_reward_threshold_m": np.asarray(LIFT_REWARD_THRESHOLD_M, dtype=np.float32),
+        "initial_cube_z": np.asarray(initial_cube_z, dtype=np.float32),
+        "max_cube_z": np.asarray(max_cube_z, dtype=np.float32),
+        "max_lift_delta": np.asarray(float(max_cube_z - initial_cube_z), dtype=np.float32),
+        "reward_trigger_step": np.asarray(
+            int(np.argmax(np.asarray(buffer_reward, dtype=np.float32) >= 1.0))
+            if np.any(np.asarray(buffer_reward, dtype=np.float32) >= 1.0)
+            else -1,
+            dtype=np.int32,
+        ),
+    }
+
     if online_buffer_npz is not None:
         online_buffer_npz.parent.mkdir(parents=True, exist_ok=True)
-        np.savez_compressed(
-            online_buffer_npz,
-            timestep=np.asarray(buffer_timestep, dtype=np.int32),
-            state=np.asarray(buffer_state, dtype=np.float32),
-            base_action=np.asarray(buffer_base_action, dtype=np.float32),
-            action=np.asarray(buffer_action, dtype=np.float32),
-            reward=np.asarray(buffer_reward, dtype=np.float32),
-            done=np.asarray(buffer_done, dtype=np.bool_),
-            lift_delta=np.asarray(buffer_lift_delta, dtype=np.float32),
-            front_image=np.asarray(buffer_front_image, dtype=np.uint8),
-            lift_reward_threshold_m=np.asarray(LIFT_REWARD_THRESHOLD_M, dtype=np.float32),
-            initial_cube_z=np.asarray(initial_cube_z, dtype=np.float32),
-            max_cube_z=np.asarray(max_cube_z, dtype=np.float32),
-            max_lift_delta=np.asarray(float(max_cube_z - initial_cube_z), dtype=np.float32),
-            reward_trigger_step=np.asarray(
-                int(np.argmax(np.asarray(buffer_reward, dtype=np.float32) >= 1.0)) if np.any(np.asarray(buffer_reward, dtype=np.float32) >= 1.0) else -1,
-                dtype=np.int32,
-            ),
-        )
+        np.savez_compressed(online_buffer_npz, **online_payload)
         print(f"[INFO] Saved online buffer npz: {online_buffer_npz}")
+
+    if online_buffer_shm_name:
+        shm = None
+        try:
+            shm = shared_memory.SharedMemory(name=online_buffer_shm_name)
+            bio = io.BytesIO()
+            np.savez_compressed(bio, **online_payload)
+            payload_bytes = bio.getvalue()
+            payload_len = len(payload_bytes)
+            required = 8 + payload_len
+            shm_capacity = int(getattr(shm, "size", max(0, int(online_buffer_shm_size))))
+            if required > shm_capacity:
+                raise RuntimeError(
+                    f"online buffer shm too small: required={required}, available={shm_capacity}, name={online_buffer_shm_name}"
+                )
+            shm.buf[:8] = payload_len.to_bytes(8, byteorder="little", signed=False)
+            shm.buf[8:8 + payload_len] = payload_bytes
+            print(f"[INFO] Wrote online buffer payload to shared memory: {online_buffer_shm_name} ({payload_len} bytes)")
+        finally:
+            if shm is not None:
+                shm.close()
 
     lift_delta = float(max_cube_z - initial_cube_z)
     success = bool(lift_delta >= LIFT_SUCCESS_THRESHOLD)
@@ -1265,6 +1543,13 @@ def main():
     print(f"[INFO] max_steps={MAX_STEPS}")
     print(f"[INFO] lift_reward_threshold_m={LIFT_REWARD_THRESHOLD_M}")
     print(f"[INFO] online_buffer_npz={ONLINE_BUFFER_NPZ}")
+    print(f"[INFO] online_buffer_shm_name={ONLINE_BUFFER_SHM_NAME}")
+    print(f"[INFO] online_buffer_shm_size={ONLINE_BUFFER_SHM_SIZE}")
+    print(f"[INFO] replay_actions_npz={REPLAY_ACTIONS_NPZ}")
+    print(f"[INFO] groot_input_dump_jsonl={GROOT_INPUT_DUMP_JSONL}")
+    print(f"[INFO] force_infer_on_reset={FORCE_INFER_ON_RESET}")
+    print(f"[INFO] exit_after_reset_infer={EXIT_AFTER_RESET_INFER}")
+    print(f"[INFO] skip_groot_model_load={SKIP_GROOT_MODEL_LOAD}")
     _log_heartbeat(0, tag="before_sim_init")
 
     # Create a single sim + scene and reuse them across episodes
@@ -1275,17 +1560,25 @@ def main():
     sim.reset()
     _log_heartbeat(0, tag="after_sim_reset")
 
-    if MODEL_PATH is None:
-        raise ValueError("--model_path is required for local inference mode")
-    resolved_tag = _resolve_embodiment_tag(EMBODIMENT_TAG)
-    policy_impl = Gr00tPolicy(
-        embodiment_tag=resolved_tag,
-        model_path=str(Path(MODEL_PATH).expanduser().resolve()),
-        device=POLICY_DEVICE,
-        strict=POLICY_STRICT,
-    )
-    policy = LocalGr00tChunkPolicyAdapter(policy_impl)
-    print("[INFO] Local GR00T policy adapter loaded.")
+    if SKIP_GROOT_MODEL_LOAD:
+        policy = DummyGr00tChunkPolicyAdapter(action_horizon=EXEC_HORIZON)
+        print("[INFO] Dummy GR00T policy adapter loaded (skip model load).")
+    else:
+        if MODEL_PATH is None:
+            raise ValueError("--model_path is required for local inference mode")
+        if Gr00tPolicy is None or EmbodimentTag is None:
+            raise ImportError(
+                "gr00t local policy API not found. Add Isaac-GR00T to PYTHONPATH or install dependencies in this env."
+            )
+        resolved_tag = _resolve_embodiment_tag(EMBODIMENT_TAG)
+        policy_impl = Gr00tPolicy(
+            embodiment_tag=resolved_tag,
+            model_path=str(Path(MODEL_PATH).expanduser().resolve()),
+            device=POLICY_DEVICE,
+            strict=POLICY_STRICT,
+        )
+        policy = LocalGr00tChunkPolicyAdapter(policy_impl)
+        print("[INFO] Local GR00T policy adapter loaded.")
     _log_heartbeat(0, tag="after_policy_load")
 
     success_rows = []
@@ -1299,6 +1592,7 @@ def main():
             out_path = out_root / f"{ep_dir.name}.try{attempt:02d}.mp4"
             debug_dir = (debug_root / ep_dir.name / f"try{attempt:02d}") if debug_root is not None else None
             online_buffer_npz = None
+            online_buffer_shm_name = ONLINE_BUFFER_SHM_NAME if ONLINE_BUFFER_SHM_NAME else None
             if ONLINE_BUFFER_NPZ:
                 base_npz = Path(ONLINE_BUFFER_NPZ).expanduser().resolve()
                 if len(csv_dirs) == 1 and attempts_this_episode == 1:
@@ -1310,8 +1604,24 @@ def main():
                 print(f"[INFO] Debug videos (left/right/wrist) will be saved under: {debug_dir}")
             if online_buffer_npz is not None:
                 print(f"[INFO] Online buffer npz path: {online_buffer_npz}")
+            if online_buffer_shm_name is not None:
+                print(f"[INFO] Online buffer shared memory: {online_buffer_shm_name}")
 
-            result = run_simulator(sim, scene, ep_dir, out_path, policy, debug_dir, online_buffer_npz)
+            result = run_simulator(
+                sim,
+                scene,
+                ep_dir,
+                out_path,
+                policy,
+                debug_dir,
+                online_buffer_npz,
+                online_buffer_shm_name,
+                ONLINE_BUFFER_SHM_SIZE,
+                Path(REPLAY_ACTIONS_NPZ).expanduser().resolve() if REPLAY_ACTIONS_NPZ else None,
+                Path(GROOT_INPUT_DUMP_JSONL).expanduser().resolve() if GROOT_INPUT_DUMP_JSONL else None,
+                FORCE_INFER_ON_RESET,
+                EXIT_AFTER_RESET_INFER,
+            )
             result["attempt"] = attempt
             trial_results.append(result)
             print(

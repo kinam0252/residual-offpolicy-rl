@@ -90,6 +90,9 @@ fi
 if [[ -n "${MAX_EPISODE_STEPS:-}" ]]; then
   cmd+=(--max_episode_steps "${MAX_EPISODE_STEPS}")
 fi
+if [[ -n "${WARMUP_COLLECTOR:-}" ]]; then
+  cmd+=(--warmup_collector "${WARMUP_COLLECTOR}")
+fi
 if [[ -n "${STACK_DUMP_INTERVAL_SEC:-}" ]]; then
   cmd+=(--stack_dump_interval_sec "${STACK_DUMP_INTERVAL_SEC}")
 fi
@@ -192,6 +195,9 @@ if [[ "${RUN_IN_DOCKER}" == "1" ]]; then
   fi
   if [[ -n "${MAX_EPISODE_STEPS:-}" ]]; then
     args+=(--max_episode_steps "${MAX_EPISODE_STEPS}")
+  fi
+  if [[ -n "${WARMUP_COLLECTOR:-}" ]]; then
+    args+=(--warmup_collector "${WARMUP_COLLECTOR}")
   fi
   if [[ -n "${STACK_DUMP_INTERVAL_SEC:-}" ]]; then
     args+=(--stack_dump_interval_sec "${STACK_DUMP_INTERVAL_SEC}")

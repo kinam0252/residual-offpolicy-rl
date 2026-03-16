@@ -43,6 +43,7 @@ export EVAL_FIRST="${EVAL_FIRST:-0}"
 export SAVE_VIDEO="${SAVE_VIDEO:-0}"
 export OUTPUT_DIR="${OUTPUT_DIR:-}"
 export MAX_EPISODE_STEPS="${MAX_EPISODE_STEPS:-1000}"
+export WARMUP_COLLECTOR="${WARMUP_COLLECTOR:-inprocess_iface_render}"
 
 if [[ -z "${WANDB_API_KEY:-}" && -f "${WANDB_API_KEY_FILE}" ]]; then
   token_line="$(grep -m1 -v '^[[:space:]]*$' "${WANDB_API_KEY_FILE}" | tr -d '\r\n')"

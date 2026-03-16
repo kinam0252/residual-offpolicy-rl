@@ -151,6 +151,55 @@ class QAgent(nn.Module):
         self.train(True)
         self.to(self.cfg.device)
 
+    @staticmethod
+    def load_state_dict_compat(module: nn.Module, old_sd: dict, strict: bool = False):
+        """Load state_dict with backward compatibility for prop_dim changes.
+
+        When prop_dim grows (e.g. 9→10 for adding contact force), the first
+        linear layers that take prop as input will have a smaller in_features
+        in the old checkpoint. This function zero-pads those weight columns
+        so old checkpoints can be loaded into the new architecture.
+        """
+        new_sd = module.state_dict()
+        padded_keys = []
+        for key in old_sd:
+            if key not in new_sd:
+                continue
+            old_w = old_sd[key]
+            new_w = new_sd[key]
+            if old_w.shape == new_w.shape:
+                new_sd[key] = old_w
+            elif old_w.dim() >= 2 and new_w.dim() >= 2 and new_w.shape[-1] > old_w.shape[-1]:
+                # in_features grew — zero-pad the new columns
+                new_sd[key] = torch.zeros_like(new_w)
+                new_sd[key][..., :old_w.shape[-1]] = old_w
+                padded_keys.append(f"{key}: {list(old_w.shape)} → {list(new_w.shape)}")
+            else:
+                # Other dim mismatch — just try to use old weights
+                new_sd[key] = old_w
+                padded_keys.append(f"{key}: SHAPE MISMATCH {list(old_w.shape)} vs {list(new_w.shape)}")
+        if padded_keys:
+            print(f"[load_state_dict_compat] Padded {len(padded_keys)} keys:")
+            for k in padded_keys:
+                print(f"  {k}")
+        module.load_state_dict(new_sd, strict=False)
+        return padded_keys
+
+    def load_checkpoint_compat(self, ckpt: dict):
+        """Load a full agent checkpoint with backward-compatible prop_dim handling."""
+        padded = []
+        padded += self.load_state_dict_compat(self.encoders, ckpt["encoders"])
+        padded += self.load_state_dict_compat(self.actor, ckpt["actor"])
+        padded += self.load_state_dict_compat(self.critic, ckpt["critic"])
+        padded += self.load_state_dict_compat(self.critic_target, ckpt["critic_target"])
+        if "actor_target" in ckpt:
+            padded += self.load_state_dict_compat(self.actor_target, ckpt["actor_target"])
+        if padded:
+            print(f"[load_checkpoint_compat] Total padded layers: {len(padded)}")
+        else:
+            print("[load_checkpoint_compat] Exact match — no padding needed")
+        return padded
+
     def _build_encoders(self, obs_shape):
         """Constructs and returns an ``nn.ModuleList`` with one encoder per
         camera based on ``self.cfg.enc_type``.  All encoders share the same
@@ -217,6 +266,15 @@ class QAgent(nn.Module):
         direct env observations during evaluation) we assume it is properly
         normalised.
         """
+        # ── Strict input validation ──
+        for cam_name in self.rl_cameras:
+            assert cam_name in obs, f"QAgent._encode: missing camera '{cam_name}' in obs. Available keys: {list(obs.keys())}"
+            img = obs[cam_name]
+            assert img.dim() == 4, f"QAgent._encode: camera '{cam_name}' must be 4D (B,C,H,W), got {img.shape}"
+            assert img.shape[1] == 3, f"QAgent._encode: camera '{cam_name}' C must be 3, got {img.shape[1]}"
+        assert "observation.state" in obs, "QAgent._encode: missing 'observation.state'"
+        assert "observation.base_action" in obs, "QAgent._encode: missing 'observation.base_action'"
+
         feats = []
         for cam_idx, cam_name in enumerate(self.rl_cameras):
             data = obs[cam_name]
@@ -252,6 +310,11 @@ class QAgent(nn.Module):
         """This function takes tensor and returns actions in tensor"""
         assert not self.training
         assert not self.actor.training
+        # ── Strict input validation ──
+        for cam_name in self.rl_cameras:
+            assert cam_name in obs, f"QAgent.act: missing camera '{cam_name}' in obs"
+        assert "observation.state" in obs, "QAgent.act: missing 'observation.state'"
+        assert "observation.base_action" in obs, "QAgent.act: missing 'observation.base_action'"
         # Make a shallow copy of the observation dict
         obs = copy.copy(obs)
         unsqueezed = self._maybe_unsqueeze_(obs)
@@ -336,7 +399,9 @@ class QAgent(nn.Module):
             target_q = (reward + (discount * target_q_min)).detach()
 
         if self.cfg.clip_q_target_to_reward_range:
-            target_q = torch.clamp(target_q, min=0, max=1)  # Sparse rewards are in {0, 1}
+            # Clip Q-target to prevent overestimation
+            # For rewards in [0,1]: Q should be in [0, ~10] with gamma=0.99 and typical episode length
+            target_q = torch.clamp(target_q, min=0, max=10.0)
 
         td_errors = None
 
@@ -390,6 +455,22 @@ class QAgent(nn.Module):
         metrics = {}
         metrics["train/critic_qt"] = target_q.mean().item()
         metrics["train/critic_loss"] = critic_loss.item()
+
+        # ── Critic health checks ──
+        assert not torch.isnan(critic_loss), "FATAL: critic_loss is NaN"
+        assert not torch.isinf(critic_loss), "FATAL: critic_loss is Inf"
+        assert not torch.isnan(target_q).any(), "FATAL: target_q contains NaN"
+        assert critic_loss.item() < 1e6, f"FATAL: critic_loss exploded: {critic_loss.item():.2f}"
+        qt_absmax = target_q.abs().max().item()
+        assert qt_absmax < 100.0, (
+            f"FATAL: target_q out of range: [{target_q.min().item():.2f}, {target_q.max().item():.2f}]. "
+            f"Q-target clipping may not be working."
+        )
+        # Track Q-value statistics for monitoring
+        metrics["train/critic_qt_min"] = target_q.min().item()
+        metrics["train/critic_qt_max"] = target_q.max().item()
+        metrics["train/critic_qt_std"] = target_q.std().item()
+
         # Store target_q for potential logging (calculated only when needed)
         metrics["_target_q"] = target_q.detach().cpu()
         # Store TD errors for prioritized experience replay
@@ -415,6 +496,12 @@ class QAgent(nn.Module):
         # Store gradient norms for logging
         metrics["train/encoder_grad_norm"] = encoder_grad_norm.item()
         metrics["train/critic_grad_norm"] = critic_grad_norm.item()
+
+        # ── Critic/Encoder gradient health checks ──
+        assert not torch.isnan(encoder_grad_norm), "FATAL: encoder grad norm is NaN"
+        assert not torch.isnan(critic_grad_norm), "FATAL: critic grad norm is NaN"
+        assert encoder_grad_norm.item() < 1e4, f"FATAL: encoder grad norm too large: {encoder_grad_norm.item():.2f}"
+        assert critic_grad_norm.item() < 1e4, f"FATAL: critic grad norm too large: {critic_grad_norm.item():.2f}"
 
         self.encoder_opt.step()
         self.critic_opt.step()
@@ -487,10 +574,21 @@ class QAgent(nn.Module):
 
         metrics["train/actor_loss_base"] = actor_loss_base.item()
         metrics["train/actor_loss_total"] = actor_loss_total.item()
-        # Store residual actions for logging (the actual residual component we want to monitor)
         metrics["_actions"] = action_pred.detach().cpu()
-        # Also store combined actions if needed for other purposes
         metrics["_combined_actions"] = combined_action.detach().cpu()
+
+        # ── Actor health checks ──
+        assert not torch.isnan(actor_loss_total), "FATAL: actor_loss is NaN"
+        assert not torch.isinf(actor_loss_total), "FATAL: actor_loss is Inf"
+        assert actor_loss_total.abs().item() < 1e6, f"FATAL: actor_loss exploded: {actor_loss_total.item():.2f}"
+        assert not torch.isnan(action_pred).any(), "FATAL: actor output (residual) contains NaN"
+        # Residual should be bounded by action_scale (tanh output * scale)
+        residual_max = action_pred.abs().max().item()
+        assert residual_max <= self.cfg.actor.action_scale + 1e-4, (
+            f"FATAL: residual magnitude {residual_max:.4f} exceeds action_scale {self.cfg.actor.action_scale}"
+        )
+        metrics["train/residual_abs_max"] = residual_max
+        metrics["train/residual_abs_mean"] = action_pred.abs().mean().item()
 
         # Log L2 regularization penalty if applied
         if self.cfg.actor.action_l2_reg_weight > 0:
@@ -505,7 +603,17 @@ class QAgent(nn.Module):
         # Store gradient norm for logging
         metrics["train/actor_grad_norm"] = actor_grad_norm.item()
 
+        # ── Actor gradient health checks ──
+        assert not torch.isnan(actor_grad_norm), "FATAL: actor grad norm is NaN (exploded gradients)"
+        assert actor_grad_norm.item() < 1e4, f"FATAL: actor grad norm too large: {actor_grad_norm.item():.2f}"
+
         self.actor_opt.step()
+
+        # ── Post-step weight health check (sampled) ──
+        for name, param in self.actor.named_parameters():
+            if param.requires_grad:
+                assert not torch.isnan(param).any(), f"FATAL: NaN in actor param '{name}' after optimizer step"
+                break  # only check first param for speed
 
         return metrics
 
@@ -609,6 +717,37 @@ class QAgent(nn.Module):
         discount: torch.Tensor = batch["gamma"]
         next_nonterminal: torch.Tensor = batch["nonterminal"]
         next_obs: dict[str, torch.Tensor] = batch[("next", "obs")]
+
+        # ── Strict batch validation ──
+        B = action.shape[0]
+        assert action.dim() == 2 and action.shape[1] == 7, f"update: action shape {action.shape} != (B,7)"
+        assert reward.dim() == 1 or (reward.dim() == 2 and reward.shape[-1] == 1), f"update: reward shape {reward.shape}"
+        assert "observation.state" in obs, "update: missing observation.state in batch obs"
+        assert "observation.base_action" in obs, "update: missing observation.base_action in batch obs"
+        state = obs["observation.state"]
+        assert state.dim() == 2 and state.shape[0] == B, f"update: state shape {state.shape} vs batch {B}"
+        assert state.shape[1] == 10, (
+            f"update: state dim {state.shape[1]} != 10. "
+            f"State must be 10D (EEF3+quat4+grip2+contact_force1). Old 9D data?"
+        )
+        ba = obs["observation.base_action"]
+        assert ba.dim() == 2 and ba.shape == (B, 7), f"update: base_action shape {ba.shape} != ({B},7)"
+        for cam in self.rl_cameras:
+            assert cam in obs, f"update: missing camera '{cam}' in batch obs"
+            img = obs[cam]
+            assert img.dim() == 4 and img.shape[0] == B and img.shape[1] == 3, (
+                f"update: camera '{cam}' shape {img.shape} invalid"
+            )
+        # Check next_obs too
+        assert "observation.state" in next_obs, "update: missing observation.state in batch next_obs"
+        assert next_obs["observation.state"].shape == state.shape, (
+            f"update: next_obs state shape {next_obs['observation.state'].shape} != obs state {state.shape}"
+        )
+        # Check for NaN/Inf
+        assert not torch.isnan(action).any(), "update: NaN in action"
+        assert not torch.isnan(reward).any(), "update: NaN in reward"
+        assert not torch.isnan(state).any(), "update: NaN in state"
+        assert not torch.isinf(reward).any(), "update: Inf in reward"
 
         # To not bootstrap on terminal states we zero out the discount factor for terminal next states
         effective_discount = discount * next_nonterminal

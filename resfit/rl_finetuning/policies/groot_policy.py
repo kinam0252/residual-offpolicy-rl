@@ -25,9 +25,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import importlib.util
+import hashlib
+import json
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -135,11 +138,23 @@ class GR00TBasePolicy:
         self.task_description = task_description
         self.language_override = language_override
         self.action_horizon = action_horizon
-        self.mode = "local" if model_path else "server"
+        self._skip_model_load = str(os.environ.get("RESFIT_SKIP_GROOT_MODEL_LOAD", "0")).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        if self._skip_model_load:
+            self.mode = "skip"
+        else:
+            self.mode = "local" if model_path else "server"
         self.client = None
         self.local_policy = None
 
-        if self.mode == "local":
+        if self.mode == "skip":
+            print("[GR00TBasePolicy] Skip-model mode enabled (RESFIT_SKIP_GROOT_MODEL_LOAD=1).")
+
+        elif self.mode == "local":
             if Gr00tPolicy is None or EmbodimentTag is None:
                 raise ImportError("gr00t local policy not found. Add Isaac-GR00T to PYTHONPATH.")
             self._ensure_typing_extensions_compat()
@@ -174,6 +189,19 @@ class GR00TBasePolicy:
         self._video_modality_keys = ["wrist_view", "left_view", "right_view"]
         self._state_modality_keys = [_STATE_JOINT_KEY, _STATE_GRIPPER_KEY]
         self._language_key = _LANGUAGE_KEY
+        self._logged_video_source = False
+        self._groot_input_dump_path = os.environ.get("RESFIT_GROOT_INPUT_DUMP", "").strip() or None
+        self._groot_input_dump_index = 0
+        self._groot_input_dump_max = int(os.environ.get("RESFIT_MAX_GROOT_DUMPS", "0") or 0)
+        self._force_iface_csv_state = str(os.environ.get("RESFIT_FORCE_IFACE_CSV_STATE", "0")).lower() in {
+            "1",
+            "true",
+            "yes",
+            "on",
+        }
+        self._iface_csv_dir = os.environ.get("RESFIT_IFACE_STATE_CSV_DIR", "").strip()
+        self._iface_csv_row = int(os.environ.get("RESFIT_IFACE_STATE_ROW", "1") or 1)
+        self._iface_csv_cached_state: tuple[np.ndarray, float] | None = None
         try:
             mod_cfg = self.get_modality_config()
             self._video_modality_keys = list(getattr(mod_cfg["video"], "modality_keys", self._video_modality_keys))
@@ -206,7 +234,12 @@ class GR00TBasePolicy:
         for env_id in range(self.num_envs):
             # Check if we need a fresh inference
             if self._cached_chunks[env_id] is None or self._chunk_idx[env_id] >= self._cached_chunks[env_id].shape[0]:
-                chunk = self._call_local(obs, env_id) if self.mode == "local" else self._call_server(obs, env_id)
+                if self.mode == "local":
+                    chunk = self._call_local(obs, env_id)
+                elif self.mode == "server":
+                    chunk = self._call_server(obs, env_id)
+                else:
+                    chunk = self._call_skip(obs, env_id)
                 if chunk is not None:
                     self._cached_chunks[env_id] = chunk
                     self._chunk_idx[env_id] = 0
@@ -234,6 +267,13 @@ class GR00TBasePolicy:
     def get_modality_config(self) -> Any:
         if self.mode == "local":
             return self.local_policy.get_modality_config()
+        if self.mode == "skip":
+            return {
+                "video": SimpleNamespace(modality_keys=["wrist_view", "left_view", "right_view"]),
+                "state": SimpleNamespace(modality_keys=[_STATE_JOINT_KEY, _STATE_GRIPPER_KEY]),
+                "language": SimpleNamespace(modality_keys=[_LANGUAGE_KEY]),
+                "action": SimpleNamespace(delta_indices=list(range(self.action_horizon))),
+            }
         return self.client.get_modality_config()
 
     def infer_action_chunk(self, obs: dict[str, Any]) -> tuple[Any, dict[str, Any]]:
@@ -241,8 +281,12 @@ class GR00TBasePolicy:
 
         # Path A: prebuilt GR00T observation dict
         if "video" in obs and "state" in obs and "language" in obs:
+            self._dump_groot_obs(obs, source="resfit_prebuilt")
             if self.mode == "local":
                 pred_action, raw_info = self.local_policy.get_action(obs)
+            elif self.mode == "skip":
+                pred_action = np.zeros((self.action_horizon, 7), dtype=np.float32)
+                raw_info = {"skip_model_load": True}
             else:
                 pred = self.client.get_action(obs)
                 pred_action = pred[0] if isinstance(pred, (tuple, list)) and len(pred) == 2 else pred
@@ -253,7 +297,12 @@ class GR00TBasePolicy:
             return chunk, info
 
         # Path B: raw IsaacLab-style single-env observation dict (batch dim=1)
-        chunk = self._call_local(obs, 0) if self.mode == "local" else self._call_server(obs, 0)
+        if self.mode == "local":
+            chunk = self._call_local(obs, 0)
+        elif self.mode == "server":
+            chunk = self._call_server(obs, 0)
+        else:
+            chunk = self._call_skip(obs, 0)
         if chunk is None:
             chunk = np.zeros((self.action_horizon, 7), dtype=np.float32)
         return chunk, info
@@ -274,6 +323,7 @@ class GR00TBasePolicy:
             language_dict = {self._language_key: [[str(lang_str)]]}
 
             groot_obs = {"video": video_dict, "state": state_dict, "language": language_dict}
+            self._dump_groot_obs(groot_obs, source="resfit_server")
             pred = self.client.get_action(groot_obs)
             pred_action = pred[0] if isinstance(pred, (tuple, list)) and len(pred) == 2 else pred
 
@@ -295,6 +345,7 @@ class GR00TBasePolicy:
             language_dict = {self._language_key: [[str(lang_str)]]}
 
             groot_obs = {"video": video_dict, "state": state_dict, "language": language_dict}
+            self._dump_groot_obs(groot_obs, source="resfit_local")
             pred_action, _info = self.local_policy.get_action(groot_obs)
 
             chunk = self._parse_action(pred_action)
@@ -306,6 +357,20 @@ class GR00TBasePolicy:
             print(f"[GR00TBasePolicy] Local inference failed for env {env_id}: {e}")
             return None
 
+    def _call_skip(self, obs: dict[str, torch.Tensor], env_id: int) -> np.ndarray | None:
+        """Build GR00T obs dict and dump it without loading/calling any GR00T model."""
+        try:
+            video_dict = self._build_video_dict(obs, env_id)
+            state_dict = self._build_state_dict(obs, env_id)
+            lang_str = self.language_override if self.language_override is not None else self.task_description
+            language_dict = {self._language_key: [[str(lang_str)]]}
+            groot_obs = {"video": video_dict, "state": state_dict, "language": language_dict}
+            self._dump_groot_obs(groot_obs, source="resfit_skip")
+            return np.zeros((self.action_horizon, 7), dtype=np.float32)
+        except Exception as e:
+            print(f"[GR00TBasePolicy] Skip-mode obs build failed for env {env_id}: {e}")
+            return None
+
     # ------------------------------------------------------------------
     # Observation building helpers
     # ------------------------------------------------------------------
@@ -313,16 +378,26 @@ class GR00TBasePolicy:
     def _build_video_dict(self, obs: dict[str, torch.Tensor], env_id: int) -> dict[str, np.ndarray]:
         """Extract camera images for one env and format for GR00T."""
         def _extract_hwc(key: str) -> np.ndarray:
-            img_t = obs.get(key, None)
+            img_t = obs.get(f"{key}_hires", None)
+            source_key = f"{key}_hires"
             if img_t is None:
-                return np.zeros((84, 84, 3), dtype=np.uint8)
+                img_t = obs.get(key, None)
+                source_key = key
+            if img_t is None:
+                raise KeyError(f"missing required camera observation: {key} or {key}_hires")
             img = img_t[env_id].detach().cpu().numpy()
+            if img.ndim != 3:
+                raise ValueError(f"invalid camera tensor shape for {source_key}: {img.shape}")
             if img.dtype != np.uint8:
                 img = np.clip(img, 0, 255).astype(np.uint8)
             if img.ndim == 3 and img.shape[0] == 3:
                 img = np.transpose(img, (1, 2, 0))
             if img.ndim == 3 and img.shape[-1] == 4:
                 img = img[..., :3]
+            if img.ndim != 3 or img.shape[-1] != 3:
+                raise ValueError(f"camera image must be HxWx3 for {source_key}, got {img.shape}")
+            if (not self._logged_video_source) and env_id == 0:
+                print(f"[GR00TBasePolicy] video source key={source_key} shape={img.shape}")
             return img.astype(np.uint8)
 
         wrist = _extract_hwc("observation.images.wrist")
@@ -337,18 +412,32 @@ class GR00TBasePolicy:
                 return left
             if "right" in lk or "front" in lk:
                 return right
-            return wrist
+            raise KeyError(f"Unsupported video modality key: {key}")
 
         keys = self._video_modality_keys if len(self._video_modality_keys) > 0 else ["wrist_view", "left_view", "right_view"]
         video = {k: _pick_video_for_key(k)[None, None, ...].astype(np.uint8) for k in keys}
-        if "ego_view" not in video:
-            video["ego_view"] = wrist[None, None, ...].astype(np.uint8)
+        self._logged_video_source = True
         return video
 
     def _build_state_dict(self, obs: dict[str, torch.Tensor], env_id: int) -> dict[str, np.ndarray]:
         """Extract proprioceptive state for one env."""
         joint_pos_7 = np.zeros(7, dtype=np.float32)
         gripper_frac = 0.0
+
+        if self._force_iface_csv_state:
+            forced = self._get_iface_csv_state()
+            if forced is not None:
+                joint_pos_7, gripper_frac = forced
+                keys = self._state_modality_keys if len(self._state_modality_keys) > 0 else [_STATE_JOINT_KEY, _STATE_GRIPPER_KEY]
+                state_dict = {
+                    k: self._pick_state_from_values(k, joint_pos_7=joint_pos_7, gripper_frac=gripper_frac)
+                    for k in keys
+                }
+                if _STATE_JOINT_KEY not in state_dict:
+                    state_dict[_STATE_JOINT_KEY] = joint_pos_7[None, None, :].astype(np.float32)
+                if _STATE_GRIPPER_KEY not in state_dict:
+                    state_dict[_STATE_GRIPPER_KEY] = np.array([[[gripper_frac]]], dtype=np.float32)
+                return state_dict
 
         raw_joint = obs.get("observation.raw_joint_pos", None)
         raw_gripper = obs.get("observation.raw_gripper_frac", None)
@@ -374,21 +463,56 @@ class GR00TBasePolicy:
                 if state_np.shape[0] >= 8:
                     gripper_frac = float(np.clip((state_np[7] + 1.0) / 2.0, 0.0, 1.0))
 
-        def _pick_state_for_key(key: str) -> np.ndarray:
-            lk = str(key).lower()
-            if "joint" in lk:
-                return joint_pos_7[None, None, :].astype(np.float32)
-            if "gripper" in lk:
-                return np.array([[[gripper_frac]]], dtype=np.float32)
-            return np.zeros((1, 1, 1), dtype=np.float32)
-
         keys = self._state_modality_keys if len(self._state_modality_keys) > 0 else [_STATE_JOINT_KEY, _STATE_GRIPPER_KEY]
-        state_dict = {k: _pick_state_for_key(k) for k in keys}
+        state_dict = {
+            k: self._pick_state_from_values(k, joint_pos_7=joint_pos_7, gripper_frac=gripper_frac)
+            for k in keys
+        }
         if _STATE_JOINT_KEY not in state_dict:
             state_dict[_STATE_JOINT_KEY] = joint_pos_7[None, None, :].astype(np.float32)
         if _STATE_GRIPPER_KEY not in state_dict:
             state_dict[_STATE_GRIPPER_KEY] = np.array([[[gripper_frac]]], dtype=np.float32)
         return state_dict
+
+    @staticmethod
+    def _pick_state_from_values(key: str, *, joint_pos_7: np.ndarray, gripper_frac: float) -> np.ndarray:
+        lk = str(key).lower()
+        if "joint" in lk:
+            return joint_pos_7[None, None, :].astype(np.float32)
+        if "gripper" in lk:
+            return np.array([[[gripper_frac]]], dtype=np.float32)
+        return np.zeros((1, 1, 1), dtype=np.float32)
+
+    def _get_iface_csv_state(self) -> tuple[np.ndarray, float] | None:
+        if self._iface_csv_cached_state is not None:
+            return self._iface_csv_cached_state
+        if not self._iface_csv_dir:
+            return None
+        try:
+            csv_dir = Path(self._iface_csv_dir).expanduser().resolve()
+            joint_csv = csv_dir / "franka_joint_states.csv"
+            gripper_csv = csv_dir / "gripper_joint_states.csv"
+            if (not joint_csv.exists()) or (not gripper_csv.exists()):
+                return None
+
+            joint_raw = np.genfromtxt(str(joint_csv), delimiter=",", dtype=np.float32, skip_header=1)
+            grip_raw = np.genfromtxt(str(gripper_csv), delimiter=",", dtype=np.float32, skip_header=1)
+            if joint_raw.ndim == 1:
+                joint_raw = joint_raw[None, :]
+            if grip_raw.ndim == 1:
+                grip_raw = grip_raw[None, :]
+            if joint_raw.shape[0] <= 1 or joint_raw.shape[1] <= 16 or grip_raw.shape[0] <= 1 or grip_raw.shape[1] <= 4:
+                return None
+
+            joint_seq = joint_raw[1:, 10:17]
+            grip_seq = grip_raw[1:, 4:5]
+            row = max(0, min(int(self._iface_csv_row), joint_seq.shape[0] - 1, grip_seq.shape[0] - 1))
+            arm_joint = np.asarray(joint_seq[row, :7], dtype=np.float32)
+            grip_frac = float(np.clip(float(grip_seq[row, 0]), 0.0, 1.0))
+            self._iface_csv_cached_state = (arm_joint, grip_frac)
+            return self._iface_csv_cached_state
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # Action parsing
@@ -437,3 +561,45 @@ class GR00TBasePolicy:
                 return member
         valid = ", ".join(sorted(str(m.value) for m in EmbodimentTag))
         raise ValueError(f"Unknown embodiment_tag='{tag_str}'. Valid: {valid}")
+
+    @staticmethod
+    def _arr_fingerprint(arr: np.ndarray) -> dict[str, Any]:
+        a = np.ascontiguousarray(arr)
+        a64 = a.astype(np.float64, copy=False)
+        return {
+            "shape": list(a.shape),
+            "dtype": str(a.dtype),
+            "md5": hashlib.md5(a.tobytes()).hexdigest(),
+            "mean": float(np.mean(a64)),
+            "std": float(np.std(a64)),
+            "min": float(np.min(a64)),
+            "max": float(np.max(a64)),
+        }
+
+    def _dump_groot_obs(self, groot_obs: dict[str, Any], source: str) -> None:
+        if not self._groot_input_dump_path:
+            return
+        if self._groot_input_dump_max > 0 and self._groot_input_dump_index >= self._groot_input_dump_max:
+            return
+        try:
+            video_dict = dict(groot_obs.get("video", {}))
+            state_dict = dict(groot_obs.get("state", {}))
+            language_dict = dict(groot_obs.get("language", {}))
+            row: dict[str, Any] = {
+                "call_index": int(self._groot_input_dump_index),
+                "source": str(source),
+                "video": {k: self._arr_fingerprint(np.asarray(v)) for k, v in video_dict.items()},
+                "state": {k: self._arr_fingerprint(np.asarray(v)) for k, v in state_dict.items()},
+                "state_sample": {
+                    k: np.asarray(v, dtype=np.float32).reshape(-1)[:8].tolist()
+                    for k, v in state_dict.items()
+                },
+                "language": language_dict,
+            }
+            dump_path = Path(self._groot_input_dump_path).expanduser().resolve()
+            dump_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(dump_path, "a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            self._groot_input_dump_index += 1
+        except Exception:
+            return

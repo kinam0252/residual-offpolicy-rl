@@ -31,7 +31,7 @@ class GR00TBasePolicyConfig:
     action_horizon: int = 16
     model_path: str | None = None
     embodiment_tag: str = "new_embodiment"
-    strict: bool = False
+    strict: bool = True
     policy_device: str | None = None
 
 
@@ -49,12 +49,20 @@ class IsaacLabEnvConfig:
     csv_init_row_index: int = 0
     # Episode
     max_episode_steps: int = 1000
+    # Reward success threshold (meters cube must be lifted)
+    success_threshold: float = 0.005
+    # Reward type: "sparse" (0/1), "dense" (shaped), "dense_clipped" (shaped in [0,1])
+    reward_type: str = "dense_clipped"
+    # Cube XY position perturbation range (meters, 0=no perturbation)
+    cube_perturb_range: float = 0.0
+    # Path to JSON cube perturbation table (overrides cube_perturb_range)
+    cube_perturb_table_path: str | None = None
 
 
 # ── Offline data (CSV episodes or local LeRobot-format dataset folder) ──
 @dataclass
 class IsaacLabOfflineDataConfig:
-    csv_data_dir: str = "/home/t-kinamkim/Repos/VLA_RL/Data/lerobot/pickMushroom_train_libero_replay_poseinit"
+    csv_data_dir: str = "/home/t-kinamkim/Repos/VLA_RL/Data/lerobot/pickMushroom_train_w_reward"
     split_file: str = ""
     split: str = "training"  # "training" or "testing"
     num_episodes: int | None = None  # None = use all
@@ -80,14 +88,14 @@ class ResidualTD3IsaacLabConfig:
     # ------------------------------------------------------------------
     algo: ResidualTD3AlgoConfig = field(
         default_factory=lambda: ResidualTD3AlgoConfig(
-            total_timesteps=300_000,
-            batch_size=256,
-            buffer_size=200_000,
-            learning_starts=5_000,
+            total_timesteps=50_000,
+            batch_size=64,
+            buffer_size=50_000,
+            learning_starts=1_000,
             gamma=0.99,
             n_step=3,
-            offline_fraction=0.0,
-            critic_warmup_steps=5_000,
+            offline_fraction=0.5,
+            critic_warmup_steps=1_000,
             use_base_policy_for_warmup=True,
             random_action_noise_scale=0.1,
             stddev_max=0.05,
@@ -100,12 +108,14 @@ class ResidualTD3IsaacLabConfig:
     # ------------------------------------------------------------------
     agent: QAgentConfig = field(
         default_factory=lambda: QAgentConfig(
-            actor_lr=1e-6,
+            actor_lr=3e-7,
             critic_lr=1e-4,
             critic_target_tau=0.005,
+            clip_q_target_to_reward_range=True,  # Prevent Q-value overestimation
             actor=ActorConfig(
                 action_scale=0.1,
                 actor_last_layer_init_scale=0.0,
+                action_l2_reg_weight=10.0,  # L2 reg to prevent residual from growing too large
             ),
         )
     )
@@ -142,18 +152,20 @@ class ResidualTD3IsaacLabConfig:
     # ------------------------------------------------------------------
     # Evaluation
     # ------------------------------------------------------------------
-    eval_interval_every_steps: int = 10_000
-    eval_episodes: int = 20
+    eval_interval_every_steps: int = 5_000
+    eval_episodes: int = 10
+    eval_num_envs: int = 10
     eval_first: bool = True
-    eval_use_iface_runner: bool = True
+    eval_use_iface_runner: bool = False
     save_video: bool = False
+    eval_save_video: bool = False  # separate control for async eval video saving
     output_dir: str = "outputs"
 
     # ------------------------------------------------------------------
     # Checkpointing
     # ------------------------------------------------------------------
     checkpoint_dir: str = "checkpoints"
-    checkpoint_interval: int = 50_000
+    checkpoint_interval: int = 10_000
 
     # ------------------------------------------------------------------
     # Misc

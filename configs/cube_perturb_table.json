@@ -1,0 +1,32 @@
+{
+  "description": "Fixed cube XY perturbation table for 10-env training/eval. env_id -> (dx, dy) offset in meters from CSV default cube position.",
+  "success_threshold_m": 0.03,
+  "csv_base": "pickMushroom_20251209_081825_758",
+  "envs": [
+    {"env_id": 0, "dx": 0.000, "dy": 0.000, "name": "center"},
+    {"env_id": 1, "dx": 0.050, "dy": 0.000, "name": "right_5cm"},
+    {"env_id": 2, "dx":-0.050, "dy": 0.000, "name": "left_5cm"},
+    {"env_id": 3, "dx": 0.000, "dy": 0.050, "name": "forward_5cm"},
+    {"env_id": 4, "dx": 0.000, "dy":-0.050, "name": "back_5cm"},
+    {"env_id": 5, "dx": 0.040, "dy": 0.040, "name": "diag_FR_5.6cm"},
+    {"env_id": 6, "dx":-0.040, "dy": 0.040, "name": "diag_FL_5.6cm"},
+    {"env_id": 7, "dx": 0.040, "dy":-0.040, "name": "diag_BR_5.6cm"},
+    {"env_id": 8, "dx":-0.040, "dy":-0.040, "name": "diag_BL_5.6cm"},
+    {"env_id": 9, "dx": 0.080, "dy": 0.000, "name": "right_8cm"}
+  ],
+  "baseline_results_step0": {
+    "success_rate": 0.7,
+    "per_env": [
+      {"env_id": 0, "success": true},
+      {"env_id": 1, "success": true},
+      {"env_id": 2, "success": true},
+      {"env_id": 3, "success": true},
+      {"env_id": 4, "success": false, "note": "back_5cm - grasp ok, lift insufficient"},
+      {"env_id": 5, "success": false, "note": "diag_FR - grasp ok, lift insufficient"},
+      {"env_id": 6, "success": true},
+      {"env_id": 7, "success": false, "note": "diag_BR - grasp ok, lift insufficient"},
+      {"env_id": 8, "success": true},
+      {"env_id": 9, "success": true}
+    ]
+  }
+}

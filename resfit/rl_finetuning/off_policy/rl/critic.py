@@ -553,7 +553,23 @@ class SpatialEmbQEnsemble(nn.Module):
         return f"heads: {self.num_heads}, weight: nn.Parameter ({self.weight.size()})"
 
     def _compute_trunk(self, feat: torch.Tensor, prop: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
-        assert feat.size(-1) == self.patch_dim, "are you using CNN, need flatten&transpose"
+        # ── Strict input validation ──
+        assert feat.dim() == 3, f"Critic: feat must be 3D (B, num_patches, patch_dim), got {feat.shape}"
+        assert feat.size(-1) == self.patch_dim, (
+            f"Critic: feat last dim {feat.size(-1)} != patch_dim {self.patch_dim}. Are you using CNN? need flatten&transpose"
+        )
+        assert prop.dim() == 2, f"Critic: prop must be 2D (B, prop_dim), got {prop.shape}"
+        assert prop.shape[-1] == self.prop_dim, (
+            f"Critic: prop dim mismatch: got {prop.shape[-1]}, expected {self.prop_dim}. "
+            f"Missing contact_force in state? (should be 10D: EEF3+quat4+grip2+contact1)"
+        )
+        assert action.dim() == 2, f"Critic: action must be 2D (B, action_dim), got {action.shape}"
+        assert action.shape[-1] == self.action_dim, (
+            f"Critic: action dim mismatch: got {action.shape[-1]}, expected {self.action_dim}"
+        )
+        assert feat.shape[0] == prop.shape[0] == action.shape[0], (
+            f"Critic: batch size mismatch: feat={feat.shape[0]} prop={prop.shape[0]} action={action.shape[0]}"
+        )
         if self.fuse_patch:
             feat = feat.transpose(1, 2)
 

@@ -31,8 +31,11 @@ def run_iface_evaluation(
     task_description: str = "Pick up the white object.",
     language_override: str | None = None,
     headless: bool = True,
+    policy_strict: bool = True,
     save_video: bool = False,
     lift_reward_threshold_m: float = 0.01,
+    camera_warmup_steps: int = 10,
+    post_reset_settle_steps: int = 200,
     isaaclab_sh: str | None = None,
     iface_script_path: str | None = None,
 ) -> tuple[dict[str, float], Path | None]:
@@ -77,6 +80,10 @@ def run_iface_evaluation(
             "--max_attempts_per_episode",
             "1",
             "--rl_disable_retries",
+            "--camera_warmup_steps",
+            str(max(0, int(camera_warmup_steps))),
+            "--post_reset_settle_steps",
+            str(max(0, int(post_reset_settle_steps))),
             "--online_buffer_npz",
             str(npz_path),
             "--success_log_csv",
@@ -87,6 +94,8 @@ def run_iface_evaluation(
             cmd.extend(["--language_override", str(language_override)])
         if policy_device:
             cmd.extend(["--policy_device", str(policy_device)])
+        if bool(policy_strict):
+            cmd.append("--policy_strict")
         if headless:
             cmd.append("--headless")
 

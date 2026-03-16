@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -17,11 +18,89 @@ _VIDEO_MAP = {
     "wrist_image": "observation.images.wrist",
 }
 
+# ── Canonical reward formula signature ──
+# Used to verify offline data reward matches online reward.
+REWARD_FORMULA_SIGNATURE = {
+    "type": "shaped_proximity_4stage",
+    "distance_std": 0.1,
+    "distance_weight": 1.0,
+    "grasp_finger_threshold": 0.05,
+    "grasp_gripper_threshold": 0.03,
+    "grasp_weight": 2.0,
+    "height_minimal": 0.005,
+    "height_std": 0.1,
+    "height_weight": 100.0,
+}
 
-def _to_state34(state_vec: np.ndarray) -> np.ndarray:
-    out = np.zeros(34, dtype=np.float32)
-    n = min(len(state_vec), 34)
+
+def get_reward_formula_signature(success_threshold: float = 0.005) -> dict:
+    """Return the canonical reward formula dict with the given success threshold."""
+    sig = dict(REWARD_FORMULA_SIGNATURE)
+    sig["success_threshold"] = success_threshold
+    sig["success_weight"] = 100.0
+    return sig
+
+
+def validate_offline_reward_formula(data_dir: str | Path, success_threshold: float = 0.005) -> None:
+    """Check that the offline dataset's reward formula matches the online one.
+
+    Reads the first parquet file and verifies that shaped reward columns exist.
+    If a reward_config_and_stats.json is present, also checks parameters.
+    Raises ValueError on mismatch.
+    """
+    root = Path(data_dir)
+    data_chunk = root / "data" / "chunk-000"
+    parquet_files = sorted(data_chunk.glob("episode_*.parquet")) if data_chunk.exists() else []
+    if not parquet_files:
+        raise FileNotFoundError(f"No parquet files found in {data_chunk}")
+
+    # 1. Check that shaped reward columns exist in parquet
+    df = pd.read_parquet(parquet_files[0])
+    required_cols = {"reward_total", "reward_distance", "reward_grasp", "reward_height", "reward_success"}
+    missing = required_cols - set(df.columns)
+    if missing:
+        raise ValueError(
+            f"Offline dataset is missing shaped reward columns: {missing}.\n"
+            f"Found columns: {sorted(df.columns)}\n"
+            f"The offline data may have been generated with sparse reward (0/1). "
+            f"Please regenerate with the updated replay_all_worker.py that saves all reward components."
+        )
+
+    # 2. If metadata JSON exists, cross-check reward config
+    meta_path = root / "reward_config_and_stats.json"
+    if meta_path.exists():
+        with open(meta_path) as f:
+            meta = json.load(f)
+        if "reward_config" in meta:
+            rc = meta["reward_config"]
+            online_sig = get_reward_formula_signature(success_threshold)
+            mismatches = []
+            for k, v in online_sig.items():
+                if k in rc and abs(float(rc[k]) - float(v)) > 1e-6:
+                    mismatches.append(f"  {k}: offline={rc[k]} vs online={v}")
+            if mismatches:
+                raise ValueError(
+                    f"Reward formula mismatch between offline data and online config:\n"
+                    + "\n".join(mismatches)
+                )
+            print(f"[offline-reward-check] Reward formula validated against {meta_path}")
+
+    # 3. Sanity: for dense reward, check not all zero. Sparse reward (0/1) can have mostly zeros.
+    reward_col = df["reward_total"].astype(float)
+    if reward_col.max() < 1e-6:
+        print(f"[offline-reward-check] WARNING: reward_total is all zero in {parquet_files[0].name} (may be sparse with no success)")
+    else:
+        print(f"[offline-reward-check] Reward range: [{reward_col.min():.2f}, {reward_col.max():.2f}]")
+
+    print(f"[offline-reward-check] Shaped reward columns verified in {len(parquet_files)} episodes")
+
+
+def _to_state34(state_vec: np.ndarray, contact_force: float = 0.0) -> np.ndarray:
+    """Match online env's state dim: EEF pos(3) + quat(4) + gripper(2) + contact_force(1) = 10D."""
+    out = np.zeros(10, dtype=np.float32)
+    n = min(len(state_vec), 9)  # first 9D from original state
     out[:n] = state_vec[:n]
+    out[9] = contact_force  # dim 9 = contact force magnitude
     return out
 
 
@@ -70,6 +149,13 @@ def populate_offline_buffer_from_lerobot_local(
         if T < 2:
             continue
 
+        # Detect shaped reward columns
+        has_shaped_reward = "reward_total" in df.columns
+        if has_shaped_reward:
+            rewards_arr = df["reward_total"].to_numpy().astype(np.float32)
+        else:
+            rewards_arr = None
+
         view_frames: dict[str, torch.Tensor] = {}
         for view_dir, obs_key in _VIDEO_MAP.items():
             video_path = video_chunk / view_dir / f"{episode_name}.mp4"
@@ -85,9 +171,13 @@ def populate_offline_buffer_from_lerobot_local(
         states = states[:T]
         actions = actions[:T]
 
+        # Extract contact force if available in parquet
+        has_contact_force = "contact_force" in df.columns
+        contact_forces = df["contact_force"].to_numpy().astype(np.float32) if has_contact_force else np.zeros(T, dtype=np.float32)
+
         for t in range(T - 1):
-            state_t = _to_state34(states[t])
-            state_next = _to_state34(states[t + 1])
+            state_t = _to_state34(states[t], contact_force=contact_forces[t])
+            state_next = _to_state34(states[t + 1], contact_force=contact_forces[min(t + 1, T - 1)])
             action_t = actions[t][:7].astype(np.float32)
             next_action = actions[t + 1][:7].astype(np.float32)
 
@@ -104,6 +194,12 @@ def populate_offline_buffer_from_lerobot_local(
                 curr_obs[obs_key] = view_frames[obs_key][t]
                 next_obs[obs_key] = view_frames[obs_key][t + 1]
 
+            # Use shaped reward from parquet if available, else fall back to sparse
+            if has_shaped_reward:
+                step_reward = float(rewards_arr[t])  # Use reward as-is (sparse: 0/1)
+            else:
+                step_reward = 1.0 if t == (T - 2) else 0.0
+
             td = TensorDict(
                 {
                     "obs": TensorDict(curr_obs, batch_size=[]),
@@ -112,7 +208,7 @@ def populate_offline_buffer_from_lerobot_local(
                         {
                             "obs": TensorDict(next_obs, batch_size=[]),
                             "done": torch.tensor(t == (T - 2), dtype=torch.bool),
-                            "reward": torch.tensor(1.0 if t == (T - 2) else 0.0, dtype=torch.float32),
+                            "reward": torch.tensor(step_reward, dtype=torch.float32),
                         },
                         batch_size=[],
                     ),

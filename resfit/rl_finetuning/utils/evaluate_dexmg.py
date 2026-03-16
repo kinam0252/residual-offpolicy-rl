@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -184,6 +185,11 @@ def run_dexmg_evaluation(
 
     done_episodes = 0
     obs, _ = env.reset()
+    video_sample_every = int(os.environ.get("RESFIT_VIDEO_SAMPLE_EVERY", "0"))
+    if video_sample_every <= 0:
+        video_sample_every = max(1, int(getattr(env, "steps_per_action", 1)))
+    video_online_style = str(__import__("os").environ.get("RESFIT_EVAL_VIDEO_ONLINE_STYLE", "1")).lower() in {"1", "true", "yes", "on"}
+    eval_step_idx = 0
 
     # Initialize progress display with dots
     progress_dots = ["."] * num_episodes
@@ -237,13 +243,16 @@ def run_dexmg_evaluation(
         terminated = step_out["terminated"]
         truncated = step_out["truncated"]
         frame_chw = step_out["front_image_chw"]
+        frame_hwc_raw = np.asarray(step_out.get("front_image_hwc"), dtype=np.uint8)
         done_flags = terminated | truncated
+        eval_step_idx += 1
 
         # Capture frames ------------------------------------------------
         if save_video and frame_buffer is not None:
-            frame_hwc = np.transpose(frame_chw, (1, 2, 0))
-            for env_idx in range(num_envs):
-                frame_buffer[env_idx].append(frame_hwc)
+            if (eval_step_idx % video_sample_every) == 0:
+                frame_hwc = frame_hwc_raw if frame_hwc_raw.ndim == 3 else np.transpose(frame_chw, (1, 2, 0))
+                for env_idx in range(num_envs):
+                    frame_buffer[env_idx].append(frame_hwc)
 
         # --------------------------------------------------------------
         # 3. Per-environment bookkeeping -------------------------------
@@ -288,16 +297,19 @@ def run_dexmg_evaluation(
                     episode_global_idx = done_episodes + 1  # 1-based
 
                     for step_idx, fr in enumerate(episode_frames):
-                        annotated_fr = _annotate_frame(
-                            fr,
-                            env_idx=env_idx,
-                            episode_num=episode_global_idx,
-                            total_episodes=num_episodes,
-                            step_idx=step_idx + 1,
-                            is_success=is_success,
-                            q_value=episode_qs[step_idx],
-                        )
-                        all_frames.append(annotated_fr)
+                        if video_online_style:
+                            all_frames.append(fr)
+                        else:
+                            annotated_fr = _annotate_frame(
+                                fr,
+                                env_idx=env_idx,
+                                episode_num=episode_global_idx,
+                                total_episodes=num_episodes,
+                                step_idx=step_idx + 1,
+                                is_success=is_success,
+                                q_value=episode_qs[step_idx],
+                            )
+                            all_frames.append(annotated_fr)
 
                     # Clear per-episode frame buffer
                     frame_buffer[env_idx].clear()

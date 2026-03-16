@@ -152,6 +152,11 @@ class IsaacLabVecEnvWrapper:
                 shape=(self.num_envs, 3, image_size[0], image_size[1]),
                 dtype=np.uint8,
             )
+            obs_spaces[f"{resfit_key}_hires"] = gym.spaces.Box(
+                low=0, high=255,
+                shape=(self.num_envs, 3, 480, 640),
+                dtype=np.uint8,
+            )
 
         self.observation_space = gym.spaces.Dict(obs_spaces)
 
@@ -175,6 +180,33 @@ class IsaacLabVecEnvWrapper:
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
         """Reset all environments and return augmented obs dict."""
         obs_raw, info = self.env.reset()
+        camera_warmup_steps = int(os.environ.get("RESFIT_IFACE_CAMERA_WARMUP_STEPS", "0") or 0)
+        settle_steps = int(os.environ.get("RESFIT_RESET_SETTLE_STEPS", "0") or 0)
+        total_settle_steps = max(settle_steps, camera_warmup_steps)
+        if total_settle_steps > 0:
+            zero_action = torch.zeros(
+                (self.num_envs, 7),
+                device=self._unwrapped.device,
+                dtype=torch.float32,
+            )
+            sim_dt = None
+            try:
+                sim_dt = float(self._unwrapped.sim.get_physics_dt())
+            except Exception:
+                sim_dt = None
+
+            for step_idx in range(total_settle_steps):
+                if step_idx < camera_warmup_steps:
+                    try:
+                        if hasattr(self._unwrapped, "_setup_cameras"):
+                            self._unwrapped._setup_cameras()
+                        for cam_name in ("_camera_front", "_camera_back", "_camera_wrist"):
+                            cam = getattr(self._unwrapped, cam_name, None)
+                            if cam is not None and hasattr(cam, "update") and sim_dt is not None:
+                                cam.update(dt=sim_dt)
+                    except Exception:
+                        pass
+                obs_raw, _, _, _, _ = self.env.step(zero_action)
         self._update_initial_cube_z()
         if not self._ground_hide_attempted_after_reset:
             _hide_overlapping_ground_prims()
@@ -290,8 +322,20 @@ class IsaacLabVecEnvWrapper:
             if robot is not None and hasattr(robot, "data") and hasattr(robot.data, "joint_pos"):
                 joint_pos = robot.data.joint_pos.to(device=self.device, dtype=torch.float32)
                 if joint_pos.dim() == 2 and joint_pos.shape[0] == self.num_envs:
-                    out["observation.raw_joint_pos"] = joint_pos
-                    if joint_pos.shape[1] >= 8:
+                    joint_names = list(getattr(robot.data, "joint_names", []) or [])
+                    arm_joint_names = [f"panda_joint{i}" for i in range(1, 8)]
+                    arm_joint_ids = [joint_names.index(name) for name in arm_joint_names if name in joint_names]
+                    if len(arm_joint_ids) == 7:
+                        out["observation.raw_joint_pos"] = joint_pos[:, arm_joint_ids]
+                    else:
+                        out["observation.raw_joint_pos"] = joint_pos[:, :7]
+
+                    hand_joint_names = sorted([name for name in joint_names if "panda_finger_joint" in name])
+                    if len(hand_joint_names) > 0:
+                        hand_joint_id = joint_names.index(hand_joint_names[0])
+                        grip = torch.clamp(joint_pos[:, hand_joint_id:hand_joint_id + 1] / 0.04, 0.0, 1.0)
+                        out["observation.raw_gripper_frac"] = grip
+                    elif joint_pos.shape[1] >= 8:
                         grip = torch.clamp(joint_pos[:, 7:8] / 0.04, 0.0, 1.0)
                         out["observation.raw_gripper_frac"] = grip
         except Exception:
@@ -306,6 +350,23 @@ class IsaacLabVecEnvWrapper:
         """Read cameras from the underlying IsaacLab env and add downscaled
         uint8 images to ``out`` in (N, C, H, W) format."""
         isaac_env = self._unwrapped  # DirectRLEnv
+
+        try:
+            if hasattr(isaac_env, "_setup_cameras"):
+                isaac_env._setup_cameras()
+            self._apply_iface_camera_views(isaac_env)
+            sim_dt = None
+            try:
+                sim_dt = float(isaac_env.sim.get_physics_dt())
+            except Exception:
+                sim_dt = None
+            if sim_dt is not None:
+                for cam_name in ("_camera_front", "_camera_back", "_camera_wrist"):
+                    cam = getattr(isaac_env, cam_name, None)
+                    if cam is not None and hasattr(cam, "update"):
+                        cam.update(dt=sim_dt)
+        except Exception:
+            pass
 
         for isaac_key, resfit_key in self.CAMERA_MAP.items():
             cam = self._find_rgb_camera(preferred_key=isaac_key)
@@ -325,6 +386,7 @@ class IsaacLabVecEnvWrapper:
                         img = img[..., :3]
                     # (N, H, W, C) -> (N, C, H, W)
                     img = img.permute(0, 3, 1, 2).contiguous()
+                    raw_img = img
                     # Downscale
                     if img.shape[2] != self.image_size[0] or img.shape[3] != self.image_size[1]:
                         img_f = img.float()
@@ -336,6 +398,7 @@ class IsaacLabVecEnvWrapper:
                         )
                         img = img_f.to(torch.uint8)
                     out[resfit_key] = img.to(self.device)
+                    out[f"{resfit_key}_hires"] = raw_img.to(self.device)
                     continue
 
             # Fallback: zeros if camera not available
@@ -343,6 +406,36 @@ class IsaacLabVecEnvWrapper:
                 (self.num_envs, 3, self.image_size[0], self.image_size[1]),
                 device=self.device, dtype=torch.uint8,
             )
+            out[f"{resfit_key}_hires"] = torch.zeros(
+                (self.num_envs, 3, 480, 640),
+                device=self.device, dtype=torch.uint8,
+            )
+
+    def _apply_iface_camera_views(self, isaac_env) -> None:
+        if str(os.environ.get("RESFIT_FORCE_IFACE_CAMERA_POSE", "1")).lower() not in {"1", "true", "yes", "on"}:
+            return
+        try:
+            scene = getattr(isaac_env, "scene", None)
+            env_origins = getattr(scene, "env_origins", None)
+            if env_origins is None:
+                return
+
+            cam_front = getattr(isaac_env, "_camera_front", None)
+            cam_back = getattr(isaac_env, "_camera_back", None)
+            if cam_front is None or cam_back is None:
+                return
+
+            origins = env_origins.to(device=self.device, dtype=torch.float32)
+            eye_front = torch.tensor([0.4, -0.7, 0.8], device=self.device, dtype=torch.float32).unsqueeze(0) + origins
+            eye_back = torch.tensor([0.4, 0.7, 0.8], device=self.device, dtype=torch.float32).unsqueeze(0) + origins
+            target_pos = torch.tensor([0.25, 0.0, -0.05], device=self.device, dtype=torch.float32).unsqueeze(0) + origins
+
+            if hasattr(cam_front, "set_world_poses_from_view"):
+                cam_front.set_world_poses_from_view(eye_front, target_pos)
+            if hasattr(cam_back, "set_world_poses_from_view"):
+                cam_back.set_world_poses_from_view(eye_back, target_pos)
+        except Exception:
+            return
 
     def _find_rgb_camera(self, preferred_key: str | None = None):
         isaac_env = self._unwrapped
