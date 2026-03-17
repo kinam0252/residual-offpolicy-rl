@@ -153,11 +153,27 @@ def load_env_snapshot(
 
 
 def capture_sanity_frames(env, output_dir: Path, tag: str, perturb_names: list[str] | None = None):
-    """Capture first frame of each env and save as sanity check images."""
+    """Capture first frame of each env and save as sanity check images.
+    Includes actual cube XY offset in filename for random perturbation verification."""
+    import numpy as np
     N = env.num_envs
     frames_dir = output_dir / f"sanity_frames_{tag}"
     frames_dir.mkdir(parents=True, exist_ok=True)
-    names = perturb_names or [f"env{i}" for i in range(N)]
+    
+    # Build names with actual cube positions if available
+    names = []
+    for eid in range(N):
+        base_name = perturb_names[eid] if perturb_names and eid < len(perturb_names) else f"env{eid}"
+        # Get actual cube XY relative to env origin
+        try:
+            cube_pos = env.cube.data.root_state_w[eid, :3].detach().cpu().numpy()
+            env_origin = env.scene.env_origins[eid].detach().cpu().numpy()
+            rel_pos = cube_pos - env_origin
+            base_name += f"_x{rel_pos[0]*100:+.0f}cm_y{rel_pos[1]*100:+.0f}cm"
+        except Exception:
+            pass
+        names.append(base_name)
+    
     if hasattr(env, "get_frame"):
         for eid in range(N):
             fr = env.get_frame(eid, camera="front", size=(128, 160))

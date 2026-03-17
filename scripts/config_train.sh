@@ -6,9 +6,9 @@
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Experiment name / tags ──
-export EXP_NAME="pickMushroom_resid_v18_long_random"     # wandb run name
+export EXP_NAME="pickMushroom_resid_v19_resume_random"   # wandb run name
 export EXP_GROUP="multi_env"                       # wandb group
-export EXP_NOTES="v18: 200K steps, random cube XY+yaw, VLM 2048D, L2=10, offline=0.5"
+export EXP_NOTES="v19: resume from v17 best, random cube ±5cm/±10deg, VLM, L2=10, 200K"
 export SEED=42
 
 # ── W&B ──
@@ -45,7 +45,8 @@ export REWARD_TYPE=dense_clipped                  # sparse, dense, dense_clipped
 export CUBE_PERTURB_RANGE=0.05                    # cube XY perturbation range (meters)
 export CUBE_PERTURB_TABLE="/home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl/configs/cube_perturb_table.json"
 export RANDOM_ACTION_NOISE_SCALE=0.0              # warmup noise scale (0=pure base policy)
-export RANDOM_CUBE_PERTURB=true                   # randomize cube XY(±10cm) + yaw(±15°) each episode
+export RANDOM_CUBE_PERTURB=true                   # randomize cube XY(±5cm) + yaw(±10°) each episode
+export RESUME_CHECKPOINT="/home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl/outputs/pickMushroom_resid_v17_vlm/20260316_072751/checkpoints/agent_step35000.pt"
 
 # ── Exploration noise ──
 export STDDEV_MAX=0.05                            # exploration noise (start)
@@ -57,7 +58,7 @@ export CRITIC_LR=1e-4                             # (set in config, not CLI)
 export ACTION_SCALE=0.1                            # residual action scale (normalized space)
 
 # ── Evaluation ──
-export EVAL_INTERVAL=2500                            # eval every N train steps
+export EVAL_INTERVAL=5000                            # eval every N train steps
 export EVAL_FIRST=true                            # eval at step 0?
 export SAVE_VIDEO=true                            # save eval videos?
 export EVAL_SAVE_VIDEO=true                       # save eval videos in async eval?
@@ -66,7 +67,7 @@ export DISABLE_EVAL=true                          # disable inline eval (use asy
 # ── Checkpointing / output ──
 export RUN_TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 export OUTPUT_DIR="/home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl/outputs/${EXP_NAME}/${RUN_TIMESTAMP}"
-export CHECKPOINT_INTERVAL=500                     # match eval interval for async eval
+export CHECKPOINT_INTERVAL=5000                     # save checkpoint interval
 
 # ── Debug flags ──
 export DEBUG_ZERO_RESIDUAL=false                  # true = residual forced to 0 (base policy eval)

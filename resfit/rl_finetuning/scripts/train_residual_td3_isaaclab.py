@@ -99,6 +99,7 @@ parser.add_argument("--success_threshold", type=float, default=None, help="Cube 
 parser.add_argument("--cube_perturb_range", type=float, default=None, help="Cube XY position perturbation range in meters")
 parser.add_argument("--cube_perturb_table_path", type=str, default=None, help="Path to JSON cube perturbation table")
 parser.add_argument("--random_cube_perturb", action="store_true", help="Randomize cube XY+yaw on each episode reset during training")
+parser.add_argument("--resume_checkpoint", type=str, default=None, help="Path to checkpoint to resume from (loads weights only, not optimizer)")
 parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", "dense", "dense_clipped"], help="Reward type")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -1203,6 +1204,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         vlm_latent_dim=vlm_latent_dim,
     )
 
+    # Resume from checkpoint (weights only — fresh optimizers for new training)
+    if args_cli.resume_checkpoint:
+        _log(f"Resuming from checkpoint: {args_cli.resume_checkpoint}")
+        ckpt = torch.load(args_cli.resume_checkpoint, map_location=cfg.device)
+        agent.load_checkpoint_compat(ckpt)
+        # Also load vlm_projector if available
+        if "vlm_projector" in ckpt and ckpt["vlm_projector"] is not None and agent.vlm_projector is not None:
+            agent.vlm_projector.load_state_dict(ckpt["vlm_projector"])
+            _log("  vlm_projector loaded from checkpoint")
+        _log("  Weights loaded (fresh optimizers)")
+
     run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
     if getattr(cfg.wandb, "name", None):
         run_name = f"{cfg.wandb.name}__{run_name}"
@@ -2065,6 +2077,7 @@ def _save_checkpoint(agent: QAgent, path: Path):
         "encoder_opt": agent.encoder_opt.state_dict(),
         "actor_opt": agent.actor_opt.state_dict(),
         "critic_opt": agent.critic_opt.state_dict(),
+        "vlm_projector": agent.vlm_projector.state_dict() if agent.vlm_projector is not None else None,
     }, str(path))
     _log(f"Checkpoint saved: {path}")
 

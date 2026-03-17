@@ -261,8 +261,8 @@ class IfaceEnvWrapper:
         cube_perturb_range: float = 0.0,
         cube_perturb_table_path: str | None = None,
         random_cube_perturb: bool = False,
-        random_cube_xy_range: float = 0.10,
-        random_cube_yaw_range_deg: float = 15.0,
+        random_cube_xy_range: float = 0.05,   # ±5cm (reduced from ±10cm)
+        random_cube_yaw_range_deg: float = 10.0,  # ±10° (reduced from ±15°)
         reward_type: str = "sparse",  # "sparse", "dense", "dense_clipped"
     ):
         self.sim = sim

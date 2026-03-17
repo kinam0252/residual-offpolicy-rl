@@ -86,6 +86,7 @@ exec ./isaaclab.sh -p /home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl/resfit
   --wandb_log_every_steps ${WANDB_LOG_EVERY} \\
   --output_dir "${OUTPUT_DIR}" \\
   --device "${DEVICE}" \\
+  ${RESUME_CHECKPOINT:+--resume_checkpoint "${RESUME_CHECKPOINT}"} \\
   ${OPT_FLAGS}
 HEREDOC_VARS
 chmod +x "${LAUNCHER}"
