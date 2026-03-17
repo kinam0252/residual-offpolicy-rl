@@ -32,6 +32,7 @@ OPT_FLAGS=""
 [[ "${EVAL_SAVE_VIDEO}" == "true" ]] && OPT_FLAGS+=" --eval_save_video"
 [[ "${DEBUG_ZERO_RESIDUAL}" == "true" ]] && OPT_FLAGS+=" --debug_zero_residual"
 [[ "${DISABLE_EVAL}" == "true" ]] && OPT_FLAGS+=" --disable_eval"
+[[ "${RANDOM_CUBE_PERTURB}" == "true" ]] && OPT_FLAGS+=" --random_cube_perturb"
 
 # ── Write launcher script (avoids all quoting issues with docker exec) ──
 LAUNCHER="${OUTPUT_DIR}/_launch.sh"

@@ -98,6 +98,7 @@ parser.add_argument("--offline_data_dir", type=str, default=None, help="Path to 
 parser.add_argument("--success_threshold", type=float, default=None, help="Cube lift success threshold in meters")
 parser.add_argument("--cube_perturb_range", type=float, default=None, help="Cube XY position perturbation range in meters")
 parser.add_argument("--cube_perturb_table_path", type=str, default=None, help="Path to JSON cube perturbation table")
+parser.add_argument("--random_cube_perturb", action="store_true", help="Randomize cube XY+yaw on each episode reset during training")
 parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", "dense", "dense_clipped"], help="Reward type")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -1154,6 +1155,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         success_threshold=float(getattr(ecfg, 'success_threshold', 0.005)),
         cube_perturb_range=float(getattr(ecfg, 'cube_perturb_range', 0.0)),
         cube_perturb_table_path=getattr(ecfg, 'cube_perturb_table_path', None),
+        random_cube_perturb=bool(getattr(args_cli, 'random_cube_perturb', False)),
         reward_type=str(getattr(ecfg, 'reward_type', 'dense_clipped')),
     )
     eval_env = env  # same sim context, switch active_env_ids for eval

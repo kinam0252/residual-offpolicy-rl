@@ -260,12 +260,18 @@ class IfaceEnvWrapper:
         success_threshold: float = 0.005,
         cube_perturb_range: float = 0.0,
         cube_perturb_table_path: str | None = None,
+        random_cube_perturb: bool = False,
+        random_cube_xy_range: float = 0.10,
+        random_cube_yaw_range_deg: float = 15.0,
         reward_type: str = "sparse",  # "sparse", "dense", "dense_clipped"
     ):
         self.sim = sim
         self.csv_dir = Path(csv_dir).expanduser().resolve()
         self.reward_type = reward_type
         self.language_override = language_override
+        self.random_cube_perturb = random_cube_perturb
+        self.random_cube_xy_range = random_cube_xy_range
+        self.random_cube_yaw_range_deg = random_cube_yaw_range_deg
         self.task_description = task_description
         self.target_action_fps = target_action_fps
         self.rot_clamp_rad = rot_clamp_rad
@@ -304,6 +310,8 @@ class IfaceEnvWrapper:
                 self._cube_offsets[eid, 0] = dx * cube_perturb_range
                 self._cube_offsets[eid, 1] = dy * cube_perturb_range
             print(f"[IfaceEnvWrapper] Using unit perturbation table * {cube_perturb_range}m")
+        if self.random_cube_perturb:
+            print(f"[IfaceEnvWrapper] Random cube perturbation ENABLED: XY=±{self.random_cube_xy_range*100:.0f}cm, Yaw=±{self.random_cube_yaw_range_deg:.0f}°")
         N = num_envs
 
         # ── Build scene ──
@@ -473,12 +481,27 @@ class IfaceEnvWrapper:
         # Apply fixed per-env cube XY offsets
         obj_pos_w[:, 0] += self._cube_offsets[:, 0]
         obj_pos_w[:, 1] += self._cube_offsets[:, 1]
+        # Random perturbation on reset() too (warmup gets diverse positions)
+        if self.random_cube_perturb:
+            for eid in range(N):
+                rand_dx = (torch.rand(1, device=self.device).item() * 2 - 1) * self.random_cube_xy_range
+                rand_dy = (torch.rand(1, device=self.device).item() * 2 - 1) * self.random_cube_xy_range
+                obj_pos_w[eid, 0] += rand_dx
+                obj_pos_w[eid, 1] += rand_dy
+            print(f"[RandomPerturb] reset(): applied random XY to {N} envs")
         default_rot = self.cube.data.default_root_state[0, 3:7].cpu().numpy()
-        yaw_quat = _yaw_to_quat_wxyz(float(obj[3]))
-        base_r = Rotation.from_quat([default_rot[1], default_rot[2], default_rot[3], default_rot[0]])
-        yaw_r = Rotation.from_quat([yaw_quat[1], yaw_quat[2], yaw_quat[3], yaw_quat[0]])
-        cq = (yaw_r * base_r).as_quat()
-        obj_quat_w = torch.tensor([[cq[3], cq[0], cq[1], cq[2]]], device=self.device, dtype=torch.float32).repeat(N, 1)
+        base_yaw = float(obj[3])
+        obj_quat_list = []
+        for eid in range(N):
+            yaw = base_yaw
+            if self.random_cube_perturb:
+                yaw += (np.random.rand() * 2 - 1) * np.deg2rad(self.random_cube_yaw_range_deg)
+            yaw_quat = _yaw_to_quat_wxyz(yaw)
+            base_r = Rotation.from_quat([default_rot[1], default_rot[2], default_rot[3], default_rot[0]])
+            yaw_r = Rotation.from_quat([yaw_quat[1], yaw_quat[2], yaw_quat[3], yaw_quat[0]])
+            cq = (yaw_r * base_r).as_quat()
+            obj_quat_list.append(torch.tensor([cq[3], cq[0], cq[1], cq[2]], device=self.device, dtype=torch.float32))
+        obj_quat_w = torch.stack(obj_quat_list)
         self.cube.write_root_pose_to_sim(torch.cat([obj_pos_w, obj_quat_w], dim=-1), env_ids=self._env_ids_gpu)
 
         # Settle
@@ -577,12 +600,31 @@ class IfaceEnvWrapper:
         for i, eid in enumerate(eids):
             obj_pos_w[i, 0] += self._cube_offsets[eid, 0]
             obj_pos_w[i, 1] += self._cube_offsets[eid, 1]
+            # Random perturbation: add random XY offset + random yaw on each reset
+            if self.random_cube_perturb:
+                rand_dx = (torch.rand(1, device=self.device).item() * 2 - 1) * self.random_cube_xy_range
+                rand_dy = (torch.rand(1, device=self.device).item() * 2 - 1) * self.random_cube_xy_range
+                obj_pos_w[i, 0] += rand_dx
+                obj_pos_w[i, 1] += rand_dy
+                if not hasattr(self, '_random_perturb_log_count'):
+                    self._random_perturb_log_count = 0
+                if self._random_perturb_log_count < 5:
+                    print(f"[RandomPerturb] env={eid} dx={rand_dx:+.3f} dy={rand_dy:+.3f}")
+                    self._random_perturb_log_count += 1
         default_rot = self.cube.data.default_root_state[0, 3:7].cpu().numpy()
-        yaw_quat = _yaw_to_quat_wxyz(float(obj[3]))
-        base_r = Rotation.from_quat([default_rot[1], default_rot[2], default_rot[3], default_rot[0]])
-        yaw_r = Rotation.from_quat([yaw_quat[1], yaw_quat[2], yaw_quat[3], yaw_quat[0]])
-        cq = (yaw_r * base_r).as_quat()
-        obj_quat_w = torch.tensor([[cq[3], cq[0], cq[1], cq[2]]], device=self.device, dtype=torch.float32).repeat(N_reset, 1)
+        # Per-env yaw: base yaw from CSV + optional random yaw
+        base_yaw = float(obj[3])
+        obj_quat_list = []
+        for i, eid in enumerate(eids):
+            yaw = base_yaw
+            if self.random_cube_perturb:
+                yaw += (np.random.rand() * 2 - 1) * np.deg2rad(self.random_cube_yaw_range_deg)
+            yaw_quat = _yaw_to_quat_wxyz(yaw)
+            base_r = Rotation.from_quat([default_rot[1], default_rot[2], default_rot[3], default_rot[0]])
+            yaw_r = Rotation.from_quat([yaw_quat[1], yaw_quat[2], yaw_quat[3], yaw_quat[0]])
+            cq = (yaw_r * base_r).as_quat()
+            obj_quat_list.append(torch.tensor([cq[3], cq[0], cq[1], cq[2]], device=self.device, dtype=torch.float32))
+        obj_quat_w = torch.stack(obj_quat_list)
         self.cube.write_root_pose_to_sim(torch.cat([obj_pos_w, obj_quat_w], dim=-1), env_ids=eid_tensor)
 
         # Settle (short — fewer steps than full reset since sim is already warm)

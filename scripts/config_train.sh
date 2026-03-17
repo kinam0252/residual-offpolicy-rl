@@ -6,9 +6,9 @@
 # ═══════════════════════════════════════════════════════════════════
 
 # ── Experiment name / tags ──
-export EXP_NAME="pickMushroom_resid_v17_vlm"             # wandb run name
+export EXP_NAME="pickMushroom_resid_v18_long_random"     # wandb run name
 export EXP_GROUP="multi_env"                       # wandb group
-export EXP_NOTES="v17: VLM latent 2048D, projector in critic_opt, L2=10, 10D+contact, offline=0.5"
+export EXP_NOTES="v18: 200K steps, random cube XY+yaw, VLM 2048D, L2=10, offline=0.5"
 export SEED=42
 
 # ── W&B ──
@@ -31,7 +31,7 @@ export GROOT_POLICY_DEVICE="cuda:0"
 export LANGUAGE_OVERRIDE="pick up mushroom"
 
 # ── Algorithm ──
-export TOTAL_TIMESTEPS=50000                      # total training steps
+export TOTAL_TIMESTEPS=200000                     # 4x longer training
 export LEARNING_STARTS=10000                      # warmup steps (1 env, base policy)
 export CRITIC_WARMUP_STEPS=5000                    # critic-only updates
 export BATCH_SIZE=256
@@ -45,6 +45,7 @@ export REWARD_TYPE=dense_clipped                  # sparse, dense, dense_clipped
 export CUBE_PERTURB_RANGE=0.05                    # cube XY perturbation range (meters)
 export CUBE_PERTURB_TABLE="/home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl/configs/cube_perturb_table.json"
 export RANDOM_ACTION_NOISE_SCALE=0.0              # warmup noise scale (0=pure base policy)
+export RANDOM_CUBE_PERTURB=true                   # randomize cube XY(±10cm) + yaw(±15°) each episode
 
 # ── Exploration noise ──
 export STDDEV_MAX=0.05                            # exploration noise (start)
