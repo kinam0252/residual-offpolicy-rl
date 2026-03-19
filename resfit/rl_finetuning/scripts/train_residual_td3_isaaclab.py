@@ -101,6 +101,9 @@ parser.add_argument("--cube_perturb_table_path", type=str, default=None, help="P
 parser.add_argument("--random_cube_perturb", action="store_true", help="Randomize cube XY+yaw on each episode reset during training")
 parser.add_argument("--resume_checkpoint", type=str, default=None, help="Path to checkpoint to resume from (loads weights only, not optimizer)")
 parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", "dense", "dense_clipped"], help="Reward type")
+parser.add_argument("--critic_hidden_dim", type=int, default=None, help="Critic MLP hidden dim (default 1024)")
+parser.add_argument("--vlm_projected_dim", type=int, default=None, help="VLM projector output dim (default 256)")
+parser.add_argument("--phase_probe_path", type=str, default=None, help="Path to pre-trained phase probe .pt (frozen linear 2048->3)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -279,6 +282,9 @@ exec ./isaaclab.sh -p {eval_script} \\
         # Pass custom_env_dir so eval uses same cube snapshot as training
         _custom_env_dir = str(checkpoint_dir.parent / "custom_env")
         launcher_content = launcher_content.rstrip() + f' \\\n  --custom_env_dir "{_custom_env_dir}"'
+        # Pass phase_probe_path if it was used in training
+        if hasattr(self, '_phase_probe_path') and self._phase_probe_path:
+            launcher_content = launcher_content.rstrip() + f' \\\n  --phase_probe_path "{self._phase_probe_path}"'
         launcher_content += "\n"
         launcher_path.write_text(launcher_content)
         launcher_path.chmod(0o755)
@@ -1204,15 +1210,15 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         vlm_latent_dim=vlm_latent_dim,
     )
 
+    # Load frozen phase probe (must be before resume_checkpoint to set correct weights)
+    if args_cli.phase_probe_path and agent.vlm_projector is not None:
+        agent.load_phase_probe(args_cli.phase_probe_path)
+
     # Resume from checkpoint (weights only — fresh optimizers for new training)
     if args_cli.resume_checkpoint:
         _log(f"Resuming from checkpoint: {args_cli.resume_checkpoint}")
         ckpt = torch.load(args_cli.resume_checkpoint, map_location=cfg.device)
-        agent.load_checkpoint_compat(ckpt)
-        # Also load vlm_projector if available
-        if "vlm_projector" in ckpt and ckpt["vlm_projector"] is not None and agent.vlm_projector is not None:
-            agent.vlm_projector.load_state_dict(ckpt["vlm_projector"])
-            _log("  vlm_projector loaded from checkpoint")
+        agent.load_checkpoint_compat(ckpt)  # loads encoders, actor, critic, targets, vlm_projector
         _log("  Weights loaded (fresh optimizers)")
 
     run_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_isaaclab_residual_td3_seed{cfg.seed}"
@@ -1351,6 +1357,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     async_eval: AsyncEvaluator | None = None
     if _inline_eval_disabled:
         async_eval = AsyncEvaluator(cfg)
+        async_eval._phase_probe_path = getattr(args_cli, 'phase_probe_path', None)
         async_eval_results_dir = outputs_dir / "async_eval_results"
         # Eval logs to its own wandb run (same project) — sharing a single run causes timeout/conflicts
         _wandb_run_id = None
@@ -1771,7 +1778,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 st = obs["observation.state"][eid].detach().cpu().numpy()
                 rw = reward[eid].item()
                 _log(f"[DEBUG train step={global_step} env={eid}]")
-                _log(f"  state(9D): [{st[0]:.3f}, {st[1]:.3f}, {st[2]:.3f}, {st[3]:.3f}, ...] (eef_pos+quat)")
+                _log(f"  state({st.shape[0]}D): [{st[0]:.3f}, {st[1]:.3f}, {st[2]:.3f}, {st[3]:.3f}, ...] (eef_pos+quat)")
                 _log(f"  base_action: [{ba[0]:.4f}, {ba[1]:.4f}, {ba[2]:.4f}, {ba[3]:.4f}, {ba[4]:.4f}, {ba[5]:.4f}, {ba[6]:.4f}]")
                 _log(f"  residual:    [{ra[0]:.4f}, {ra[1]:.4f}, {ra[2]:.4f}, {ra[3]:.4f}, {ra[4]:.4f}, {ra[5]:.4f}, {ra[6]:.4f}]")
                 _log(f"  combined:    [{sa[0]:.4f}, {sa[1]:.4f}, {sa[2]:.4f}, {sa[3]:.4f}, {sa[4]:.4f}, {sa[5]:.4f}, {sa[6]:.4f}]")
@@ -1801,6 +1808,30 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                     vlm_nz = (vlm.abs() > 1e-8).sum().item()
                     vlm_norm = vlm.norm().item()
                     _log(f"  vlm_latent: dim={vlm.shape[0]} nonzero={vlm_nz}/{vlm.shape[0]} norm={vlm_norm:.2f}")
+                    # Phase probe debug: show predicted vs GT phase
+                    if agent.vlm_projector is not None:
+                        import torch as _t
+                        with _t.no_grad():
+                            logits = agent.vlm_projector(vlm.unsqueeze(0).to(device))
+                            probs = _t.softmax(logits, dim=-1).squeeze(0).cpu().numpy()
+                        phase_names = ["approach", "grasp", "lift"]
+                        pred_phase = phase_names[probs.argmax()]
+                        # GT phase from env debug info
+                        gt_phase = "?"
+                        if debug_info is not None:
+                            ch_m = debug_info['cube_height'][eid].item()
+                            fc_d = debug_info.get('finger_cube_dist', {})
+                            fc_val = fc_d[eid].item() if hasattr(fc_d, '__getitem__') and eid < len(fc_d) else 1.0
+                            hc_val = debug_info['has_contact'][eid].item() if 'has_contact' in debug_info else 0.0
+                            if ch_m >= 0.005:
+                                gt_phase = "lift"
+                            elif fc_val < 0.05 or hc_val > 0.5:
+                                gt_phase = "grasp"
+                            else:
+                                gt_phase = "approach"
+                        match_str = "✓" if pred_phase == gt_phase else "✗"
+                        _log(f"  phase_probe: [{probs[0]:.3f}, {probs[1]:.3f}, {probs[2]:.3f}] "
+                             f"pred={pred_phase} gt={gt_phase} {match_str}")
 
         # ── Strict assertions on EVERY step (not just debug logs) ──
         # Check base+res=combined for ALL valid transitions using exact match
@@ -2065,9 +2096,10 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
 
 def _save_checkpoint(agent: QAgent, path: Path):
-    """Save agent state dict to disk."""
+    """Save agent state dict to disk (atomic write to avoid race with eval reader)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(".pt.tmp")
     torch.save({
         "encoders": agent.encoders.state_dict(),
         "actor": agent.actor.state_dict(),
@@ -2078,7 +2110,8 @@ def _save_checkpoint(agent: QAgent, path: Path):
         "actor_opt": agent.actor_opt.state_dict(),
         "critic_opt": agent.critic_opt.state_dict(),
         "vlm_projector": agent.vlm_projector.state_dict() if agent.vlm_projector is not None else None,
-    }, str(path))
+    }, str(tmp_path))
+    tmp_path.rename(path)  # atomic on same filesystem
     _log(f"Checkpoint saved: {path}")
 
 
@@ -2282,6 +2315,10 @@ if __name__ == "__main__":
         cfg.isaaclab_env.cube_perturb_table_path = args_cli.cube_perturb_table_path
     if args_cli.reward_type is not None:
         cfg.isaaclab_env.reward_type = args_cli.reward_type
+    if args_cli.critic_hidden_dim is not None:
+        cfg.agent.critic.hidden_dim = args_cli.critic_hidden_dim
+    if args_cli.vlm_projected_dim is not None:
+        cfg.agent.vlm_projected_dim = args_cli.vlm_projected_dim
     if args_cli.offline_data_dir is not None:
         if cfg.offline_data is None:
             from resfit.rl_finetuning.config.residual_td3_isaaclab import IsaacLabOfflineDataConfig

@@ -27,6 +27,7 @@ parser.add_argument("--language_override", type=str, default="pick up mushroom")
 parser.add_argument("--max_episode_steps", type=int, default=1000)
 parser.add_argument("--success_threshold", type=float, default=0.03)
 parser.add_argument("--output_dir", type=str, required=True)
+parser.add_argument("--phase_probe_path", type=str, default=None, help="Path to frozen phase probe .pt")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -126,12 +127,17 @@ def main():
         clip_q_target_to_reward_range=True,
         actor=ActorConfig(action_scale=0.1, actor_last_layer_init_scale=0.0, action_l2_reg_weight=10.0),
     )
+    use_phase_probe = bool(getattr(args_cli, 'phase_probe_path', None))
     agent = QAgent(
         obs_shape=(img_c, img_h, img_w), prop_shape=(lowdim_dim,),
         action_dim=action_dim, rl_cameras=image_keys, cfg=agent_cfg, residual_actor=True,
         vlm_latent_dim=vlm_latent_dim,
+        phase_probe_mode=use_phase_probe,
     )
     agent.to(device)
+    # Load frozen phase probe if provided
+    if getattr(args_cli, 'phase_probe_path', None) and agent.vlm_projector is not None:
+        agent.load_phase_probe(args_cli.phase_probe_path)
     ckpt = torch.load(args_cli.checkpoint, map_location=device)
     agent.load_checkpoint_compat(ckpt)
     agent.eval()
@@ -170,11 +176,16 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(res)
         ep_rewards += reward[:N].to(device)
         cube_z = env.cube.data.root_state_w[:N, 2].to(device)
-        cube_lifted = ((cube_z - env._initial_cube_z[:N].to(device)) >= args_cli.success_threshold).float()
+        cube_height = cube_z - env._initial_cube_z[:N].to(device)
+        debug = getattr(env, "_last_step_debug", None)
+        # Success requires BOTH height threshold AND contact force (matching training)
+        has_contact = torch.zeros(N, device=device)
+        if debug is not None and "has_contact" in debug:
+            has_contact = debug["has_contact"].to(device)
+        cube_lifted = ((cube_height >= args_cli.success_threshold) & (has_contact > 0.5)).float()
         ep_success = torch.max(ep_success, cube_lifted)
 
         if step % 5 == 0 and hasattr(env, "get_frame"):
-            debug = getattr(env, "_last_step_debug", None)
             for eid in range(N):
                 frame = env.get_frame(eid, camera="front", size=FRAME_SIZE)
                 cf = debug["contact_force"][eid].item() if debug else 0.0

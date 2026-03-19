@@ -34,3 +34,4 @@ workspace/__pycache__/
 workspace/logs/
 *.mp4
 workspace/
+*.pt

@@ -43,6 +43,7 @@ parser.add_argument("--wandb_entity", type=str, default=None)
 parser.add_argument("--wandb_run_id", type=str, default=None, help="Resume wandb run ID (for shared train/eval logging)")
 parser.add_argument("--wandb_name", type=str, default=None)
 parser.add_argument("--seed", type=int, default=42)
+parser.add_argument("--phase_probe_path", type=str, default=None, help="Path to frozen phase probe .pt")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -101,7 +102,7 @@ def make_eval_env(args):
     return env
 
 
-def make_agent(env, device):
+def make_agent(env, device, args=None):
     """Construct a QAgent with the same architecture as training."""
     image_keys = [
         "observation.images.front",
@@ -133,6 +134,10 @@ def make_agent(env, device):
         residual_actor=True,
         vlm_latent_dim=vlm_latent_dim,
     )
+    # Load frozen phase probe if provided
+    if args is not None and getattr(args, 'phase_probe_path', None) and agent.vlm_projector is not None:
+        agent.load_phase_probe(args.phase_probe_path)
+
     return agent, image_keys
 
 
@@ -350,7 +355,7 @@ def main():
     _log(f"Eval env ready: {env.num_envs} envs")
 
     _log("Creating agent...")
-    agent, image_keys = make_agent(env, device)
+    agent, image_keys = make_agent(env, device, args=args_cli)
     agent.to(device)
     _log("Agent ready")
 
@@ -431,14 +436,14 @@ def main():
                 evaluated_steps.add(step)
 
                 _log(f"New checkpoint at step {step}: {ckpt_path}")
-                load_checkpoint(agent, ckpt_path, device)
 
                 t0 = time.time()
                 try:
+                    load_checkpoint(agent, ckpt_path, device)
                     metrics, video_path = run_eval(env, agent, device, image_keys, args_cli, step, output_dir)
                 except Exception as e:
                     import traceback
-                    _log(f"ERROR in run_eval at step {step}: {e}")
+                    _log(f"ERROR in eval at step {step}: {e}")
                     _log(traceback.format_exc())
                     # Write .done so we don't retry
                     (output_dir / f"eval_step{step}.done").write_text(f"FAILED: {e}")

@@ -111,6 +111,8 @@ class QAgentConfig:
     critic: CriticConfig = field(default_factory=lambda: CriticConfig())
     actor: ActorConfig = field(default_factory=lambda: ActorConfig())
 
+    # VLM projector output dimension (default 256 for 2-layer MLP)
+    vlm_projected_dim: int = 256
     # gradient clipping
     critic_grad_clip_norm: float = 1.0
     actor_grad_clip_norm: float = 1.0

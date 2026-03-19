@@ -87,6 +87,7 @@ exec ./isaaclab.sh -p /home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl/resfit
   --output_dir "${OUTPUT_DIR}" \\
   --device "${DEVICE}" \\
   ${RESUME_CHECKPOINT:+--resume_checkpoint "${RESUME_CHECKPOINT}"} \\
+  ${PHASE_PROBE_PATH:+--phase_probe_path "${PHASE_PROBE_PATH}"} \\
   ${OPT_FLAGS}
 HEREDOC_VARS
 chmod +x "${LAUNCHER}"

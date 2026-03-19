@@ -28,6 +28,7 @@ class QAgent(nn.Module):
         cfg: QAgentConfig,
         residual_actor: bool = False,
         vlm_latent_dim: int = 0,
+        phase_probe_mode: bool = True,
     ):
         """Initialize the Q-agent.
 
@@ -76,16 +77,26 @@ class QAgent(nn.Module):
         assert len(prop_shape) == 1
         prop_dim = prop_shape[0] if cfg.use_prop else 0
 
-        # VLM latent projector (2048D raw → 128D projected)
+        # VLM latent handling: two modes
+        #   1. phase_probe_mode=True (default): frozen probe 2048→3 softmax
+        #   2. phase_probe_mode=False: learnable projector 2048→128 (v20a compat)
         self.vlm_latent_dim = vlm_latent_dim
-        self.vlm_projected_dim = 128 if vlm_latent_dim > 0 else 0
+        self.phase_probe_mode = phase_probe_mode
         if vlm_latent_dim > 0:
-            self.vlm_projector = nn.Sequential(
-                nn.Linear(vlm_latent_dim, 128),
-                nn.LayerNorm(128),
-            )
-            print(f"VLM projector: {vlm_latent_dim}D -> 128D (learnable, in critic_opt)")
+            if phase_probe_mode:
+                self.vlm_projected_dim = 3
+                self.vlm_projector = nn.Linear(vlm_latent_dim, 3, bias=True)
+                self.vlm_projector.requires_grad_(False)
+                print(f"VLM phase probe: {vlm_latent_dim}D -> 3D softmax (frozen)")
+            else:
+                self.vlm_projected_dim = 128
+                self.vlm_projector = nn.Sequential(
+                    nn.Linear(vlm_latent_dim, 128),
+                    nn.LayerNorm(128),
+                )
+                print(f"VLM projector: {vlm_latent_dim}D -> 128D (learnable, in critic_opt)")
         else:
+            self.vlm_projected_dim = 0
             self.vlm_projector = None
 
         # Total prop dim seen by actor/critic includes projected VLM
@@ -125,9 +136,9 @@ class QAgent(nn.Module):
 
         # Create optimizers (PyTorch will ignore frozen parameters)
         self.encoder_opt = torch.optim.AdamW(self.encoders.parameters(), lr=self.cfg.critic_lr)
-        # Include VLM projector in critic optimizer (if present)
         critic_params = list(self.critic.parameters())
-        if self.vlm_projector is not None:
+        # Include learnable VLM projector in critic_opt (only if not frozen phase probe)
+        if self.vlm_projector is not None and not self.phase_probe_mode:
             critic_params += list(self.vlm_projector.parameters())
         self.critic_opt = torch.optim.AdamW(critic_params, lr=self.cfg.critic_lr)
         self.actor_opt = torch.optim.AdamW(self.actor.parameters(), lr=self.cfg.actor_lr)
@@ -206,7 +217,11 @@ class QAgent(nn.Module):
         return padded_keys
 
     def load_checkpoint_compat(self, ckpt: dict):
-        """Load a full agent checkpoint with backward-compatible prop_dim handling."""
+        """Load a full agent checkpoint with backward-compatible prop_dim handling.
+
+        Loads: encoders, actor, actor_target, critic, critic_target, vlm_projector.
+        Skips optimizer state dicts (fresh optimizers for resumed training).
+        """
         padded = []
         padded += self.load_state_dict_compat(self.encoders, ckpt["encoders"])
         padded += self.load_state_dict_compat(self.actor, ckpt["actor"])
@@ -214,11 +229,48 @@ class QAgent(nn.Module):
         padded += self.load_state_dict_compat(self.critic_target, ckpt["critic_target"])
         if "actor_target" in ckpt:
             padded += self.load_state_dict_compat(self.actor_target, ckpt["actor_target"])
+
+        # ── VLM projector / phase probe ──
+        # If vlm_projector is frozen (phase probe), skip loading from checkpoint
+        if self.vlm_projector is not None and not any(p.requires_grad for p in self.vlm_projector.parameters()):
+            print("[load_checkpoint_compat] vlm_projector is frozen (phase probe) — keeping current weights")
+        elif self.vlm_projector is not None and "vlm_projector" in ckpt and ckpt["vlm_projector"] is not None:
+            old_sd = ckpt["vlm_projector"]
+            new_sd = self.vlm_projector.state_dict()
+            shapes_match = all(
+                k in old_sd and old_sd[k].shape == new_sd[k].shape
+                for k in new_sd
+            )
+            if shapes_match:
+                self.vlm_projector.load_state_dict(old_sd)
+                print("[load_checkpoint_compat] vlm_projector loaded (exact match)")
+            else:
+                print("[load_checkpoint_compat] vlm_projector shape mismatch — using fresh init")
+                for k in new_sd:
+                    old_shape = list(old_sd[k].shape) if k in old_sd else "MISSING"
+                    print(f"  {k}: old={old_shape} new={list(new_sd[k].shape)}")
+        elif self.vlm_projector is not None:
+            print("[load_checkpoint_compat] WARNING: vlm_projector exists but not in checkpoint — using fresh init")
+
         if padded:
             print(f"[load_checkpoint_compat] Total padded layers: {len(padded)}")
         else:
             print("[load_checkpoint_compat] Exact match — no padding needed")
         return padded
+
+    def load_phase_probe(self, probe_path: str):
+        """Load pre-trained phase probe weights and freeze them."""
+        import torch as _torch
+        probe_ckpt = _torch.load(probe_path, map_location="cpu")
+        assert self.vlm_projector is not None, "VLM projector not initialized"
+        assert probe_ckpt["weight"].shape == (3, self.vlm_latent_dim), (
+            f"Probe weight shape {probe_ckpt['weight'].shape} != expected (3, {self.vlm_latent_dim})"
+        )
+        self.vlm_projector.weight.data.copy_(probe_ckpt["weight"])
+        self.vlm_projector.bias.data.copy_(probe_ckpt["bias"])
+        self.vlm_projector.requires_grad_(False)
+        print(f"[QAgent] Phase probe loaded from {probe_path} "
+              f"(accuracy={probe_ckpt.get('test_accuracy', 0)*100:.1f}%, frozen)")
 
     def _build_encoders(self, obs_shape):
         """Constructs and returns an ``nn.ModuleList`` with one encoder per
@@ -278,11 +330,10 @@ class QAgent(nn.Module):
         self.cfg.act_method = original_method
 
     def _prepare_prop(self, obs: dict[str, torch.Tensor], detach_vlm: bool = False) -> None:
-        """Prepare observation.state by concatenating projected VLM latent (if available).
+        """Prepare observation.state by concatenating VLM output (if available).
 
-        Modifies obs in-place: obs["observation.state"] becomes [state_10D, vlm_128D].
-        For actor: detach_vlm=True (VLM projector gradient only from critic).
-        For critic: detach_vlm=False.
+        Phase probe mode: frozen probe → softmax 3D, always detached.
+        Learnable mode: 128D projector, detach controlled by detach_vlm.
         """
         if self.vlm_projector is not None and "observation.vlm_latent" in obs:
             vlm_raw = obs["observation.vlm_latent"]  # (B, 2048)
@@ -294,16 +345,21 @@ class QAgent(nn.Module):
             assert not torch.isnan(vlm_raw).any(), "_prepare_prop: NaN in vlm_latent input"
             assert not torch.isinf(vlm_raw).any(), "_prepare_prop: Inf in vlm_latent input"
 
-            vlm_proj = self.vlm_projector(vlm_raw)  # (B, 128)
+            if self.phase_probe_mode:
+                with torch.no_grad():
+                    logits = self.vlm_projector(vlm_raw)  # (B, 3)
+                    vlm_proj = torch.softmax(logits, dim=-1)  # (B, 3)
+                vlm_proj = vlm_proj.detach()
+            else:
+                vlm_proj = self.vlm_projector(vlm_raw)  # (B, 128)
+                if detach_vlm:
+                    vlm_proj = vlm_proj.detach()
 
             # ── VLM projection validation ──
             assert vlm_proj.shape == (vlm_raw.shape[0], self.vlm_projected_dim), (
                 f"_prepare_prop: vlm_proj shape {vlm_proj.shape} != expected (B, {self.vlm_projected_dim})"
             )
-            assert not torch.isnan(vlm_proj).any(), "_prepare_prop: NaN in vlm_proj output (projector broken?)"
 
-            if detach_vlm:
-                vlm_proj = vlm_proj.detach()
             state = obs["observation.state"]  # (B, 10)
 
             # ── State pre-concat validation ──
@@ -312,7 +368,7 @@ class QAgent(nn.Module):
                 f"Was _prepare_prop called twice?"
             )
 
-            obs["observation.state"] = torch.cat([state, vlm_proj], dim=-1)  # (B, 138)
+            obs["observation.state"] = torch.cat([state, vlm_proj], dim=-1)  # (B, 10+vlm_projected_dim)
 
             # ── State post-concat validation ──
             assert obs["observation.state"].shape[-1] == 10 + self.vlm_projected_dim, (
