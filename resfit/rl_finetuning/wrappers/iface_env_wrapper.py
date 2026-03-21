@@ -264,10 +264,13 @@ class IfaceEnvWrapper:
         random_cube_xy_range: float = 0.05,   # ±5cm (reduced from ±10cm)
         random_cube_yaw_range_deg: float = 10.0,  # ±10° (reduced from ±15°)
         reward_type: str = "sparse",  # "sparse", "dense", "dense_clipped"
+        use_depth: bool = False,  # Enable depth observations for residual actor
+        depth_norm_path: str | None = None,  # Path to depth_normalization.json
     ):
         self.sim = sim
         self.csv_dir = Path(csv_dir).expanduser().resolve()
         self.reward_type = reward_type
+        self.use_depth = use_depth
         self.language_override = language_override
         self.random_cube_perturb = random_cube_perturb
         self.random_cube_xy_range = random_cube_xy_range
@@ -316,6 +319,12 @@ class IfaceEnvWrapper:
 
         # ── Build scene ──
         scene_cfg = _make_scene_cfg(num_envs=N, env_spacing=2.0)
+        # Patch cameras to also output depth if use_depth mode
+        if self.use_depth:
+            scene_cfg.camera_front.data_types = ["rgb", "depth"]
+            scene_cfg.camera_back.data_types = ["rgb", "depth"]
+            scene_cfg.camera_wrist.data_types = ["rgb", "depth"]
+            print("[IfaceEnvWrapper] Depth mode ON: cameras patched to output RGB + Depth")
         self.scene = InteractiveScene(scene_cfg)
         sim.reset()
 
@@ -390,6 +399,7 @@ class IfaceEnvWrapper:
         self.right_finger_pos_w = torch.zeros((N, 3), device=self.device)
         self.finger_pos = torch.zeros((N, 3), device=self.device)
         self._ever_contacted = torch.zeros(N, device=self.device, dtype=torch.bool)  # cumulative contact flag
+        self._contact_history = torch.zeros(N, 3, device=self.device, dtype=torch.bool)  # last 3 steps contact state
 
         # ── Gym spaces (match original IsaacLabVecEnvWrapper: 34D state) ──
         # state = [dof_pos_scaled(9), dof_vel_scaled(9), cogact_reference(7), contact_obs(3), ee_xyzrpy(6)]
@@ -405,6 +415,25 @@ class IfaceEnvWrapper:
             "observation.images.back": gym.spaces.Box(low=0, high=255, shape=(N, 3, 84, 84), dtype=np.uint8),
             "observation.images.wrist": gym.spaces.Box(low=0, high=255, shape=(N, 3, 84, 84), dtype=np.uint8),
         }
+        # Depth observations (1-channel, float32 [0,1] normalized)
+        if self.use_depth:
+            obs_spaces["observation.depth.front"] = gym.spaces.Box(low=0, high=1, shape=(N, 1, 84, 84), dtype=np.float32)
+            obs_spaces["observation.depth.wrist"] = gym.spaces.Box(low=0, high=1, shape=(N, 1, 84, 84), dtype=np.float32)
+            # Load depth normalization config
+            self._depth_norm = {"front": {"min": 0.3, "max": 1.8}, "wrist": {"min": 0.03, "max": 0.4}}
+            if depth_norm_path and Path(depth_norm_path).exists():
+                import json as _json
+                self._depth_norm = _json.loads(Path(depth_norm_path).read_text())
+                print(f"[IfaceEnvWrapper] Depth normalization loaded from {depth_norm_path}:")
+                for k, v in self._depth_norm.items():
+                    if isinstance(v, dict):
+                        print(f"  {k}: min={v.get('min')}, max={v.get('max')}")
+            else:
+                print(f"[IfaceEnvWrapper] Using default depth normalization (no file at {depth_norm_path}):")
+                for k, v in self._depth_norm.items():
+                    if isinstance(v, dict):
+                        print(f"  {k}: min={v.get('min')}, max={v.get('max')}")
+            print(f"[IfaceEnvWrapper] Depth obs spaces added: observation.depth.front, observation.depth.wrist")
         self.observation_space = gym.spaces.Dict(obs_spaces)
 
         # ── VLM latent cache (updated on GR00T inference, cached between) ──
@@ -519,6 +548,7 @@ class IfaceEnvWrapper:
         # Reset per-env internal state
         self._step_count[:] = 0
         self._ever_contacted[:] = False
+        self._contact_history[:] = False
         self._joint_pos_des = q_init_t.clone()
         for eid in range(N):
             self._steps_since_infer[eid] = self.inference_interval  # trigger inference on first step
@@ -656,6 +686,7 @@ class IfaceEnvWrapper:
         for eid in eids:
             self._step_count[eid] = 0  # reset step counter per-env
             self._ever_contacted[eid] = False  # reset contact flag per-env
+            self._contact_history[eid] = False
 
     # ─────────────────────────────────────────────────────────────────
     # step
@@ -805,24 +836,37 @@ class IfaceEnvWrapper:
         cube_height = cube_z - self._initial_cube_z
 
         # Contact force check: gripper must be exerting force on something
-        # (prevents reward hacking from cube bouncing off fallen robot)
         finger_contact_force = self.left_finger_force[:N].norm(dim=-1)  # (N,)
         has_contact = (finger_contact_force > 0.1).float()  # threshold 0.1N
+
+        # ── Smoothed contact state (3-step window) ──
+        # HELD = contact was ON for at least 1 of the last 3 steps (including current)
+        # LOST = contact was OFF for all of the last 3 steps
+        # This smooths over brief 1-2 frame contact sensor gaps.
+        self._contact_history = torch.cat([
+            self._contact_history[:, 1:],  # shift left (drop oldest)
+            (has_contact > 0.5).unsqueeze(1),  # append current
+        ], dim=1)  # (N, 3)
+        contact_smoothed = self._contact_history.any(dim=1)  # True if any of last 3 had contact
+
+        # Track ever-contacted and lifting for diagnostics
+        self._ever_contacted = self._ever_contacted | (has_contact > 0.5)
 
         if self.reward_type == "sparse":
             # Binary: 1.0 if success, 0.0 otherwise (original ResFit)
             rewards = (cube_height >= self.success_threshold).float()
 
         elif self.reward_type == "dense":
-            # 4-stage shaped reward (distance + grasp + height + success)
+            # 4-stage shaped reward (distance + contact + height + success)
+            # grasp_gate = has_contact (simplified: contact force is the most reliable signal)
             finger_cube_dist = torch.norm(self.finger_pos - cube_pos, dim=-1)
             distance_reward = (1.0 - torch.tanh(finger_cube_dist / 0.1)) * 1.0
             left_finger_cube_dist = torch.norm(self.left_finger_pos_w - cube_pos, dim=-1)
             right_finger_cube_dist = torch.norm(self.right_finger_pos_w - cube_pos, dim=-1)
             both_close = ((left_finger_cube_dist < 0.05) & (right_finger_cube_dist < 0.05)).float()
             finger_joint_pos = self.robot.data.joint_pos[:N][:, self.hand_joint_ids[0]]
-            gripper_closing = (finger_joint_pos < 0.03).float()
-            grasp_gate = both_close * gripper_closing * has_contact
+            gripper_closing = (finger_joint_pos < 0.04).float()
+            grasp_gate = has_contact  # contact force alone gates reward
             contact_reward = grasp_gate * 2.0
             height_reward = (cube_height > 0.005).float() * torch.tanh(cube_height / 0.1) * 100.0 * grasp_gate
             success_reward = (cube_height >= self.success_threshold).float() * 100.0 * grasp_gate
@@ -830,14 +874,15 @@ class IfaceEnvWrapper:
 
         elif self.reward_type == "dense_clipped":
             # Dense shaped reward, normalized to [0, 1] range via clipping
+            # grasp_gate = has_contact (simplified: contact force is the most reliable signal)
             finger_cube_dist = torch.norm(self.finger_pos - cube_pos, dim=-1)
             distance_reward = (1.0 - torch.tanh(finger_cube_dist / 0.1)) * 0.1
             left_finger_cube_dist = torch.norm(self.left_finger_pos_w - cube_pos, dim=-1)
             right_finger_cube_dist = torch.norm(self.right_finger_pos_w - cube_pos, dim=-1)
             both_close = ((left_finger_cube_dist < 0.05) & (right_finger_cube_dist < 0.05)).float()
             finger_joint_pos = self.robot.data.joint_pos[:N][:, self.hand_joint_ids[0]]
-            gripper_closing = (finger_joint_pos < 0.03).float()
-            grasp_gate = both_close * gripper_closing * has_contact
+            gripper_closing = (finger_joint_pos < 0.04).float()
+            grasp_gate = has_contact  # contact force alone gates reward
             contact_reward = grasp_gate * 0.2
             height_reward = (cube_height > 0.005).float() * torch.tanh(cube_height / 0.1) * 0.5 * grasp_gate
             success_reward = (cube_height >= self.success_threshold).float() * 1.0 * grasp_gate
@@ -849,8 +894,10 @@ class IfaceEnvWrapper:
         self._step_count += 1
 
         obs = self._build_obs()
-        # Early termination: cube lifted AND gripper has contact force
-        success_flag = (cube_height >= self.success_threshold) & (has_contact > 0.5)
+        # Success: cube lifted to threshold AND smoothed contact is ON
+        # contact_smoothed uses 3-step window: HELD if any contact in last 3 steps
+        sustained_contact = contact_smoothed  # for debug overlay
+        success_flag = (cube_height >= self.success_threshold) & contact_smoothed
         time_limit = (self._step_count >= self.max_episode_steps)
         terminated = success_flag | time_limit
         truncated = torch.zeros(N, device=self.device, dtype=torch.bool)
@@ -870,8 +917,23 @@ class IfaceEnvWrapper:
             "reward": rewards.detach().cpu(),                            # (N,)
             "finger_cube_dist": finger_cube_dist.detach().cpu(),         # (N,)
             "success": success_flag.detach().cpu().float(),              # (N,)
+            "sustained_contact": sustained_contact.detach().cpu().float(),  # (N,) smoothed 3-step
+            "contact_lost_during_lift": (~contact_smoothed).detach().cpu().float(),  # (N,) inverse of smoothed
             "step": self._step_count,
         }
+        # Store per-component rewards for debug visualization (dense / dense_clipped)
+        if self.reward_type in ("dense", "dense_clipped"):
+            self._last_step_debug["reward_distance"] = distance_reward.detach().cpu()
+            self._last_step_debug["reward_contact"] = contact_reward.detach().cpu()
+            self._last_step_debug["reward_height"] = height_reward.detach().cpu()
+            self._last_step_debug["reward_success"] = success_reward.detach().cpu()
+            self._last_step_debug["grasp_gate"] = grasp_gate.detach().cpu()
+            # Sub-components of grasp_gate for diagnosis
+            self._last_step_debug["both_close"] = both_close.detach().cpu()
+            self._last_step_debug["gripper_closing"] = gripper_closing.detach().cpu()
+            self._last_step_debug["left_finger_cube_dist"] = left_finger_cube_dist.detach().cpu()
+            self._last_step_debug["right_finger_cube_dist"] = right_finger_cube_dist.detach().cpu()
+            self._last_step_debug["finger_joint_pos"] = finger_joint_pos.detach().cpu()
 
         return obs, rewards, terminated, truncated, info
 
@@ -1081,6 +1143,37 @@ class IfaceEnvWrapper:
             "observation.images.wrist": torch.tensor(np.stack(wrist_frames), device=self.device, dtype=torch.uint8),
         }
 
+        # Depth observations (normalized [0,1] float32)
+        if self.use_depth:
+            import torch.nn.functional as F
+            for cam_name, cam_obj in [("front", self.camera_front), ("wrist", self.camera_wrist)]:
+                depth_raw = cam_obj.data.output["depth"][:N]  # (N, H, W, 1) or (N, H, W)
+                if depth_raw.dim() == 3:
+                    depth_raw = depth_raw.unsqueeze(-1)  # (N, H, W, 1)
+                # NCHW for interpolate
+                depth_nchw = depth_raw.permute(0, 3, 1, 2).float()  # (N, 1, H, W)
+                depth_nchw = F.interpolate(depth_nchw, size=(84, 84), mode="bilinear", align_corners=False)
+                # Fixed normalization
+                d_min = self._depth_norm[cam_name]["min"]
+                d_max = self._depth_norm[cam_name]["max"]
+                depth_nchw = torch.clamp(depth_nchw, d_min, d_max)
+                depth_nchw = (depth_nchw - d_min) / max(d_max - d_min, 1e-6)
+                # Handle NaN/Inf
+                depth_nchw = torch.nan_to_num(depth_nchw, nan=0.0, posinf=1.0, neginf=0.0)
+                obs[f"observation.depth.{cam_name}"] = depth_nchw  # (N, 1, 84, 84) float32 [0,1]
+
+                # Depth debug logging (first 5 calls only)
+                if not hasattr(self, '_depth_debug_count'):
+                    self._depth_debug_count = 0
+                if self._depth_debug_count < 5:
+                    print(f"[DEPTH DEBUG] {cam_name}: raw_shape={depth_raw.shape} "
+                          f"raw_range=[{depth_raw.min().item():.4f}, {depth_raw.max().item():.4f}] "
+                          f"norm_range=[{depth_nchw.min().item():.4f}, {depth_nchw.max().item():.4f}] "
+                          f"d_min={d_min} d_max={d_max} "
+                          f"output_shape={depth_nchw.shape} dtype={depth_nchw.dtype}")
+            if self._depth_debug_count < 5:
+                self._depth_debug_count += 1
+
         # ── Strict output validation ──
         assert obs["observation.state"].shape == (N, self._state_dim), (
             f"_build_obs: state shape {obs['observation.state'].shape} != expected ({N}, {self._state_dim})"
@@ -1108,6 +1201,147 @@ class IfaceEnvWrapper:
         f = _rgb_to_uint8(cam.data.output["rgb"], env_id)
         ft = torch.from_numpy(f).permute(2, 0, 1).float().unsqueeze(0)
         ft = F.interpolate(ft, size=size, mode="bilinear", align_corners=False)
+        return ft.squeeze(0).permute(1, 2, 0).to(torch.uint8).numpy()
+
+    def get_debug_frame(self, env_id: int = 0, size: tuple[int, int] = (256, 400)) -> np.ndarray:
+        """Get a frame with reward component overlays for debugging.
+
+        Returns (H, W, 3) uint8 frame with text showing:
+        - Each reward component value
+        - Contact force, cube height, finger-cube distance
+        - Success status and sustained contact flag
+        """
+        import cv2
+
+        frame = self.get_frame(env_id, camera="front", size=size)
+        debug = getattr(self, "_last_step_debug", None)
+        if debug is None:
+            return frame
+
+        frame = frame.copy()
+        eid = env_id
+        h, w = frame.shape[:2]
+
+        # Gather values
+        step = int(debug["step"][eid].item()) if hasattr(debug["step"], '__getitem__') else int(debug["step"])
+        cf = debug["contact_force"][eid].item()
+        hc = debug["has_contact"][eid].item()
+        ch = debug["cube_height"][eid].item()
+        fd = debug["finger_cube_dist"][eid].item()
+        rw = debug["reward"][eid].item()
+        succ = debug["success"][eid].item()
+        sustained = debug.get("sustained_contact", None)
+        cl = debug.get("contact_lost_during_lift", None)
+
+        # Reward components (dense_clipped only)
+        rd = debug.get("reward_distance", None)
+        rc = debug.get("reward_contact", None)
+        rh = debug.get("reward_height", None)
+        rs = debug.get("reward_success", None)
+        gg = debug.get("grasp_gate", None)
+
+        # Semi-transparent black panel at top
+        panel_h = 185 if rd is not None else 95
+        overlay = frame.copy()
+        cv2.rectangle(overlay, (0, 0), (w, panel_h), (0, 0, 0), -1)
+        cv2.addWeighted(overlay, 0.65, frame, 0.35, 0, frame)
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fs = 0.38
+        c_white = (255, 255, 255)
+        c_green = (0, 255, 0)
+        c_red = (0, 0, 255)
+        c_yellow = (0, 255, 255)
+        c_cyan = (255, 255, 0)
+        c_gray = (160, 160, 160)
+
+        y = 14
+        dy = 13  # line spacing
+
+        # Line 1: step + total reward + success
+        succ_str = "SUCCESS" if succ > 0.5 else ""
+        cv2.putText(frame, f"step={step:>4d}  R={rw:.4f}", (4, y), font, fs, c_white, 1)
+        if succ_str:
+            cv2.putText(frame, succ_str, (w - 65, y), font, fs, c_green, 1)
+        y += dy
+
+        # Line 2: cube height + finger dist
+        cv2.putText(frame, f"h={ch*100:.1f}cm  dist={fd*100:.1f}cm", (4, y), font, fs, c_white, 1)
+        y += dy
+
+        # Line 3: contact force + flags
+        hc_str = "ON" if hc > 0.5 else "OFF"
+        hc_color = c_green if hc > 0.5 else c_red
+        cv2.putText(frame, f"cf={cf:.1f}N contact=", (4, y), font, fs, c_white, 1)
+        cv2.putText(frame, hc_str, (125, y), font, fs, hc_color, 1)
+        if cl is not None:
+            cl_val = cl[eid].item()
+            if cl_val > 0.5:
+                cv2.putText(frame, "LOST!", (160, y), font, fs, c_red, 1)
+            elif sustained is not None and sustained[eid].item() > 0.5 and ch >= 0.005:
+                cv2.putText(frame, "HELD", (160, y), font, fs, c_green, 1)
+        y += dy
+
+        # Line 4: grasp gate + sub-components
+        if gg is not None:
+            gg_val = gg[eid].item()
+            bc = debug.get("both_close", None)
+            gc = debug.get("gripper_closing", None)
+            lfd = debug.get("left_finger_cube_dist", None)
+            rfd = debug.get("right_finger_cube_dist", None)
+            fjp = debug.get("finger_joint_pos", None)
+
+            gg_color = c_green if gg_val > 0.5 else c_red
+            cv2.putText(frame, f"gate={gg_val:.0f}", (4, y), font, fs, gg_color, 1)
+
+            # Show which sub-components pass/fail
+            parts = []
+            if bc is not None:
+                bc_v = bc[eid].item()
+                parts.append(("close", bc_v > 0.5))
+            if gc is not None:
+                gc_v = gc[eid].item()
+                parts.append(("grip", gc_v > 0.5))
+            parts.append(("contact", hc > 0.5))
+
+            x_off = 65
+            for pname, pval in parts:
+                pc = c_green if pval else c_red
+                cv2.putText(frame, f"{pname}={'Y' if pval else 'N'}", (x_off, y), font, 0.32, pc, 1)
+                x_off += 62
+            y += dy
+
+            # Line 5: finger distances detail
+            if lfd is not None and rfd is not None:
+                ld = lfd[eid].item() * 100  # cm
+                rd_v = rfd[eid].item() * 100
+                fj = fjp[eid].item() if fjp is not None else -1
+                cv2.putText(frame, f"Lfing={ld:.1f}cm Rfing={rd_v:.1f}cm grip_q={fj:.3f}", (4, y), font, 0.32, c_gray, 1)
+                y += dy
+
+        # Lines: reward components (dense_clipped)
+        if rd is not None:
+            components = [
+                ("R_dist", rd[eid].item(), 0.1, c_cyan),
+                ("R_contact", rc[eid].item(), 0.2, c_yellow),
+                ("R_height", rh[eid].item(), 0.5, c_green),
+                ("R_success", rs[eid].item(), 1.0, c_green),
+            ]
+            for name, val, maxv, color in components:
+                bar_x = 120
+                bar_w = int((val / max(maxv, 1e-6)) * (w - bar_x - 10))
+                bar_w = max(0, min(bar_w, w - bar_x - 10))
+                cv2.putText(frame, f"{name:>10s}={val:.4f}", (4, y), font, fs, color, 1)
+                cv2.rectangle(frame, (bar_x, y - 8), (bar_x + bar_w, y), color, -1)
+                y += dy
+
+        # Bottom bar: reward as color (green=high, red=low)
+        bar_h = 6
+        rw_clamp = max(0.0, min(1.0, rw))
+        bar_color = (0, int(rw_clamp * 255), int((1 - rw_clamp) * 255))
+        cv2.rectangle(frame, (0, h - bar_h), (w, h), bar_color, -1)
+
+        return frame
         return ft.squeeze(0).permute(1, 2, 0).to(torch.uint8).numpy()
 
     def get_all_frames_batch(self, camera: str = "front", size: tuple[int, int] = (256, 320)) -> list[np.ndarray]:

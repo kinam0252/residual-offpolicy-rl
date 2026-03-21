@@ -44,6 +44,11 @@ parser.add_argument("--wandb_run_id", type=str, default=None, help="Resume wandb
 parser.add_argument("--wandb_name", type=str, default=None)
 parser.add_argument("--seed", type=int, default=42)
 parser.add_argument("--phase_probe_path", type=str, default=None, help="Path to frozen phase probe .pt")
+parser.add_argument("--debug_timing", action="store_true", help="Enable detailed per-step timing logs")
+parser.add_argument("--action_scale", type=float, default=None, help="Residual action scale (must match training)")
+parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", "dense", "dense_clipped"], help="Reward type (must match training)")
+parser.add_argument("--use_depth", action="store_true", help="Enable depth observations for residual actor")
+parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -98,17 +103,24 @@ def make_eval_env(args):
         num_envs=args.num_envs,
         success_threshold=args.success_threshold,
         cube_perturb_table_path=getattr(args, 'cube_perturb_table_path', None),
+        reward_type=getattr(args, 'reward_type', None) or 'dense_clipped',
+        use_depth=getattr(args, 'use_depth', False),
+        depth_norm_path=getattr(args, 'depth_norm_path', None),
     )
     return env
 
 
 def make_agent(env, device, args=None):
     """Construct a QAgent with the same architecture as training."""
-    image_keys = [
-        "observation.images.front",
-        "observation.images.back",
-        "observation.images.wrist",
-    ]
+    _use_depth = getattr(args, 'use_depth', False)
+    if _use_depth:
+        image_keys = ["observation.depth.front", "observation.depth.wrist"]
+    else:
+        image_keys = [
+            "observation.images.front",
+            "observation.images.back",
+            "observation.images.wrist",
+        ]
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
     action_dim = env.action_space.shape[1]
@@ -119,7 +131,7 @@ def make_agent(env, device, args=None):
         critic_lr=1e-4,
         critic_target_tau=0.005,
         actor=ActorConfig(
-            action_scale=0.05,
+            action_scale=getattr(args, 'action_scale', None) or 0.1,
             actor_last_layer_init_scale=0.0,
             action_l2_reg_weight=1.0,
         ),
@@ -194,11 +206,93 @@ def _annotate_frame(
     return img
 
 
+def _update_eval_graph(output_dir):
+    """Read all eval_step*.json and eval_step*.done files, plot success rate & return graphs."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        output_dir = Path(output_dir)
+        results = []
+        for f in sorted(output_dir.glob("eval_step*.json")) + sorted(output_dir.glob("eval_step*.done")):
+            if f.suffix == ".done":
+                # Try to read done files that have JSON content (renamed from .json)
+                try:
+                    data = json.loads(f.read_text())
+                    if "step" in data and "eval/success_rate" in data:
+                        results.append(data)
+                except Exception:
+                    continue
+            else:
+                try:
+                    data = json.loads(f.read_text())
+                    if "step" in data:
+                        results.append(data)
+                except Exception:
+                    continue
+
+        if len(results) < 2:
+            return
+
+        results.sort(key=lambda x: x["step"])
+        steps = [r["step"] for r in results]
+        succs = [r.get("eval/success_rate", 0) * 100 for r in results]
+        returns = [r.get("eval/mean_return", 0) for r in results]
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+
+        ax1.plot(steps, succs, marker="o", markersize=4, linewidth=1.5, color="#2ca02c")
+        ax1.fill_between(steps, succs, alpha=0.15, color="#2ca02c")
+        ax1.set_xlabel("Training Step")
+        ax1.set_ylabel("Success Rate (%)")
+        ax1.set_title("Eval Success Rate")
+        ax1.set_ylim(0, 105)
+        ax1.grid(True, alpha=0.3)
+        ax1.axhline(y=70, color="gray", linestyle="--", alpha=0.4, label="base ~70%")
+        if succs:
+            avg = sum(succs) / len(succs)
+            ax1.axhline(y=avg, color="#2ca02c", linestyle=":", alpha=0.5)
+            ax1.text(steps[-1] * 0.6, avg + 2, "avg={:.1f}%".format(avg), fontsize=9, color="#2ca02c")
+
+        ax2.plot(steps, returns, marker="s", markersize=4, linewidth=1.5, color="#1f77b4")
+        ax2.fill_between(steps, returns, alpha=0.15, color="#1f77b4")
+        ax2.set_xlabel("Training Step")
+        ax2.set_ylabel("Mean Return")
+        ax2.set_title("Eval Mean Return")
+        ax2.grid(True, alpha=0.3)
+
+        # Try to read config for title
+        config_path = output_dir.parent / "training_config.json"
+        title = ""
+        if config_path.exists():
+            try:
+                cfg_data = json.loads(config_path.read_text())
+                agent_cfg = cfg_data.get("agent", {})
+                title = "lr={} scale={} clip_q={}".format(
+                    agent_cfg.get("actor_lr", "?"),
+                    agent_cfg.get("action_scale", "?"),
+                    agent_cfg.get("clip_q_target_to_reward_range", "?"))
+            except Exception:
+                pass
+        if title:
+            fig.suptitle(title, fontsize=12, fontweight="bold")
+
+        fig.tight_layout()
+        graph_path = output_dir / "eval_progress.png"
+        fig.savefig(str(graph_path), dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        _log(f"Eval graph updated: {graph_path} ({len(results)} evals)")
+    except Exception as e:
+        _log(f"[WARN] Failed to update eval graph: {e}")
+
+
 def run_eval(env, agent, device, image_keys, args, global_step, output_dir):
     """Run batched evaluation and return metrics dict."""
     N = env.num_envs
     max_ep_steps = args.max_episode_steps
     success_threshold = args.success_threshold
+    _debug_timing = getattr(args, 'debug_timing', False)
 
     env.reset()
 
@@ -223,21 +317,52 @@ def run_eval(env, agent, device, image_keys, args, global_step, output_dir):
 
     frames_per_env = [[] for _ in range(N)] if args.save_video else []
 
+    # Timing accumulators for debug mode
+    _t_agent_act = 0.0
+    _t_env_step = 0.0
+    _t_metrics = 0.0
+    _t_video = 0.0
+    _t_loop_start = time.time()
+
     while ep_steps < max_ep_steps:
+        _t0 = time.time()
         with torch.no_grad(), utils.eval_mode(agent):
             residual_action = agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
+        _t1 = time.time()
+        _t_agent_act += _t1 - _t0
 
         next_obs, reward, terminated, truncated, info = env.step(residual_action)
+        _t2 = time.time()
+        _t_env_step += _t2 - _t1
 
         ep_rewards += reward[:N].to(device)
 
         cube_z = env.cube.data.root_state_w[:N, 2].to(device)
         cube_init_z = env._initial_cube_z[:N].to(device)
         cube_lifted = ((cube_z - cube_init_z) >= success_threshold).float()
+        # Use contact-gated success (same as training)
+        _contact_smoothed = getattr(env, '_contact_history', None)
+        if _contact_smoothed is not None:
+            _has_contact_gate = _contact_smoothed.any(dim=1).float().to(device)  # (N,)
+            cube_lifted = cube_lifted * _has_contact_gate
         just_succeeded = (cube_lifted > 0) & (ep_ever_success == 0)
         ep_first_success_step[just_succeeded] = ep_steps
         ep_ever_success = torch.max(ep_ever_success, cube_lifted)
         ep_steps += 1
+        _t3 = time.time()
+        _t_metrics += _t3 - _t2
+
+        # Debug timing log (first 10 steps, then every 100)
+        if _debug_timing and (ep_steps <= 10 or ep_steps % 100 == 0):
+            elapsed = time.time() - _t_loop_start
+            ms_act = (_t1 - _t0) * 1000
+            ms_env = (_t2 - _t1) * 1000
+            ms_met = (_t3 - _t2) * 1000
+            ms_total = (ms_act + ms_env + ms_met)
+            _log(f"[TIMING] step={ep_steps}/{max_ep_steps} "
+                 f"agent_act={ms_act:.1f}ms env_step={ms_env:.1f}ms metrics={ms_met:.1f}ms "
+                 f"total={ms_total:.1f}ms elapsed={elapsed:.1f}s "
+                 f"avg_sps={ep_steps/max(elapsed,0.001):.1f}")
 
         if args.save_video and ep_steps % 10 == 0 and hasattr(env, "get_all_frames_batch"):
             debug = getattr(env, "_last_step_debug", None)
@@ -263,6 +388,17 @@ def run_eval(env, agent, device, image_keys, args, global_step, output_dir):
 
     successes = ep_ever_success.cpu().numpy()
     returns = ep_rewards.cpu().numpy()
+
+    # Debug timing summary
+    if _debug_timing:
+        _t_total = time.time() - _t_loop_start
+        _log(f"[TIMING SUMMARY] step={global_step} total={_t_total:.1f}s steps={ep_steps} "
+             f"sps={ep_steps/max(_t_total,0.001):.1f}")
+        _log(f"  agent_act:  {_t_agent_act:.1f}s ({_t_agent_act/_t_total*100:.1f}%)")
+        _log(f"  env_step:   {_t_env_step:.1f}s ({_t_env_step/_t_total*100:.1f}%)")
+        _log(f"  metrics:    {_t_metrics:.1f}s ({_t_metrics/_t_total*100:.1f}%)")
+        _log(f"  video:      {_t_video:.1f}s ({_t_video/_t_total*100:.1f}%)")
+        _log(f"  other:      {_t_total - _t_agent_act - _t_env_step - _t_metrics - _t_video:.1f}s")
 
     succ_mask = successes > 0
     mean_succ_len = float(np.mean(ep_first_success_step.cpu().numpy()[succ_mask])) if succ_mask.any() else 0.0
@@ -412,7 +548,7 @@ def main():
                 continue
 
             # Evaluate: all checkpoints or newest only
-            new_ckpts.sort(key=lambda x: x[0], reverse=True)  # newest first
+            new_ckpts.sort(key=lambda x: x[0], reverse=False)  # oldest (lowest step) first
 
             # Filter to specific steps if requested
             if args_cli.eval_steps:
@@ -467,6 +603,9 @@ def main():
                 metrics_path = output_dir / f"eval_step{step}.json"
                 with open(metrics_path, "w") as f:
                     json.dump({"step": step, **metrics, "eval_time_sec": eval_time}, f, indent=2)
+
+                # Update eval progress graph
+                _update_eval_graph(output_dir)
 
             # After eval_all with specific steps, exit
             if args_cli.eval_steps:

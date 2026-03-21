@@ -241,8 +241,12 @@ def populate_offline_buffer_from_csv(
             }
 
             for obs_key in image_keys:
-                curr_obs[obs_key] = view_frames[obs_key][t]        # (3, H, W) uint8
-                next_obs[obs_key] = view_frames[obs_key][t + 1]
+                if obs_key.startswith("observation.depth."):
+                    curr_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
+                    next_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
+                else:
+                    curr_obs[obs_key] = view_frames[obs_key][t]        # (3, H, W) uint8
+                    next_obs[obs_key] = view_frames[obs_key][t + 1]
 
             td = TensorDict(
                 {

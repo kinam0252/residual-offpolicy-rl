@@ -277,18 +277,30 @@ class QAgent(nn.Module):
         camera based on ``self.cfg.enc_type``.  All encoders share the same
         architecture and therefore yield feature tensors with identical
         dimensions which simplifies feature fusion downstream.
+
+        For depth cameras (name starts with 'observation.depth'), uses
+        in_channels=1 instead of the default obs_shape channels.
         """
 
         encoders = nn.ModuleList()
 
-        for _ in self.rl_cameras:
+        for cam_name in self.rl_cameras:
+            # Determine obs_shape for this camera
+            if cam_name.startswith("observation.depth"):
+                cam_obs_shape = (1, obs_shape[1], obs_shape[2])  # 1-channel depth
+                print(f"[QAgent] Building DEPTH encoder for '{cam_name}': shape={cam_obs_shape}")
+            else:
+                cam_obs_shape = obs_shape  # original (3, H, W) RGB
+                print(f"[QAgent] Building RGB encoder for '{cam_name}': shape={cam_obs_shape}")
+
             if self.cfg.enc_type == "vit":
-                enc = VitEncoder(obs_shape, self.cfg.vit).to(self.cfg.device)
+                enc = VitEncoder(cam_obs_shape, self.cfg.vit).to(self.cfg.device)
             else:
                 raise AssertionError(f"Unknown encoder type {self.cfg.enc_type}.")
 
             encoders.append(enc)
 
+        print(f"[QAgent] Total encoders: {len(encoders)}, rl_cameras: {self.rl_cameras}")
         return encoders
 
     def add_bc_policy(self, bc_policy):
@@ -390,7 +402,8 @@ class QAgent(nn.Module):
             assert cam_name in obs, f"QAgent._encode: missing camera '{cam_name}' in obs. Available keys: {list(obs.keys())}"
             img = obs[cam_name]
             assert img.dim() == 4, f"QAgent._encode: camera '{cam_name}' must be 4D (B,C,H,W), got {img.shape}"
-            assert img.shape[1] == 3, f"QAgent._encode: camera '{cam_name}' C must be 3, got {img.shape[1]}"
+            expected_c = 1 if cam_name.startswith("observation.depth") else 3
+            assert img.shape[1] == expected_c, f"QAgent._encode: camera '{cam_name}' C must be {expected_c}, got {img.shape[1]}"
         assert "observation.state" in obs, "QAgent._encode: missing 'observation.state'"
         assert "observation.base_action" in obs, "QAgent._encode: missing 'observation.base_action'"
 
@@ -399,13 +412,23 @@ class QAgent(nn.Module):
             data = obs[cam_name]
 
             if data.dtype == torch.uint8:
-                # uint8 → float32 in [0,1]
+                # uint8 → float32 in [0,1] (RGB images)
                 data = data.float().div_(255.0)
             else:
                 data = data.float()
+                # Depth images are already normalized [0,1] — skip /255
 
-            if augment:
+            if augment and data.shape[1] == 3:  # only augment RGB, not depth
                 data = self.aug(data)
+
+            # Debug: log first forward pass per camera
+            if not hasattr(self, '_encode_debug_done'):
+                self._encode_debug_done = set()
+            if cam_name not in self._encode_debug_done:
+                print(f"[QAgent._encode] cam='{cam_name}' input: shape={data.shape} "
+                      f"dtype={data.dtype} range=[{data.min().item():.4f}, {data.max().item():.4f}] "
+                      f"encoder_in_channels={self.encoders[cam_idx].obs_shape[0]}")
+                self._encode_debug_done.add(cam_name)
 
             # Forward pass through the *corresponding* encoder
             feat_cam = self.encoders[cam_idx].forward(data, flatten=False)

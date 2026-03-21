@@ -206,8 +206,17 @@ def populate_offline_buffer_from_lerobot_local(
                 next_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
 
             for obs_key in image_keys:
-                curr_obs[obs_key] = view_frames[obs_key][t]
-                next_obs[obs_key] = view_frames[obs_key][t + 1]
+                if obs_key.startswith("observation.depth."):
+                    # Depth images not available in offline data — fill with zeros
+                    # Depth encoder learns exclusively from online rollouts
+                    curr_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
+                    next_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
+                elif obs_key in view_frames:
+                    curr_obs[obs_key] = view_frames[obs_key][t]
+                    next_obs[obs_key] = view_frames[obs_key][t + 1]
+                else:
+                    raise KeyError(f"Offline data missing image key '{obs_key}'. "
+                                   f"Available: {list(view_frames.keys())}")
 
             # Use shaped reward from parquet if available, else fall back to sparse
             if has_shaped_reward:

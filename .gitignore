@@ -4,6 +4,7 @@ __pycache__
 wandb/
 offline_buffer_cache/
 online_buffer_cache/
+buffer_cache/
 bc_run_*
 deps/
 
@@ -35,3 +36,4 @@ workspace/logs/
 *.mp4
 workspace/
 *.pt
+memo/

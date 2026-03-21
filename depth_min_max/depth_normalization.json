@@ -1,0 +1,15 @@
+{
+  "front": {
+    "min": 0.5542010831832885,
+    "max": 1.4946311712265015
+  },
+  "wrist": {
+    "min": 0.05602042198181152,
+    "max": 0.7112445545196533
+  },
+  "back": {
+    "min": 0.7203365623950958,
+    "max": 1.494631290435791
+  },
+  "notes": "Computed from 1000-step rollout with base policy, 2nd/98th percentile"
+}

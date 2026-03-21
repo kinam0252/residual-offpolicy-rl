@@ -10,9 +10,9 @@ from torch.nn.init import trunc_normal_
 
 
 class PatchEmbed1(nn.Module):
-    def __init__(self, embed_dim):
+    def __init__(self, embed_dim, in_channels=3):
         super().__init__()
-        self.conv = nn.Conv2d(3, embed_dim, kernel_size=8, stride=8)
+        self.conv = nn.Conv2d(in_channels, embed_dim, kernel_size=8, stride=8)
 
         self.num_patch = 144  # if input image is 96x96, then num_patch = 144
         self.patch_dim = embed_dim
@@ -24,10 +24,10 @@ class PatchEmbed1(nn.Module):
 
 
 class PatchEmbed2(nn.Module):
-    def __init__(self, embed_dim, use_norm):
+    def __init__(self, embed_dim, use_norm, in_channels=3):
         super().__init__()
         layers = [
-            nn.Conv2d(3, embed_dim, kernel_size=8, stride=4),
+            nn.Conv2d(in_channels, embed_dim, kernel_size=8, stride=4),
             nn.GroupNorm(embed_dim, embed_dim) if use_norm else nn.Identity(),
             nn.ReLU(),
             nn.Conv2d(embed_dim, embed_dim, kernel_size=3, stride=2),
@@ -89,14 +89,14 @@ class TransformerLayer(nn.Module):
 
 
 class MinVit(nn.Module):
-    def __init__(self, embed_style, embed_dim, embed_norm, num_head, depth):
+    def __init__(self, embed_style, embed_dim, embed_norm, num_head, depth, in_channels=3):
         super().__init__()
 
         if embed_style == "embed1":
             raise NotImplementedError("embed1 is not tested")
-            # self.patch_embed = PatchEmbed1(embed_dim)
+            # self.patch_embed = PatchEmbed1(embed_dim, in_channels=in_channels)
         if embed_style == "embed2":
-            self.patch_embed = PatchEmbed2(embed_dim, use_norm=embed_norm)
+            self.patch_embed = PatchEmbed2(embed_dim, use_norm=embed_norm, in_channels=in_channels)
         else:
             raise NotImplementedError(f"Unknown embed style {embed_style}")
 

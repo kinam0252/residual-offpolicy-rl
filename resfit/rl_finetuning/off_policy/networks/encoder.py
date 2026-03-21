@@ -14,13 +14,17 @@ class VitEncoder(nn.Module):
         super().__init__()
         self.obs_shape = obs_shape
         self.cfg = cfg
+        in_channels = obs_shape[0]  # C from (C, H, W)
         self.vit = MinVit(
             embed_style=cfg.embed_style,
             embed_dim=cfg.embed_dim,
             embed_norm=cfg.embed_norm,
             num_head=cfg.num_heads,
             depth=cfg.depth,
+            in_channels=in_channels,
         )
+        if in_channels != 3:
+            print(f"[VitEncoder] Non-standard in_channels={in_channels} (obs_shape={obs_shape})")
 
         self.num_patch = self.vit.num_patches
         self.patch_repr_dim = self.cfg.embed_dim

@@ -77,6 +77,7 @@ parser.add_argument("--save_video", action="store_true")
 parser.add_argument("--eval_save_video", action="store_true", help="Save video in async eval")
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--debug_zero_residual", action="store_true")
+parser.add_argument("--debug_first_episode_video", action="store_true", help="Record first training episode with reward component overlay")
 parser.add_argument("--disable_eval", action="store_true", help="Skip inline eval (use async eval process)")
 parser.add_argument("--heartbeat_interval_sec", type=int, default=20)
 parser.add_argument("--stack_dump_interval_sec", type=int, default=180)
@@ -104,6 +105,11 @@ parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", 
 parser.add_argument("--critic_hidden_dim", type=int, default=None, help="Critic MLP hidden dim (default 1024)")
 parser.add_argument("--vlm_projected_dim", type=int, default=None, help="VLM projector output dim (default 256)")
 parser.add_argument("--phase_probe_path", type=str, default=None, help="Path to pre-trained phase probe .pt (frozen linear 2048->3)")
+parser.add_argument("--no_clip_q", action="store_true", help="Disable Q-target clipping to reward range")
+parser.add_argument("--actor_lr_warmup_steps", type=int, default=None, help="Actor LR warmup steps (0 to full lr)")
+parser.add_argument("--action_scale_anneal_steps", type=int, default=None, help="Anneal action_scale from 0.01 to target over N steps")
+parser.add_argument("--use_depth", action="store_true", help="Enable depth observations for residual actor (sim2real mode)")
+parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -229,7 +235,11 @@ class AsyncEvaluator:
         self._best_success = 0.0
 
     def start(self, checkpoint_dir: Path, results_dir: Path, wandb_run_id: str | None = None):
-        """Launch the async eval subprocess inside the Docker container."""
+        """Launch the async eval subprocess.
+
+        Works in both Docker (isaaclab.sh) and Apptainer (/isaac-sim/python.sh)
+        environments by detecting which runtime is available.
+        """
         self._results_dir = results_dir
         results_dir.mkdir(parents=True, exist_ok=True)
         self._wandb_run_id = wandb_run_id
@@ -240,22 +250,48 @@ class AsyncEvaluator:
         eval_script = str(Path(__file__).parent / "eval_async_isaaclab.py")
         launcher_path = results_dir / "_eval_launcher.sh"
 
-        pythonpath = (
-            "/workspace/isaaclab/workspace/.pydeps_resfit_train"
-            ":/home/t-kinamkim/Repos/VLA_RL/residual-offpolicy-rl"
-            ":/home/t-kinamkim/Repos/VLA_RL/Isaac-GR00T"
-        )
+        # Detect runtime: Apptainer (has /isaac-sim/python.sh) vs Docker (has /workspace/isaaclab/isaaclab.sh)
+        _is_apptainer = Path("/isaac-sim/python.sh").exists()
+        _is_docker = Path("/workspace/isaaclab/isaaclab.sh").exists()
+
+        # Inherit PYTHONPATH from current environment (set by env.sh or Docker)
+        inherited_pythonpath = os.environ.get("PYTHONPATH", "")
         wandb_key = os.environ.get("WANDB_API_KEY", "")
 
-        launcher_content = f"""#!/usr/bin/env bash
+        if _is_apptainer:
+            # Apptainer: we're already inside the container, use /isaac-sim/python.sh directly
+            launcher_content = f"""#!/usr/bin/env bash
 set -e
 export TERM=xterm
 export PYTHONUNBUFFERED=1
-export PYTHONPATH="{pythonpath}"
+export PYTHONPATH="{inherited_pythonpath}"
+export WANDB_API_KEY="{wandb_key}"
+exec /isaac-sim/python.sh {eval_script} \\
+  --headless --enable_cameras \\"""
+        elif _is_docker:
+            # Docker: use isaaclab.sh launcher
+            launcher_content = f"""#!/usr/bin/env bash
+set -e
+export TERM=xterm
+export PYTHONUNBUFFERED=1
+export PYTHONPATH="{inherited_pythonpath}"
 export WANDB_API_KEY="{wandb_key}"
 cd /workspace/isaaclab
 exec ./isaaclab.sh -p {eval_script} \\
-  --headless --enable_cameras \\
+  --headless --enable_cameras \\"""
+        else:
+            # Fallback: try python directly (for local dev)
+            _log("[AsyncEval] WARNING: Neither Apptainer nor Docker detected, using sys.executable")
+            launcher_content = f"""#!/usr/bin/env bash
+set -e
+export TERM=xterm
+export PYTHONUNBUFFERED=1
+export PYTHONPATH="{inherited_pythonpath}"
+export WANDB_API_KEY="{wandb_key}"
+exec {sys.executable} {eval_script} \\
+  --headless --enable_cameras \\"""
+
+        launcher_content += f"""
   --checkpoint_dir "{checkpoint_dir}" \\
   --num_envs {int(getattr(self._cfg, 'eval_num_envs', 10))} \\
   --max_episode_steps {int(ecfg.max_episode_steps)} \\
@@ -282,9 +318,20 @@ exec ./isaaclab.sh -p {eval_script} \\
         # Pass custom_env_dir so eval uses same cube snapshot as training
         _custom_env_dir = str(checkpoint_dir.parent / "custom_env")
         launcher_content = launcher_content.rstrip() + f' \\\n  --custom_env_dir "{_custom_env_dir}"'
+        # Pass action_scale so eval uses same scale as training
+        _action_scale = getattr(self._cfg.agent.actor, 'action_scale', 0.1)
+        launcher_content = launcher_content.rstrip() + f' \\\n  --action_scale {_action_scale}'
+        # Pass reward_type so eval uses same reward as training
+        _reward_type = getattr(ecfg, 'reward_type', 'dense_clipped')
+        launcher_content = launcher_content.rstrip() + f' \\\n  --reward_type {_reward_type}'
         # Pass phase_probe_path if it was used in training
         if hasattr(self, '_phase_probe_path') and self._phase_probe_path:
             launcher_content = launcher_content.rstrip() + f' \\\n  --phase_probe_path "{self._phase_probe_path}"'
+        # Pass depth mode if enabled
+        if hasattr(self, '_use_depth') and self._use_depth:
+            launcher_content = launcher_content.rstrip() + ' \\\n  --use_depth'
+            if hasattr(self, '_depth_norm_path') and self._depth_norm_path:
+                launcher_content = launcher_content.rstrip() + f' \\\n  --depth_norm_path "{self._depth_norm_path}"'
         launcher_content += "\n"
         launcher_path.write_text(launcher_content)
         launcher_path.chmod(0o755)
@@ -410,6 +457,101 @@ class TrainingTimer:
 
     def reset(self):
         self.times = defaultdict(list)
+
+
+# ── Phase probe debugging utilities ──
+_PHASE_NAMES = ["approach", "grasp", "lift"]
+
+
+def _compute_gt_phase_from_debug(debug_info: dict, env_id: int) -> int:
+    """Determine ground truth task phase from env debug info.
+
+    Returns 0=approach, 1=grasp, 2=lift.
+    Logic mirrors the phase labeling used to train the probe:
+      - lift:     cube_height >= 0.005m (cube being lifted with contact)
+      - grasp:    finger close to cube (< 5cm) OR has_contact
+      - approach: everything else (moving toward cube)
+    """
+    cube_h = debug_info["cube_height"][env_id].item()
+    has_contact = debug_info["has_contact"][env_id].item() > 0.5
+    finger_dist = debug_info["finger_cube_dist"][env_id].item()
+
+    if cube_h >= 0.005 and has_contact:
+        return 2  # lift
+    elif finger_dist < 0.05 or has_contact:
+        return 1  # grasp
+    else:
+        return 0  # approach
+
+
+def _compute_phase_probe_stats(
+    agent,
+    obs: dict[str, torch.Tensor],
+    debug_info: dict | None,
+    num_envs: int,
+    device: torch.device,
+) -> dict[str, float] | None:
+    """Compute phase probe predictions vs GT for all envs.
+
+    Returns a dict of metrics (accuracy, per-class accuracy, distribution)
+    or None if phase probe is not active.
+    """
+    if agent.vlm_projector is None:
+        return None
+    if "observation.vlm_latent" not in obs:
+        return None
+    if debug_info is None:
+        return None
+
+    vlm_raw = obs["observation.vlm_latent"][:num_envs].detach()  # (N, 2048)
+    with torch.no_grad():
+        logits = agent.vlm_projector(vlm_raw.to(device))  # (N, 3)
+        probs = torch.softmax(logits, dim=-1).cpu()  # (N, 3)
+    pred_phases = probs.argmax(dim=-1).numpy()  # (N,)
+
+    gt_phases = np.array([
+        _compute_gt_phase_from_debug(debug_info, eid)
+        for eid in range(num_envs)
+    ])
+
+    correct = (pred_phases == gt_phases)
+    overall_acc = correct.mean()
+
+    stats: dict[str, float] = {
+        "phase_probe/accuracy": float(overall_acc),
+    }
+
+    # Per-class accuracy & distribution
+    for cls_id, cls_name in enumerate(_PHASE_NAMES):
+        gt_mask = (gt_phases == cls_id)
+        pred_mask = (pred_phases == cls_id)
+        stats[f"phase_probe/gt_{cls_name}_count"] = float(gt_mask.sum())
+        stats[f"phase_probe/pred_{cls_name}_count"] = float(pred_mask.sum())
+        if gt_mask.sum() > 0:
+            stats[f"phase_probe/acc_{cls_name}"] = float(correct[gt_mask].mean())
+        # Mean predicted probability for this class
+        stats[f"phase_probe/mean_prob_{cls_name}"] = float(probs[:, cls_id].mean().item())
+
+    # Confidence: mean max probability
+    stats["phase_probe/mean_confidence"] = float(probs.max(dim=-1).values.mean().item())
+
+    return stats
+
+
+def _format_phase_probe_summary(phase_stats: dict[str, float], num_envs: int) -> str:
+    """Format a one-line console summary of phase probe accuracy."""
+    acc = phase_stats.get("phase_probe/accuracy", 0.0)
+    conf = phase_stats.get("phase_probe/mean_confidence", 0.0)
+    parts = [f"phase_acc={acc*100:.0f}%"]
+    for cls_name in _PHASE_NAMES:
+        gt_n = int(phase_stats.get(f"phase_probe/gt_{cls_name}_count", 0))
+        cls_acc = phase_stats.get(f"phase_probe/acc_{cls_name}", -1)
+        if gt_n > 0:
+            parts.append(f"{cls_name[0].upper()}:{gt_n}({cls_acc*100:.0f}%)")
+        else:
+            parts.append(f"{cls_name[0].upper()}:0")
+    parts.append(f"conf={conf:.2f}")
+    return " ".join(parts)
 
 
 # ── Replay buffer helper ──
@@ -1164,6 +1306,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         cube_perturb_table_path=getattr(ecfg, 'cube_perturb_table_path', None),
         random_cube_perturb=bool(getattr(args_cli, 'random_cube_perturb', False)),
         reward_type=str(getattr(ecfg, 'reward_type', 'dense_clipped')),
+        use_depth=bool(getattr(args_cli, 'use_depth', False)),
+        depth_norm_path=getattr(args_cli, 'depth_norm_path', None),
     )
     eval_env = env  # same sim context, switch active_env_ids for eval
     _set_phase("env_ready")
@@ -1172,6 +1316,11 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     # ── Dimensions ──
     # obs_space shapes have batch dim = scene_num_envs but training uses 1
     image_keys = list(cfg.rl_camera)
+    # If depth mode, replace RGB cameras with depth cameras for residual actor
+    _use_depth = bool(getattr(args_cli, 'use_depth', False))
+    if _use_depth:
+        image_keys = ["observation.depth.front", "observation.depth.wrist"]
+        _log(f"Depth mode: RL cameras = {image_keys}")
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     base_action_dim = env.observation_space["observation.base_action"].shape[1]
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
@@ -1252,7 +1401,57 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
     offline_rb = _make_offline_rb(acfg.buffer_size)
 
-    # ── Populate offline buffer from CSV episodes ──
+    # ══════════════════════════════════════════════════════════════════
+    # Buffer cache setup (shared at repo root, hash-based)
+    # Must be defined before offline + online buffer caching sections.
+    # ══════════════════════════════════════════════════════════════════
+    import hashlib, json as _json
+
+    def _buffer_cache_key(ecfg, acfg, *, extra: dict | None = None):
+        """Build a deterministic hash of buffer-relevant config + model dims.
+
+        Includes environment config, algorithm config, AND model architecture
+        dimensions so that changing input dims (e.g. adding VLM, changing
+        state dim) automatically invalidates the cache.
+        """
+        key_dict = {
+            # ── Environment ──
+            "csv_base_dir": str(ecfg.csv_base_dir),
+            "success_threshold": float(getattr(ecfg, 'success_threshold', 0.005)),
+            "cube_perturb_table_path": str(getattr(ecfg, 'cube_perturb_table_path', '')),
+            "cube_perturb_range": float(getattr(ecfg, 'cube_perturb_range', 0.0)),
+            "num_envs": int(ecfg.num_envs),
+            "max_episode_steps": int(ecfg.max_episode_steps),
+            "reward_type": str(getattr(ecfg, 'reward_type', 'dense_clipped')),
+            # ── Algorithm ──
+            "random_action_noise_scale": float(acfg.random_action_noise_scale),
+            "n_step": int(acfg.n_step),
+            "gamma": float(acfg.gamma),
+            # ── Model architecture (input dims) ──
+            "lowdim_dim": int(lowdim_dim),
+            "vlm_latent_dim": int(vlm_latent_dim),
+            "action_dim": int(action_dim),
+            "image_size": [int(img_h), int(img_w)],
+            "image_keys": sorted(image_keys),
+            "phase_probe_path": str(getattr(args_cli, 'phase_probe_path', '') or ''),
+        }
+        # Include perturbation table content if exists
+        _pt = getattr(ecfg, 'cube_perturb_table_path', None)
+        if _pt and Path(_pt).exists():
+            key_dict["perturb_table_content"] = Path(_pt).read_text()
+        # Merge any extra keys (e.g. offline-specific fields)
+        if extra:
+            key_dict.update(extra)
+        key_str = _json.dumps(key_dict, sort_keys=True)
+        return hashlib.sha256(key_str.encode()).hexdigest()[:16]
+
+    # Shared cache root at repo level (sibling of outputs/)
+    _resrl_root = Path(__file__).resolve().parents[3]  # residual-offpolicy-rl/
+    cache_root = _resrl_root / "buffer_cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    _log(f"Shared buffer cache dir: {cache_root}")
+
+    # ── Populate offline buffer from CSV episodes (with shared cache) ──
     if cfg.offline_data is not None and acfg.offline_fraction > 0.0:
         offline_root = Path(cfg.offline_data.csv_data_dir)
         is_lerobot_local = (offline_root / "data" / "chunk-000").exists() and (offline_root / "videos" / "chunk-000").exists()
@@ -1285,13 +1484,64 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 max_episodes=cfg.offline_data.num_episodes,
             )
 
-        n_offline = _populate_current_offline_rb()
-        n_step_drop_tolerance = max(0, int(acfg.n_step) - 1)
-        expected_min_size = max(0, int(n_offline) - n_step_drop_tolerance)
-        if len(offline_rb) < expected_min_size:
-            offline_rb = _make_offline_rb(n_offline)
+        # Offline cache hash includes data source + model dims
+        _offline_extra = {
+            "offline_data_dir": str(cfg.offline_data.csv_data_dir),
+            "offline_num_episodes": cfg.offline_data.num_episodes,
+            "offline_split": str(getattr(cfg.offline_data, 'split', 'training')),
+            "image_size_h": int(ecfg.image_size_h),
+            "image_size_w": int(ecfg.image_size_w),
+        }
+        offline_cache_hash = _buffer_cache_key(ecfg, acfg, extra=_offline_extra)
+        offline_cache_dir = cache_root / f"offline_{offline_cache_hash}"
+        _loaded_offline_from_cache = False
+
+        if offline_cache_dir.exists() and (offline_cache_dir / "cache_meta.json").exists():
+            try:
+                from resfit.rl_finetuning.utils.hugging_face import optimized_replay_buffer_loads as _ofl
+                ometa = _json.loads((offline_cache_dir / "cache_meta.json").read_text())
+                offline_rb = _make_offline_rb(int(ometa.get("buffer_size", acfg.buffer_size)))
+                _ofl(offline_rb, offline_cache_dir)
+                _loaded_offline_from_cache = True
+                _log(f"Loaded offline cache (hash={offline_cache_hash}): {offline_cache_dir} (size={len(offline_rb)})")
+                _log(f"  Data: {ometa.get('offline_data_dir','?')}, eps={ometa.get('offline_num_episodes','?')}, dims: lowdim={ometa.get('lowdim_dim','?')} vlm={ometa.get('vlm_latent_dim','?')}")
+            except Exception as e:
+                _log(f"Failed to load offline cache {offline_cache_hash}: {e}; re-populating...")
+                import shutil
+                shutil.rmtree(offline_cache_dir, ignore_errors=True)
+                _loaded_offline_from_cache = False
+
+        if not _loaded_offline_from_cache:
             n_offline = _populate_current_offline_rb()
-        _log(f"Offline buffer: {n_offline} transitions, size={len(offline_rb)}")
+            n_step_drop_tolerance = max(0, int(acfg.n_step) - 1)
+            expected_min_size = max(0, int(n_offline) - n_step_drop_tolerance)
+            if len(offline_rb) < expected_min_size:
+                offline_rb = _make_offline_rb(n_offline)
+                n_offline = _populate_current_offline_rb()
+            _log(f"Offline buffer: {n_offline} transitions, size={len(offline_rb)}")
+
+            # Save offline cache
+            try:
+                from resfit.rl_finetuning.utils.hugging_face import optimized_replay_buffer_dumps as _ofd
+                offline_cache_dir.mkdir(parents=True, exist_ok=True)
+                _ofd(offline_rb, offline_cache_dir)
+                offline_meta = {
+                    "hash": offline_cache_hash,
+                    "offline_data_dir": str(cfg.offline_data.csv_data_dir),
+                    "offline_num_episodes": cfg.offline_data.num_episodes,
+                    "buffer_size": len(offline_rb),
+                    "lowdim_dim": int(lowdim_dim),
+                    "vlm_latent_dim": int(vlm_latent_dim),
+                    "action_dim": int(action_dim),
+                    "image_keys": sorted(image_keys),
+                    "image_size": [int(ecfg.image_size_h), int(ecfg.image_size_w)],
+                    "n_step": int(acfg.n_step),
+                    "gamma": float(acfg.gamma),
+                }
+                (offline_cache_dir / "cache_meta.json").write_text(_json.dumps(offline_meta, indent=2))
+                _log(f"Saved offline cache (hash={offline_cache_hash}): {offline_cache_dir}")
+            except Exception as e:
+                _log(f"Failed to save offline cache: {e}")
     else:
         _log("Skipping offline buffer (offline_fraction=0 or no offline_data config)")
 
@@ -1353,11 +1603,59 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     checkpoint_dir = outputs_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Save training config to output dir ──
+    try:
+        import json as _json_mod
+        _cfg_dict = {}
+        # Collect all CLI args
+        _cfg_dict["cli_args"] = {k: str(v) for k, v in vars(args_cli).items()
+                                 if not k.startswith("_") and k not in ("func",)}
+        # Collect key hyperparameters
+        _cfg_dict["algo"] = {
+            "total_timesteps": acfg.total_timesteps,
+            "learning_starts": acfg.learning_starts,
+            "critic_warmup_steps": acfg.critic_warmup_steps,
+            "batch_size": acfg.batch_size,
+            "buffer_size": acfg.buffer_size,
+            "gamma": acfg.gamma,
+            "n_step": acfg.n_step,
+            "offline_fraction": acfg.offline_fraction,
+            "stddev_max": acfg.stddev_max,
+            "stddev_min": acfg.stddev_min,
+            "stddev_step": acfg.stddev_step,
+            "num_updates_per_iteration": acfg.num_updates_per_iteration,
+            "update_every_n_steps": acfg.update_every_n_steps,
+        }
+        _cfg_dict["agent"] = {
+            "actor_lr": cfg.agent.actor_lr,
+            "critic_lr": cfg.agent.critic_lr,
+            "action_scale": cfg.agent.actor.action_scale,
+            "action_l2_reg_weight": cfg.agent.actor.action_l2_reg_weight,
+            "clip_q_target_to_reward_range": cfg.agent.clip_q_target_to_reward_range,
+            "critic_target_tau": cfg.agent.critic_target_tau,
+        }
+        _cfg_dict["env"] = {
+            "num_train_envs": num_envs,
+            "max_episode_steps": int(ecfg.max_episode_steps),
+            "reward_type": getattr(ecfg, "reward_type", "unknown"),
+            "success_threshold": getattr(ecfg, "success_threshold", 0.03),
+        }
+        _cfg_dict["seed"] = cfg.seed
+        _cfg_path = outputs_dir / "training_config.json"
+        with open(_cfg_path, "w") as _cf:
+            _json_mod.dump(_cfg_dict, _cf, indent=2, default=str)
+        _log(f"Training config saved to {_cfg_path}")
+    except Exception as _e:
+        _log(f"[WARN] Failed to save training config: {_e}")
+
     # ── Async evaluator (launches separate Isaac Sim for eval) ──
+    _debug_first_ep_video_early = bool(getattr(args_cli, "debug_first_episode_video", False))
     async_eval: AsyncEvaluator | None = None
-    if _inline_eval_disabled:
+    if _inline_eval_disabled and not _debug_first_ep_video_early:
         async_eval = AsyncEvaluator(cfg)
         async_eval._phase_probe_path = getattr(args_cli, 'phase_probe_path', None)
+        async_eval._use_depth = _use_depth
+        async_eval._depth_norm_path = getattr(args_cli, 'depth_norm_path', None)
         async_eval_results_dir = outputs_dir / "async_eval_results"
         # Eval logs to its own wandb run (same project) — sharing a single run causes timeout/conflicts
         _wandb_run_id = None
@@ -1376,33 +1674,11 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         return torch.cat([action, pad], dim=0)
 
     # ══════════════════════════════════════════════════════════════════
-    # Buffer caching (hash-based: reuse if config matches, else re-collect)
+    # Online warmup buffer caching (uses _buffer_cache_key defined above)
     # ══════════════════════════════════════════════════════════════════
-    import hashlib, json as _json
 
-    def _warmup_cache_key(ecfg, acfg):
-        """Build a deterministic hash of warmup-relevant config."""
-        key_dict = {
-            "csv_base_dir": str(ecfg.csv_base_dir),
-            "success_threshold": float(getattr(ecfg, 'success_threshold', 0.005)),
-            "cube_perturb_table_path": str(getattr(ecfg, 'cube_perturb_table_path', '')),
-            "cube_perturb_range": float(getattr(ecfg, 'cube_perturb_range', 0.0)),
-            "num_envs": int(ecfg.num_envs),
-            "max_episode_steps": int(ecfg.max_episode_steps),
-            "random_action_noise_scale": float(acfg.random_action_noise_scale),
-            "reward_scale": 10.0,  # hardcoded reward normalization divisor
-            "n_step": int(acfg.n_step),
-            "gamma": float(acfg.gamma),
-        }
-        # Include perturbation table content if exists
-        _pt = getattr(ecfg, 'cube_perturb_table_path', None)
-        if _pt and Path(_pt).exists():
-            key_dict["perturb_table_content"] = Path(_pt).read_text()
-        key_str = _json.dumps(key_dict, sort_keys=True)
-        return hashlib.sha256(key_str.encode()).hexdigest()[:16]
-
-    cache_root = outputs_dir / "buffer_cache"
-    cache_hash = _warmup_cache_key(ecfg, acfg)
+    # ── Online warmup cache ──
+    cache_hash = _buffer_cache_key(ecfg, acfg)
     online_cache_dir = cache_root / f"warmup_{cache_hash}"
     _loaded_online_from_cache = False
 
@@ -1416,20 +1692,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             _loaded_online_from_cache = True
             _log(f"Loaded warmup cache (hash={cache_hash}): {online_cache_dir} (size={len(online_rb)})")
             _log(f"  Cache config: csv={meta.get('csv_base_dir','?')}, thresh={meta.get('success_threshold','?')}, envs={meta.get('num_envs','?')}")
+            _log(f"  Model dims: lowdim={meta.get('lowdim_dim','?')}, vlm={meta.get('vlm_latent_dim','?')}, action={meta.get('action_dim','?')}")
         except Exception as e:
             _log(f"Failed to load cache {cache_hash}: {e}; re-collecting...")
             import shutil
             shutil.rmtree(online_cache_dir, ignore_errors=True)
     else:
-        # Check if there's an old-format cache to clean up
-        old_cache = cache_root / "online_warmup"
-        if old_cache.exists():
-            _log(f"Found old-format cache at {old_cache}, ignoring (config may differ)")
-        # Scan for any other hash caches with different hash
+        # Scan for existing caches with different hash
         if cache_root.exists():
             for d in cache_root.iterdir():
                 if d.is_dir() and d.name.startswith("warmup_") and d.name != f"warmup_{cache_hash}":
-                    _log(f"  Found stale cache: {d.name} (different config)")
+                    _log(f"  Found other warmup cache: {d.name} (different config)")
 
     # ══════════════════════════════════════════════════════════════════
     # Custom env snapshot: deterministic cube poses shared across warmup/train/eval
@@ -1454,6 +1727,11 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
     _has_env_snapshot = snapshot_exists(custom_env_root, _env_hash)
     _log(f"Env snapshot hash={_env_hash}, exists={_has_env_snapshot}")
+
+    # ══════════════════════════════════════════════════════════════════
+    # Debug first episode video flag (needed before warmup)
+    # ══════════════════════════════════════════════════════════════════
+    _debug_first_ep_video = bool(getattr(args_cli, "debug_first_episode_video", False))
 
     # ══════════════════════════════════════════════════════════════════
     # Warm-up: fill online buffer with base-policy + noise exploration
@@ -1530,8 +1808,13 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 cube_init_z = env._initial_cube_z[eid].item()
                 env_ep_max_h[eid] = max(env_ep_max_h[eid].item(), cube_z - cube_init_z)
 
-                # Capture video frame
-                if hasattr(env, "get_frame") and step % 5 == 0:
+                # Capture video frame (debug mode: every step with overlay; normal: every 5 steps)
+                if _debug_first_ep_video and hasattr(env, "get_debug_frame"):
+                    try:
+                        warmup_per_env_frames[eid].append(env.get_debug_frame(eid, size=(256, 400)))
+                    except Exception:
+                        warmup_per_env_frames[eid].append(env.get_frame(eid, camera="front", size=(128, 160)))
+                elif hasattr(env, "get_frame") and step % 5 == 0:
                     warmup_per_env_frames[eid].append(env.get_frame(eid, camera="front", size=(128, 160)))
 
                 # Store transition ONLY if base_action is non-zero (GR00T has inferred)
@@ -1594,7 +1877,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
 
             frames = warmup_per_env_frames.get(eid, [])
             if frames:
-                vpath = warmup_vid_dir / f"warmup_env{eid}_{s_tag}.mp4"
+                pname = _perturb_names[eid] if eid < len(_perturb_names) else f"env{eid}"
+                vpath = warmup_vid_dir / f"warmup_env{eid}_{pname}_{s_tag}.mp4"
                 w = imageio.get_writer(str(vpath), fps=20)
                 for fr in frames:
                     w.append_data(fr)
@@ -1603,6 +1887,18 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         sr = warmup_success_count / max(1, N_warmup)
         _log(f"Warm-up done. transitions={warmup_total_transitions}, "
              f"success={warmup_success_count}/{N_warmup} ({sr*100:.0f}%)")
+
+        # If debug_first_episode_video: exit after warmup (base policy eval only)
+        if _debug_first_ep_video:
+            _log(f"[DEBUG] Base policy eval complete. {warmup_success_count}/{N_warmup} success. Videos saved to {warmup_vid_dir}")
+            _log(f"[DEBUG] Exiting early (--debug_first_episode_video mode).")
+            if _wb is not None and _wb.run is not None:
+                _wb.summary["warmup_success_rate"] = float(sr)
+                _wb.summary["warmup_success_count"] = warmup_success_count
+                _wb.summary["warmup_num_envs"] = N_warmup
+                _wb.finish()
+            env.close()
+            return
 
         # Save warmup cache with metadata
         try:
@@ -1623,6 +1919,13 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                 "gamma": float(acfg.gamma),
                 "buffer_size": len(online_rb),
                 "success_rate": float(sr),
+                # Model dims (for human inspection of what's in the cache)
+                "lowdim_dim": int(lowdim_dim),
+                "vlm_latent_dim": int(vlm_latent_dim),
+                "action_dim": int(action_dim),
+                "image_keys": sorted(image_keys),
+                "image_size": [int(img_h), int(img_w)],
+                "phase_probe_path": str(getattr(args_cli, 'phase_probe_path', '') or ''),
             }
             (online_cache_dir / "cache_meta.json").write_text(_json.dumps(cache_meta, indent=2))
             _log(f"Saved warmup cache (hash={cache_hash}): {online_cache_dir}")
@@ -1694,6 +1997,14 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         _log("Inline eval DISABLED (use async eval process with eval_async_isaaclab.py)")
     debug_zero_residual = bool(getattr(args_cli, "debug_zero_residual", False))
 
+    # Debug first episode video: record env 0's first complete episode with reward overlay
+    _debug_first_ep_video = bool(getattr(args_cli, "debug_first_episode_video", False))
+    _debug_ep_frames: list[np.ndarray] = []  # frames for env 0
+    _debug_ep_log_rows: list[dict] = []  # per-step debug data for CSV
+    _debug_ep_done = False  # True once first episode finishes
+    if _debug_first_ep_video:
+        _log("DEBUG: Will record first training episode (env 0) with reward overlay")
+
     _log(f"Starting training for {acfg.total_timesteps} steps...")
     if debug_zero_residual:
         _log("DEBUG: residual action forced to zeros")
@@ -1725,6 +2036,71 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             truncated = truncated_full[:num_envs]
             next_obs = _slice_obs_train(next_obs_full)
             done = terminated | truncated
+
+        # ── Debug first episode video + CSV log: capture env 0 frame with reward overlay ──
+        if _debug_first_ep_video and not _debug_ep_done:
+            try:
+                frame = env.get_debug_frame(env_id=0, size=(256, 400))
+                _debug_ep_frames.append(frame)
+            except Exception as e:
+                if len(_debug_ep_frames) == 0:
+                    _log(f"[DEBUG video] get_debug_frame failed: {e}")
+
+            # Collect per-step debug data for CSV log
+            _dbg = getattr(env, '_last_step_debug', None)
+            if _dbg is not None:
+                row = {
+                    "step": int(_dbg["step"][0].item()) if hasattr(_dbg["step"], '__getitem__') else int(_dbg["step"]),
+                    "contact_force": float(_dbg["contact_force"][0].item()),
+                    "has_contact": float(_dbg["has_contact"][0].item()),
+                    "cube_height": float(_dbg["cube_height"][0].item()),
+                    "finger_cube_dist": float(_dbg["finger_cube_dist"][0].item()),
+                    "reward": float(_dbg["reward"][0].item()),
+                    "success": float(_dbg["success"][0].item()),
+                    "sustained_contact": float(_dbg.get("sustained_contact", torch.zeros(1))[0].item()),
+                    "contact_lost": float(_dbg.get("contact_lost_during_lift", torch.zeros(1))[0].item()),
+                }
+                # Reward components
+                for key in ["reward_distance", "reward_contact", "reward_height", "reward_success",
+                            "grasp_gate", "both_close", "gripper_closing",
+                            "left_finger_cube_dist", "right_finger_cube_dist", "finger_joint_pos"]:
+                    if key in _dbg:
+                        row[key] = float(_dbg[key][0].item())
+                _debug_ep_log_rows.append(row)
+
+            # Check if env 0 is done → save video + CSV and exit
+            if done[0]:
+                _debug_ep_done = True
+
+                # Save CSV log
+                _debug_csv_path = outputs_dir / "debug_first_episode_log.csv"
+                try:
+                    import csv
+                    if _debug_ep_log_rows:
+                        with open(str(_debug_csv_path), "w", newline="") as f:
+                            writer = csv.DictWriter(f, fieldnames=_debug_ep_log_rows[0].keys())
+                            writer.writeheader()
+                            writer.writerows(_debug_ep_log_rows)
+                        _log(f"[DEBUG csv] Saved {len(_debug_ep_log_rows)} rows: {_debug_csv_path}")
+                except Exception as e:
+                    _log(f"[DEBUG csv] Failed to save: {e}")
+
+                # Save video
+                _debug_vid_path = outputs_dir / "debug_first_episode_reward.mp4"
+                try:
+                    w = imageio.get_writer(str(_debug_vid_path), fps=20)
+                    for fr in _debug_ep_frames:
+                        w.append_data(fr)
+                    w.close()
+                    _log(f"[DEBUG video] Saved first episode ({len(_debug_ep_frames)} frames): {_debug_vid_path}")
+                    if _wb is not None and _wb.run is not None:
+                        _wb.log({"debug/first_episode_video": _wb.Video(str(_debug_vid_path), format="mp4")}, step=global_step)
+                        _wb.finish()
+                except Exception as e:
+                    _log(f"[DEBUG video] Failed to save: {e}")
+                _log("[DEBUG video] First episode recorded. Exiting early.")
+                env.close()
+                return
 
         # Episode bookkeeping — cumulative return + step count per env
         ep_cum_reward += reward
@@ -1973,6 +2349,16 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                             pg["lr"] = float(cfg.agent.actor_lr) * warmup_progress
                     actor_updates += 1
 
+                # Action scale annealing: gradually increase from 0.01 to target
+                _anneal_steps = int(getattr(args_cli, 'action_scale_anneal_steps', 0) or 0)
+                if _anneal_steps > 0:
+                    _target_scale = float(args_cli.action_scale) if args_cli.action_scale is not None else cfg.agent.actor.action_scale
+                    _anneal_progress = min(1.0, global_step / max(1, _anneal_steps))
+                    _current_scale = 0.01 + (float(_target_scale) - 0.01) * _anneal_progress
+                    agent.actor.cfg.action_scale = _current_scale
+                    if hasattr(agent, 'actor_target'):
+                        agent.actor_target.cfg.action_scale = _current_scale
+
                 with timer.time("gradient_update"):
                     metrics = agent.update(batch, stddev, update_actor, bc_batch=None, ref_agent=agent)
 
@@ -2030,6 +2416,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                         log_dict["vlm/projector_weight_norm"] = float(proj_w.norm().item())
                         if proj_w.grad is not None:
                             log_dict["vlm/projector_grad_norm"] = float(proj_w.grad.norm().item())
+                # Phase probe accuracy metrics (all envs)
+                _phase_debug = getattr(env, '_last_step_debug', None)
+                if agent.vlm_projector is not None and _phase_debug is not None:
+                    _ps = _compute_phase_probe_stats(agent, obs, _phase_debug, num_envs, device)
+                    if _ps is not None:
+                        log_dict.update(_ps)
                 log_dict.update(ts)
                 filtered = {k: v for k, v in metrics.items() if not k.startswith("_")}
                 log_dict.update(filtered)
@@ -2069,6 +2461,34 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                         pw = next(agent.vlm_projector.parameters())
                         msg += f" proj_w={pw.norm().item():.2f}"
                 _log(msg)
+                # Phase probe accuracy summary (all envs, every 500 steps)
+                if agent.vlm_projector is not None and "observation.vlm_latent" in obs:
+                    _phase_debug = getattr(env, '_last_step_debug', None)
+                    _ps = _compute_phase_probe_stats(agent, obs, _phase_debug, num_envs, device)
+                    if _ps is not None:
+                        _log(f"  [PhaseProbe] {_format_phase_probe_summary(_ps, num_envs)}")
+                        # Detailed per-env breakdown at key steps:
+                        # step 0, first 5 intervals, then every 5000 steps
+                        _do_detail = (global_step == 0
+                                      or global_step <= 2500
+                                      or global_step % 5000 == 0
+                                      or global_step >= acfg.total_timesteps - num_envs)
+                        if _do_detail:
+                            vlm_raw = obs["observation.vlm_latent"][:num_envs].detach()
+                            with torch.no_grad():
+                                logits = agent.vlm_projector(vlm_raw.to(device))
+                                probs = torch.softmax(logits, dim=-1).cpu().numpy()
+                            for eid in range(min(num_envs, 5)):  # first 5 envs
+                                gt_id = _compute_gt_phase_from_debug(_phase_debug, eid)
+                                pred_id = int(probs[eid].argmax())
+                                match = "OK" if pred_id == gt_id else "MISS"
+                                ch = _phase_debug['cube_height'][eid].item()
+                                fd = _phase_debug['finger_cube_dist'][eid].item()
+                                cf = _phase_debug['contact_force'][eid].item()
+                                _log(f"    env{eid}: pred={_PHASE_NAMES[pred_id]}({probs[eid][pred_id]:.2f}) "
+                                     f"gt={_PHASE_NAMES[gt_id]} [{match}] "
+                                     f"probs=[{probs[eid][0]:.3f},{probs[eid][1]:.3f},{probs[eid][2]:.3f}] "
+                                     f"h={ch*100:.1f}cm dist={fd*100:.1f}cm cf={cf:.2f}N")
 
         now = time.time()
         if now - train_start > 0 and global_step % max(1, heartbeat_interval_sec * 50) < num_envs:
@@ -2080,10 +2500,36 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     # Final checkpoint
     _save_checkpoint(agent, checkpoint_dir / "final_agent.pt")
 
-    # Shutdown async evaluator
+    # Wait for async evaluator to finish all pending evals, then shut down
     if async_eval is not None:
-        _log("Shutting down async eval process...")
-        async_eval.shutdown()
+        _log("[AsyncEval] Training done. Waiting for eval process to finish remaining checkpoints...")
+        _wait_timeout = 3600  # max 1 hour wait
+        _wait_start = time.time()
+        while async_eval.is_alive() and (time.time() - _wait_start) < _wait_timeout:
+            # Collect any results that come in while waiting
+            result = async_eval.collect_results()
+            if result is not None:
+                step = result.get("step", 0)
+                succ = result.get("eval/success_rate", 0.0)
+                ret = result.get("eval/mean_return", 0.0)
+                _log(f"[AsyncEval] step={step} success={succ:.3f} return={ret:.3f}")
+                if succ > best_success:
+                    best_success = succ
+            time.sleep(15)
+        elapsed_wait = time.time() - _wait_start
+        if async_eval.is_alive():
+            _log(f"[AsyncEval] Timed out after {elapsed_wait:.0f}s, force-shutting down.")
+            async_eval.shutdown()
+        else:
+            # Collect any final results
+            result = async_eval.collect_results()
+            if result is not None:
+                step = result.get("step", 0)
+                succ = result.get("eval/success_rate", 0.0)
+                _log(f"[AsyncEval] Final result: step={step} success={succ:.3f}")
+                if succ > best_success:
+                    best_success = succ
+            _log(f"[AsyncEval] Eval process finished naturally after {elapsed_wait:.0f}s wait.")
 
     # Wandb summary
     if _wb is not None and _wb.run is not None:
@@ -2315,6 +2761,10 @@ if __name__ == "__main__":
         cfg.isaaclab_env.cube_perturb_table_path = args_cli.cube_perturb_table_path
     if args_cli.reward_type is not None:
         cfg.isaaclab_env.reward_type = args_cli.reward_type
+    if args_cli.no_clip_q:
+        cfg.agent.clip_q_target_to_reward_range = False
+    if args_cli.actor_lr_warmup_steps is not None:
+        cfg.algo.actor_lr_warmup_steps = args_cli.actor_lr_warmup_steps
     if args_cli.critic_hidden_dim is not None:
         cfg.agent.critic.hidden_dim = args_cli.critic_hidden_dim
     if args_cli.vlm_projected_dim is not None:
