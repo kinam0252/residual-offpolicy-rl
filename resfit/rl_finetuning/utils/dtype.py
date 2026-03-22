@@ -13,10 +13,14 @@ def to_uint8(obs_dict: dict, keys: list[str]):
 
     Assumes images are float32 in [0,1].  Non-image entries are left
     untouched.  Supports torch.Tensor and numpy.ndarray inputs.
+    Depth keys (observation.depth.*) are skipped — stored as float32.
     """
 
     for _k in keys:
         if _k not in obs_dict:
+            continue
+        # Skip depth images — keep as float32 for precision
+        if _k.startswith("observation.depth"):
             continue
         _v = obs_dict[_k]
         if isinstance(_v, torch.Tensor):

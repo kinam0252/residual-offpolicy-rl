@@ -110,6 +110,7 @@ parser.add_argument("--actor_lr_warmup_steps", type=int, default=None, help="Act
 parser.add_argument("--action_scale_anneal_steps", type=int, default=None, help="Anneal action_scale from 0.01 to target over N steps")
 parser.add_argument("--use_depth", action="store_true", help="Enable depth observations for residual actor (sim2real mode)")
 parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
+parser.add_argument("--use_vlm", action="store_true", help="Enable VLM latent features for actor/critic")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -332,6 +333,9 @@ exec {sys.executable} {eval_script} \\
             launcher_content = launcher_content.rstrip() + ' \\\n  --use_depth'
             if hasattr(self, '_depth_norm_path') and self._depth_norm_path:
                 launcher_content = launcher_content.rstrip() + f' \\\n  --depth_norm_path "{self._depth_norm_path}"'
+        # Pass VLM mode if enabled
+        if hasattr(self, '_use_vlm') and self._use_vlm:
+            launcher_content = launcher_content.rstrip() + ' \\\n  --use_vlm'
         launcher_content += "\n"
         launcher_path.write_text(launcher_content)
         launcher_path.chmod(0o755)
@@ -576,6 +580,18 @@ def _add_transitions(
         next_obs_i = {k: v for k, v in next_obs_i.items() if k in obs_keys}
         to_uint8(curr_obs_i, image_keys)
         to_uint8(next_obs_i, image_keys)
+
+        # Depth dtype/range validation (first 5 transitions only)
+        if not hasattr(_add_transitions, '_depth_debug_n'):
+            _add_transitions._depth_debug_n = 0
+        if _add_transitions._depth_debug_n < 5:
+            for dk in image_keys:
+                if dk.startswith("observation.depth") and dk in curr_obs_i:
+                    v = curr_obs_i[dk]
+                    _log(f"[DEPTH BUFFER DEBUG] key={dk} dtype={v.dtype} shape={v.shape} "
+                         f"range=[{v.min().item():.4f}, {v.max().item():.4f}] "
+                         f"is_float32={v.dtype == torch.float32}")
+            _add_transitions._depth_debug_n += 1
 
         # Debug logging for first few transitions
         if _DEBUG_TRANSITION_COUNT < 20:
@@ -1326,12 +1342,17 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
     action_dim = env.action_space.shape[1]
     lowdim_keys = ["observation.state", "observation.base_action"]
-    # Check if VLM latent is available from env
+    # Check if VLM latent is available from env AND explicitly enabled
+    _use_vlm = bool(getattr(args_cli, 'use_vlm', False))
     vlm_latent_dim = 0
-    if "observation.vlm_latent" in env.observation_space.spaces:
+    if _use_vlm and "observation.vlm_latent" in env.observation_space.spaces:
         vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
         lowdim_keys.append("observation.vlm_latent")
-        _log(f"VLM latent enabled: {vlm_latent_dim}D (raw, projected in agent)")
+        _log(f"VLM latent enabled (--use_vlm): {vlm_latent_dim}D")
+    elif "observation.vlm_latent" in env.observation_space.spaces:
+        _log(f"VLM latent available but DISABLED (use --use_vlm to enable)")
+    else:
+        _log(f"VLM latent not available in env")
     # Warmup uses 1 env; main training loop will expand to all train envs
     num_envs = 1  # warmup with single env
     train_env_ids = [0]  # warmup: env 0 only
@@ -1434,6 +1455,9 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             "image_size": [int(img_h), int(img_w)],
             "image_keys": sorted(image_keys),
             "phase_probe_path": str(getattr(args_cli, 'phase_probe_path', '') or ''),
+            # ── Mode flags ──
+            "use_depth": bool(getattr(args_cli, 'use_depth', False)),
+            "use_vlm": bool(getattr(args_cli, 'use_vlm', False)),
         }
         # Include perturbation table content if exists
         _pt = getattr(ecfg, 'cube_perturb_table_path', None)
@@ -1472,6 +1496,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                     image_keys=image_keys,
                     image_size=(ecfg.image_size_h, ecfg.image_size_w),
                     max_episodes=cfg.offline_data.num_episodes,
+                    lowdim_keys=lowdim_keys,
                 )
             _log("Populating offline buffer from CSV episodes...")
             return populate_offline_buffer_from_csv(
@@ -1656,6 +1681,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         async_eval._phase_probe_path = getattr(args_cli, 'phase_probe_path', None)
         async_eval._use_depth = _use_depth
         async_eval._depth_norm_path = getattr(args_cli, 'depth_norm_path', None)
+        async_eval._use_vlm = _use_vlm
         async_eval_results_dir = outputs_dir / "async_eval_results"
         # Eval logs to its own wandb run (same project) — sharing a single run causes timeout/conflicts
         _wandb_run_id = None

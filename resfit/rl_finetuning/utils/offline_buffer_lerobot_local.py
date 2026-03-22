@@ -110,6 +110,7 @@ def populate_offline_buffer_from_lerobot_local(
     image_keys: list[str] | None = None,
     image_size: tuple[int, int] = (84, 84),
     max_episodes: int | None = None,
+    lowdim_keys: list[str] | None = None,
 ) -> int:
     """Populate replay buffer from local LeRobot-style dataset folder.
 
@@ -126,6 +127,26 @@ def populate_offline_buffer_from_lerobot_local(
 
     if image_keys is None:
         image_keys = list(_VIDEO_MAP.values())
+
+    # Load depth normalization config if depth keys are requested
+    _depth_norm = None
+    _depth_data_dir = root  # depth_front/ and depth_wrist/ next to data/
+    if any(k.startswith("observation.depth") for k in image_keys):
+        _depth_norm_path = root / ".." / ".." / ".." / "residual-offpolicy-rl" / "depth_min_max" / "depth_normalization.json"
+        # Try common locations
+        for _dnp in [
+            root / "depth_normalization.json",
+            Path("/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/depth_min_max/depth_normalization.json"),
+        ]:
+            if _dnp.exists():
+                import json as _json_mod
+                _depth_norm = _json_mod.loads(_dnp.read_text())
+                print(f"[offline-buffer] Depth normalization loaded from {_dnp}")
+                break
+        if _depth_norm is None:
+            _depth_norm = {"front": {"min": 0.3, "max": 1.8}, "wrist": {"min": 0.03, "max": 0.4}}
+            print(f"[offline-buffer] Using default depth normalization")
+        _depth_debug_logged = False
 
     episode_files = sorted(data_chunk.glob("episode_*.parquet"))
     if max_episodes is not None:
@@ -198,19 +219,49 @@ def populate_offline_buffer_from_lerobot_local(
             }
 
             # VLM latent (2048D raw — projected in agent)
-            if has_vlm_latent:
-                curr_obs["observation.vlm_latent"] = torch.tensor(vlm_latents[t], dtype=torch.float32)
-                next_obs["observation.vlm_latent"] = torch.tensor(vlm_latents[min(t+1, T-1)], dtype=torch.float32)
-            else:
-                curr_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
-                next_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
+            _want_vlm = lowdim_keys is None or "observation.vlm_latent" in lowdim_keys
+            if _want_vlm:
+                if has_vlm_latent:
+                    curr_obs["observation.vlm_latent"] = torch.tensor(vlm_latents[t], dtype=torch.float32)
+                    next_obs["observation.vlm_latent"] = torch.tensor(vlm_latents[min(t+1, T-1)], dtype=torch.float32)
+                else:
+                    curr_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
+                    next_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
 
             for obs_key in image_keys:
                 if obs_key.startswith("observation.depth."):
-                    # Depth images not available in offline data — fill with zeros
-                    # Depth encoder learns exclusively from online rollouts
-                    curr_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
-                    next_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
+                    # Load depth from .npz file if available
+                    cam_name = obs_key.split(".")[-1]  # "front" or "wrist"
+                    depth_npz_path = root / f"depth_{cam_name}" / f"{episode_name}.npz"
+                    if depth_npz_path.exists() and f"_depth_{cam_name}" not in view_frames:
+                        _raw = np.load(str(depth_npz_path))["frames"]  # (T, 84, 84) float32 meters
+                        # Normalize using fixed min/max → [0, 1]
+                        if _depth_norm and cam_name in _depth_norm:
+                            _dmin = _depth_norm[cam_name]["min"]
+                            _dmax = _depth_norm[cam_name]["max"]
+                        else:
+                            _dmin, _dmax = 0.1, 2.0
+                        _raw = np.clip(_raw, _dmin, _dmax)
+                        _raw = (_raw - _dmin) / max(_dmax - _dmin, 1e-6)
+                        _raw = np.nan_to_num(_raw, nan=0.0, posinf=1.0, neginf=0.0)
+                        # Store as (T, 1, 84, 84) float32
+                        view_frames[f"_depth_{cam_name}"] = torch.tensor(
+                            _raw[:, None, :, :], dtype=torch.float32)
+                    # Get frame from cache
+                    _dcache_key = f"_depth_{cam_name}"
+                    if _dcache_key in view_frames and t < view_frames[_dcache_key].shape[0]:
+                        curr_obs[obs_key] = view_frames[_dcache_key][t]  # (1, 84, 84)
+                        next_obs[obs_key] = view_frames[_dcache_key][min(t+1, T-1)]
+                        # Debug log first load
+                        if not _depth_debug_logged:
+                            _v = view_frames[_dcache_key][t]
+                            print(f"[offline-depth] Loaded {obs_key}: shape={_v.shape} "
+                                  f"dtype={_v.dtype} range=[{_v.min().item():.4f}, {_v.max().item():.4f}] "
+                                  f"from {depth_npz_path}")
+                            _depth_debug_logged = True
+                    else:
+                        curr_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
+                        next_obs[obs_key] = torch.zeros(1, 84, 84, dtype=torch.float32)
                 elif obs_key in view_frames:
                     curr_obs[obs_key] = view_frames[obs_key][t]
                     next_obs[obs_key] = view_frames[obs_key][t + 1]

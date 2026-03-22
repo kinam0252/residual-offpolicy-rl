@@ -49,6 +49,7 @@ parser.add_argument("--action_scale", type=float, default=None, help="Residual a
 parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", "dense", "dense_clipped"], help="Reward type (must match training)")
 parser.add_argument("--use_depth", action="store_true", help="Enable depth observations for residual actor")
 parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
+parser.add_argument("--use_vlm", action="store_true", help="Enable VLM latent features")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -124,7 +125,10 @@ def make_agent(env, device, args=None):
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
     action_dim = env.action_space.shape[1]
-    vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1] if "observation.vlm_latent" in env.observation_space.spaces else 0
+    _use_vlm = getattr(args, 'use_vlm', False)
+    vlm_latent_dim = 0
+    if _use_vlm and "observation.vlm_latent" in env.observation_space.spaces:
+        vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
 
     agent_cfg = QAgentConfig(
         actor_lr=1e-6,

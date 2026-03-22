@@ -880,8 +880,9 @@ class QAgent(nn.Module):
         for cam in self.rl_cameras:
             assert cam in obs, f"update: missing camera '{cam}' in batch obs"
             img = obs[cam]
-            assert img.dim() == 4 and img.shape[0] == B and img.shape[1] == 3, (
-                f"update: camera '{cam}' shape {img.shape} invalid"
+            expected_c = 1 if cam.startswith("observation.depth") else 3
+            assert img.dim() == 4 and img.shape[0] == B and img.shape[1] == expected_c, (
+                f"update: camera '{cam}' shape {img.shape} invalid (expected C={expected_c})"
             )
         # Check next_obs too
         assert "observation.state" in next_obs, "update: missing observation.state in batch next_obs"
@@ -926,6 +927,20 @@ class QAgent(nn.Module):
 
         metrics = {}
         metrics["data/batch_R"] = reward.mean().item()
+
+        # Depth batch debug (first 3 updates only)
+        if not hasattr(self, '_update_depth_debug_n'):
+            self._update_depth_debug_n = 0
+        if self._update_depth_debug_n < 3:
+            for cam in self.rl_cameras:
+                if cam.startswith("observation.depth") and cam in obs:
+                    v = obs[cam]
+                    n_zeros = (v.abs() < 1e-6).all(dim=-1).all(dim=-1).all(dim=-1).sum().item()
+                    print(f"[DEPTH UPDATE DEBUG] batch {cam}: shape={v.shape} dtype={v.dtype} "
+                          f"range=[{v.min().item():.4f}, {v.max().item():.4f}] "
+                          f"zero_samples={n_zeros}/{v.shape[0]} "
+                          f"mean={v.mean().item():.4f}")
+            self._update_depth_debug_n += 1
 
         # Extract importance sampling weights if available (for prioritized experience replay)
         importance_weights = batch.get("_weight", None)
