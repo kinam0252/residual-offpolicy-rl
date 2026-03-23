@@ -1661,6 +1661,14 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     checkpoint_dir = outputs_dir / "checkpoints"
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    # Local SSD checkpoint dir for fast eval-polling I/O
+    # Periodic checkpoints go here; only best/final are saved to NAS
+    _slurm_jid = os.environ.get("SLURM_JOB_ID", str(os.getpid()))
+    _local_ckpt_dir = Path(f"/tmp/resfit_ckpts_{_slurm_jid}")
+    _local_ckpt_dir.mkdir(parents=True, exist_ok=True)
+    _log(f"Local checkpoint dir (SSD): {_local_ckpt_dir}")
+    _log(f"NAS checkpoint dir: {checkpoint_dir}")
+
     # ── Save training config to output dir ──
     try:
         import json as _json_mod
@@ -1719,8 +1727,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         async_eval_results_dir = outputs_dir / "async_eval_results"
         # Eval logs to its own wandb run (same project) — sharing a single run causes timeout/conflicts
         _wandb_run_id = None
-        async_eval.start(checkpoint_dir, async_eval_results_dir, wandb_run_id=_wandb_run_id)
-        _log("[AsyncEval] Background eval process launched (separate wandb run)")
+        async_eval.start(_local_ckpt_dir, async_eval_results_dir, wandb_run_id=_wandb_run_id)
+        _log(f"[AsyncEval] Using local SSD checkpoints: {_local_ckpt_dir}")
 
     # Helper: slice obs to training envs only (env 0)
     def _slice_obs_train(obs_full):
@@ -2330,7 +2338,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         # ── (2a) Async eval path: trigger + collect (never blocks) ──
         if disable_eval and async_eval is not None:
             if should_eval:
-                async_eval.trigger_eval(agent, global_step, checkpoint_dir)
+                async_eval.trigger_eval(agent, global_step, _local_ckpt_dir)
             # Non-blocking: check for completed eval results
             async_result = async_eval.collect_results()
             if async_result is not None:
@@ -2435,12 +2443,16 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             (ckpt_interval > 0 and global_step % ckpt_interval == 0) or
             (eval_ckpt_interval > 0 and global_step % eval_ckpt_interval == 0)
         ):
+            # Save to local SSD for fast async eval polling
+            _save_checkpoint(agent, _local_ckpt_dir / f"agent_step{global_step}.pt")
+            # Also save to NAS only if performance threshold met
             _min_save = float(getattr(args_cli, 'min_save_success_rate', 0.0))
             if best_success >= _min_save:
-                _save_checkpoint(agent, checkpoint_dir / f"agent_step{global_step}.pt")
-            elif global_step % (eval_ckpt_interval * 10) == 0:
-                # Still save every 10th eval interval for async eval to have something
-                _save_checkpoint(agent, checkpoint_dir / f"agent_step{global_step}.pt")
+                import shutil
+                shutil.copy2(
+                    str(_local_ckpt_dir / f"agent_step{global_step}.pt"),
+                    str(checkpoint_dir / f"agent_step{global_step}.pt"),
+                )
 
         # ── (5) Logging ──
         wandb_log_every = max(1, int(getattr(cfg, "wandb_log_every_steps", 10)))
