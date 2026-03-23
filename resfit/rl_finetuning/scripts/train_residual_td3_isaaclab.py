@@ -111,6 +111,9 @@ parser.add_argument("--action_scale_anneal_steps", type=int, default=None, help=
 parser.add_argument("--use_depth", action="store_true", help="Enable depth observations for residual actor (sim2real mode)")
 parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
 parser.add_argument("--use_vlm", action="store_true", help="Enable VLM latent features for actor/critic")
+parser.add_argument("--use_state", action="store_true", help="Enable object state (cube 6D pose) as additional low-dim input")
+parser.add_argument("--min_save_success_rate", type=float, default=0.0, help="Only save periodic checkpoints when best success rate >= this threshold (0=always save)")
+parser.add_argument("--checkpoint_min_success", type=float, default=0.0, help="Only save periodic checkpoints when best_success >= this threshold (0=always save)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -336,6 +339,9 @@ exec {sys.executable} {eval_script} \\
         # Pass VLM mode if enabled
         if hasattr(self, '_use_vlm') and self._use_vlm:
             launcher_content = launcher_content.rstrip() + ' \\\n  --use_vlm'
+        # Pass state mode if enabled
+        if hasattr(self, '_use_state') and self._use_state:
+            launcher_content = launcher_content.rstrip() + ' \\\n  --use_state'
         launcher_content += "\n"
         launcher_path.write_text(launcher_content)
         launcher_path.chmod(0o755)
@@ -607,6 +613,11 @@ def _add_transitions(
             if base_act is not None:
                 ba = base_act.detach().cpu().numpy() if hasattr(base_act, 'detach') else base_act
                 _log(f"  base_action(7D): {ba}")
+            obj_st = curr_obs_i.get("observation.object_state", None)
+            if obj_st is not None:
+                os_v = obj_st.detach().cpu().numpy() if hasattr(obj_st, 'detach') else obj_st
+                _log(f"  object_state({len(os_v)}D): pos=({os_v[0]:+.4f},{os_v[1]:+.4f},{os_v[2]:+.4f}) "
+                     f"quat=({os_v[3]:+.4f},{os_v[4]:+.4f},{os_v[5]:+.4f},{os_v[6]:+.4f})")
             a = act.detach().cpu().numpy() if hasattr(act, 'detach') else act
             _log(f"  action(stored): {a}")
             rv = r.item() if hasattr(r, 'item') else r
@@ -1324,6 +1335,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         reward_type=str(getattr(ecfg, 'reward_type', 'dense_clipped')),
         use_depth=bool(getattr(args_cli, 'use_depth', False)),
         depth_norm_path=getattr(args_cli, 'depth_norm_path', None),
+        use_state=bool(getattr(args_cli, 'use_state', False)),
     )
     eval_env = env  # same sim context, switch active_env_ids for eval
     _set_phase("env_ready")
@@ -1334,16 +1346,25 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     image_keys = list(cfg.rl_camera)
     # If depth mode, replace RGB cameras with depth cameras for residual actor
     _use_depth = bool(getattr(args_cli, 'use_depth', False))
-    if _use_depth:
+    _use_state = bool(getattr(args_cli, 'use_state', False))
+    if _use_state:
+        image_keys = []  # state-only: no images
+        _log(f"State-only mode: no image keys (encoder-free)")
+    elif _use_depth:
         image_keys = ["observation.depth.front", "observation.depth.wrist"]
         _log(f"Depth mode: RL cameras = {image_keys}")
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     base_action_dim = env.observation_space["observation.base_action"].shape[1]
-    img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
+    if image_keys:
+        img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
+    else:
+        img_c, img_h, img_w = 3, 84, 84  # dummy, not used in state-only mode
     action_dim = env.action_space.shape[1]
     lowdim_keys = ["observation.state", "observation.base_action"]
     # Check if VLM latent is available from env AND explicitly enabled
     _use_vlm = bool(getattr(args_cli, 'use_vlm', False))
+    if _use_state:
+        _use_vlm = False  # state-only mode: no VLM
     vlm_latent_dim = 0
     if _use_vlm and "observation.vlm_latent" in env.observation_space.spaces:
         vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
@@ -1353,6 +1374,15 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         _log(f"VLM latent available but DISABLED (use --use_vlm to enable)")
     else:
         _log(f"VLM latent not available in env")
+    # Object state (cube 6D pose) — adds to lowdim
+    _use_state = bool(getattr(args_cli, 'use_state', False))
+    object_state_dim = 0
+    if _use_state and "observation.object_state" in env.observation_space.spaces:
+        object_state_dim = env.observation_space["observation.object_state"].shape[1]
+        lowdim_keys.append("observation.object_state")
+        _log(f"Object state enabled (--use_state): {object_state_dim}D")
+    elif _use_state:
+        _log(f"WARNING: --use_state requested but observation.object_state not in env")
     # Warmup uses 1 env; main training loop will expand to all train envs
     num_envs = 1  # warmup with single env
     train_env_ids = [0]  # warmup: env 0 only
@@ -1378,6 +1408,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         cfg=cfg.agent,
         residual_actor=True,
         vlm_latent_dim=vlm_latent_dim,
+        object_state_dim=object_state_dim,
     )
 
     # Load frozen phase probe (must be before resume_checkpoint to set correct weights)
@@ -1458,6 +1489,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             # ── Mode flags ──
             "use_depth": bool(getattr(args_cli, 'use_depth', False)),
             "use_vlm": bool(getattr(args_cli, 'use_vlm', False)),
+            "use_state": bool(getattr(args_cli, 'use_state', False)),
+            "object_state_dim": int(object_state_dim),
         }
         # Include perturbation table content if exists
         _pt = getattr(ecfg, 'cube_perturb_table_path', None)
@@ -1682,6 +1715,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         async_eval._use_depth = _use_depth
         async_eval._depth_norm_path = getattr(args_cli, 'depth_norm_path', None)
         async_eval._use_vlm = _use_vlm
+        async_eval._use_state = _use_state
         async_eval_results_dir = outputs_dir / "async_eval_results"
         # Eval logs to its own wandb run (same project) — sharing a single run causes timeout/conflicts
         _wandb_run_id = None
@@ -2401,7 +2435,12 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             (ckpt_interval > 0 and global_step % ckpt_interval == 0) or
             (eval_ckpt_interval > 0 and global_step % eval_ckpt_interval == 0)
         ):
-            _save_checkpoint(agent, checkpoint_dir / f"agent_step{global_step}.pt")
+            _min_save = float(getattr(args_cli, 'min_save_success_rate', 0.0))
+            if best_success >= _min_save:
+                _save_checkpoint(agent, checkpoint_dir / f"agent_step{global_step}.pt")
+            elif global_step % (eval_ckpt_interval * 10) == 0:
+                # Still save every 10th eval interval for async eval to have something
+                _save_checkpoint(agent, checkpoint_dir / f"agent_step{global_step}.pt")
 
         # ── (5) Logging ──
         wandb_log_every = max(1, int(getattr(cfg, "wandb_log_every_steps", 10)))

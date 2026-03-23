@@ -266,11 +266,13 @@ class IfaceEnvWrapper:
         reward_type: str = "sparse",  # "sparse", "dense", "dense_clipped"
         use_depth: bool = False,  # Enable depth observations for residual actor
         depth_norm_path: str | None = None,  # Path to depth_normalization.json
+        use_state: bool = False,  # Enable object state (cube 6D pose) observations
     ):
         self.sim = sim
         self.csv_dir = Path(csv_dir).expanduser().resolve()
         self.reward_type = reward_type
         self.use_depth = use_depth
+        self.use_state = use_state
         self.language_override = language_override
         self.random_cube_perturb = random_cube_perturb
         self.random_cube_xy_range = random_cube_xy_range
@@ -434,6 +436,12 @@ class IfaceEnvWrapper:
                     if isinstance(v, dict):
                         print(f"  {k}: min={v.get('min')}, max={v.get('max')}")
             print(f"[IfaceEnvWrapper] Depth obs spaces added: observation.depth.front, observation.depth.wrist")
+        # Object state (cube 6D pose): pos(3) + quat_wxyz(4) = 7D
+        self._object_state_dim = 7
+        if self.use_state:
+            obs_spaces["observation.object_state"] = gym.spaces.Box(
+                low=-np.inf, high=np.inf, shape=(N, self._object_state_dim), dtype=np.float32)
+            print(f"[IfaceEnvWrapper] Object state mode ON: observation.object_state ({self._object_state_dim}D)")
         self.observation_space = gym.spaces.Dict(obs_spaces)
 
         # ── VLM latent cache (updated on GR00T inference, cached between) ──
@@ -1174,6 +1182,23 @@ class IfaceEnvWrapper:
             if self._depth_debug_count < 5:
                 self._depth_debug_count += 1
 
+        # Object state: cube 6D pose → pos(3) + quat_wxyz(4) = 7D
+        if self.use_state:
+            cube_state = self.cube.data.root_state_w[:N]  # (N, 13)
+            cube_pos = cube_state[:, :3]   # (N, 3)
+            cube_quat_wxyz = cube_state[:, 3:7]  # (N, 4)
+            obs["observation.object_state"] = torch.cat(
+                [cube_pos, cube_quat_wxyz], dim=-1
+            ).to(dtype=torch.float32)  # (N, 7)
+            # Debug: first 3 calls
+            if not hasattr(self, '_obj_state_debug_count'):
+                self._obj_state_debug_count = 0
+            if self._obj_state_debug_count < 3:
+                v = obs["observation.object_state"][0]
+                print(f"[OBJ_STATE] pos=({v[0]:.4f},{v[1]:.4f},{v[2]:.4f}) "
+                      f"quat=({v[3]:.4f},{v[4]:.4f},{v[5]:.4f},{v[6]:.4f})")
+                self._obj_state_debug_count += 1
+
         # ── Strict output validation ──
         assert obs["observation.state"].shape == (N, self._state_dim), (
             f"_build_obs: state shape {obs['observation.state'].shape} != expected ({N}, {self._state_dim})"
@@ -1341,8 +1366,73 @@ class IfaceEnvWrapper:
         bar_color = (0, int(rw_clamp * 255), int((1 - rw_clamp) * 255))
         cv2.rectangle(frame, (0, h - bar_h), (w, h), bar_color, -1)
 
+        # ── Cube 6D pose arrows (if use_state mode) ──
+        if self.use_state:
+            self._draw_pose_arrows(frame, eid)
+
         return frame
-        return ft.squeeze(0).permute(1, 2, 0).to(torch.uint8).numpy()
+
+    def _draw_pose_arrows(self, frame: np.ndarray, env_id: int) -> None:
+        """Draw 3D orientation axes of cube and EE at their projected positions."""
+        import cv2
+        from scipy.spatial.transform import Rotation
+
+        N = self.num_envs
+        h, w = frame.shape[:2]
+
+        # Camera setup (front camera pinhole)
+        W_nat, H_nat = 640, 480
+        focal = 22.0
+        aperture = 20.955
+        fx = focal * W_nat / aperture
+        fy = fx
+        cx_n, cy_n = W_nat / 2, H_nat / 2
+
+        # Camera extrinsic: look-at (same as replay viz)
+        env_origin = self.scene.env_origins[env_id].detach().cpu().numpy()
+        eye = env_origin + np.array([0.4, -0.7, 0.8])
+        target = env_origin + np.array([0.25, 0.0, -0.05])
+        world_up = np.array([0.0, 0.0, 1.0])
+        fwd = target - eye; fwd /= np.linalg.norm(fwd)
+        right = np.cross(fwd, world_up); right /= np.linalg.norm(right)
+        cam_up = np.cross(right, fwd)
+        R_cv = np.stack([right, -cam_up, fwd], axis=0)
+        t_cv = -R_cv @ eye
+
+        def _proj(pt):
+            p = R_cv @ pt + t_cv
+            if p[2] <= 0.01:
+                return None
+            u = int(fx * p[0] / p[2] + cx_n) * w // W_nat
+            v = int(fy * p[1] / p[2] + cy_n) * h // H_nat
+            return (u, v)
+
+        def _draw_axes(origin_w, quat_wxyz, colors_label, axis_len=0.05):
+            o = _proj(origin_w)
+            if o is None or o[0] < -50 or o[0] > w+50 or o[1] < -50 or o[1] > h+50:
+                return
+            xyzw = [quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]]
+            R_obj = Rotation.from_quat(xyzw).as_matrix()
+            colors = [(0,0,255),(0,255,0),(255,0,0)]  # X=R, Y=G, Z=B
+            labels = ["X","Y","Z"]
+            for i in range(3):
+                tip = _proj(origin_w + R_obj[:, i] * axis_len)
+                if tip:
+                    cv2.arrowedLine(frame, o, tip, colors[i], 2, tipLength=0.25)
+                    cv2.putText(frame, labels[i], (tip[0]+2, tip[1]-2),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.3, colors[i], 1)
+            cv2.circle(frame, o, 3, colors_label, -1)
+
+        # Cube
+        cube_pos = self.cube.data.root_state_w[env_id, :3].detach().cpu().numpy()
+        cube_quat = self.cube.data.root_state_w[env_id, 3:7].detach().cpu().numpy()
+        _draw_axes(cube_pos, cube_quat, (0, 255, 0))  # green dot
+
+        # EE
+        hand_idx = self.robot.find_bodies("panda_hand")[0][0]
+        ee_pos = self.robot.data.body_pos_w[env_id, hand_idx].detach().cpu().numpy()
+        ee_quat = self.robot.data.body_quat_w[env_id, hand_idx].detach().cpu().numpy()
+        _draw_axes(ee_pos, ee_quat, (0, 255, 255))  # cyan dot
 
     def get_all_frames_batch(self, camera: str = "front", size: tuple[int, int] = (256, 320)) -> list[np.ndarray]:
         """GPU-batched: resize all env frames at once, return list of (H,W,3) uint8 numpy."""

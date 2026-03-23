@@ -178,14 +178,16 @@ def populate_offline_buffer_from_lerobot_local(
             rewards_arr = None
 
         view_frames: dict[str, torch.Tensor] = {}
-        for view_dir, obs_key in _VIDEO_MAP.items():
-            video_path = video_chunk / view_dir / f"{episode_name}.mp4"
-            if video_path.exists():
-                view_frames[obs_key] = _read_video_frames(video_path, max_frames=T, target_size=image_size)
-            else:
-                view_frames[obs_key] = torch.zeros((T, 3, image_size[0], image_size[1]), dtype=torch.uint8)
+        if image_keys:  # skip video loading if no image keys (state-only mode)
+            for view_dir, obs_key in _VIDEO_MAP.items():
+                video_path = video_chunk / view_dir / f"{episode_name}.mp4"
+                if video_path.exists():
+                    view_frames[obs_key] = _read_video_frames(video_path, max_frames=T, target_size=image_size)
+                else:
+                    view_frames[obs_key] = torch.zeros((T, 3, image_size[0], image_size[1]), dtype=torch.uint8)
 
-        T = min(T, *(len(v) for v in view_frames.values()))
+        if view_frames:
+            T = min(T, *(len(v) for v in view_frames.values()))
         if T < 2:
             continue
 
@@ -227,6 +229,31 @@ def populate_offline_buffer_from_lerobot_local(
                 else:
                     curr_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
                     next_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
+
+            # Object state: cube 6D pose from parquet (pos(3) + quat_wxyz(4) = 7D)
+            _want_obj_state = lowdim_keys is not None and "observation.object_state" in lowdim_keys
+            if _want_obj_state:
+                _has_cube_pos = "cube_pos" in df.columns and "cube_quat_wxyz" in df.columns
+                if _has_cube_pos:
+                    if not hasattr(populate_offline_buffer_from_lerobot_local, '_obj_states'):
+                        populate_offline_buffer_from_lerobot_local._obj_states = None
+                    if populate_offline_buffer_from_lerobot_local._obj_states is None or \
+                       populate_offline_buffer_from_lerobot_local._obj_states_ep != episode_name:
+                        _cp = np.stack(df["cube_pos"].to_numpy()).astype(np.float32)      # (T, 3)
+                        _cq = np.stack(df["cube_quat_wxyz"].to_numpy()).astype(np.float32) # (T, 4)
+                        populate_offline_buffer_from_lerobot_local._obj_states = np.concatenate([_cp, _cq], axis=-1)  # (T, 7)
+                        populate_offline_buffer_from_lerobot_local._obj_states_ep = episode_name
+                    _os = populate_offline_buffer_from_lerobot_local._obj_states
+                    curr_obs["observation.object_state"] = torch.tensor(_os[t], dtype=torch.float32)
+                    next_obs["observation.object_state"] = torch.tensor(_os[min(t+1, T-1)], dtype=torch.float32)
+                    if ep_idx == 0 and t == 0:
+                        print(f"[offline-lerobot] Object state loaded: shape={_os.shape} "
+                              f"sample={_os[0]}")
+                else:
+                    curr_obs["observation.object_state"] = torch.zeros(7, dtype=torch.float32)
+                    next_obs["observation.object_state"] = torch.zeros(7, dtype=torch.float32)
+                    if ep_idx == 0 and t == 0:
+                        print(f"[offline-lerobot] WARNING: cube_pos/cube_quat_wxyz not in parquet, using zeros")
 
             for obs_key in image_keys:
                 if obs_key.startswith("observation.depth."):

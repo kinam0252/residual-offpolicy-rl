@@ -495,31 +495,39 @@ class SpatialEmbQEnsemble(nn.Module):
     ):
         super().__init__()
 
-        # Trunk (shared across heads)
-        if fuse_patch:
-            proj_in_dim = num_patch + action_dim + prop_dim
-            num_proj = patch_dim
-        else:
-            proj_in_dim = patch_dim + action_dim + prop_dim
-            num_proj = num_patch
-
         self.fuse_patch = fuse_patch
         self.patch_dim = patch_dim
         self.prop_dim = prop_dim
         self.action_dim = action_dim
+        self.state_only = (num_patch == 0)  # no visual features
 
-        # Build input projection layers
-        input_layers = [nn.Linear(proj_in_dim, emb_dim)]
-        if use_layer_norm:
-            input_layers.append(nn.LayerNorm(emb_dim))
-        input_layers.append(nn.ReLU(inplace=True))
-        self.input_proj = nn.Sequential(*input_layers)
-        self.weight = nn.Parameter(torch.zeros(1, num_proj, emb_dim))
-        nn.init.normal_(self.weight)
+        if self.state_only:
+            # State-only: skip spatial embedding, direct MLP
+            self.input_proj = None
+            self.weight = None
+            input_dim = action_dim + prop_dim
+            print(f"[Critic] State-only mode, input_dim={input_dim} (action={action_dim} + prop={prop_dim})")
+        else:
+            # Trunk (shared across heads)
+            if fuse_patch:
+                proj_in_dim = num_patch + action_dim + prop_dim
+                num_proj = patch_dim
+            else:
+                proj_in_dim = patch_dim + action_dim + prop_dim
+                num_proj = num_patch
+
+            # Build input projection layers
+            input_layers = [nn.Linear(proj_in_dim, emb_dim)]
+            if use_layer_norm:
+                input_layers.append(nn.LayerNorm(emb_dim))
+            input_layers.append(nn.ReLU(inplace=True))
+            self.input_proj = nn.Sequential(*input_layers)
+            self.weight = nn.Parameter(torch.zeros(1, num_proj, emb_dim))
+            nn.init.normal_(self.weight)
+            input_dim = emb_dim + action_dim + prop_dim
 
         # vmap-based heads for efficient batched computation
         self.num_heads = num_heads
-        input_dim = emb_dim + action_dim + prop_dim
 
         # Create multiple module instances and stack their parameters/buffers
         heads = [HeadMLP(input_dim, hidden_dim, output_dim, num_layers, use_layer_norm) for _ in range(num_heads)]
@@ -550,9 +558,19 @@ class SpatialEmbQEnsemble(nn.Module):
                                 utils.orth_weight_init(param[h])
 
     def extra_repr(self) -> str:
-        return f"heads: {self.num_heads}, weight: nn.Parameter ({self.weight.size()})"
+        if self.weight is not None:
+            return f"heads: {self.num_heads}, weight: nn.Parameter ({self.weight.size()})"
+        return f"heads: {self.num_heads}, state_only=True"
 
     def _compute_trunk(self, feat: torch.Tensor, prop: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
+        if self.state_only:
+            # State-only: skip spatial embedding, just concat prop + action
+            parts = []
+            if self.prop_dim > 0:
+                parts.append(prop)
+            parts.append(action)
+            return torch.cat(parts, dim=-1)
+
         # ── Strict input validation ──
         assert feat.dim() == 3, f"Critic: feat must be 3D (B, num_patches, patch_dim), got {feat.shape}"
         assert feat.size(-1) == self.patch_dim, (

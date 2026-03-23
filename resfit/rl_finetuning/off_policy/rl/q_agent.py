@@ -29,6 +29,7 @@ class QAgent(nn.Module):
         residual_actor: bool = False,
         vlm_latent_dim: int = 0,
         phase_probe_mode: bool = True,
+        object_state_dim: int = 0,
     ):
         """Initialize the Q-agent.
 
@@ -53,26 +54,31 @@ class QAgent(nn.Module):
         # Normalise *rl_cameras* to a list for unified processing
         if isinstance(rl_cameras, str):
             rl_cameras = [rl_cameras]
-        assert len(rl_cameras) > 0, "At least one camera must be provided"
+        # rl_cameras can be empty for state-only mode
 
         self.rl_cameras = rl_cameras
         self.cfg = cfg
         self.residual_actor = residual_actor
+        self.state_only = (len(rl_cameras) == 0)  # no images — MLP only
 
-        # Build the per-camera encoders *after* `self.rl_cameras` is defined so
-        # that the helper function can iterate over them.
-        self.encoders: nn.ModuleList = self._build_encoders(obs_shape)
-
-        # All encoders share the same architecture ⇒ repr / patch dim are identical.
-        sample_encoder = self.encoders[0]
-        repr_dim_single = int(sample_encoder.repr_dim)  # type: ignore[attr-defined]
-        patch_repr_dim = int(sample_encoder.patch_repr_dim)  # type: ignore[attr-defined]
-
-        # Concatenate the patch dimension from every camera (dim=1) → overall
-        # representation dimension scales linearly with #cameras.
-        repr_dim = repr_dim_single * len(self.rl_cameras)
-        print("encoder output dim: ", repr_dim)
-        print("patch output dim: ", patch_repr_dim)
+        if self.state_only:
+            # State-only mode: no encoders, repr_dim=0
+            self.encoders = nn.ModuleList()
+            repr_dim = 0
+            patch_repr_dim = 1  # dummy, not used
+            print("[QAgent] State-only mode: no image encoders")
+            print(f"[QAgent]   prop_dim={prop_shape[0]}, object_state_dim={object_state_dim}, "
+                  f"vlm_latent_dim={vlm_latent_dim}")
+        else:
+            # Build the per-camera encoders
+            self.encoders: nn.ModuleList = self._build_encoders(obs_shape)
+            sample_encoder = self.encoders[0]
+            repr_dim_single = int(sample_encoder.repr_dim)
+            patch_repr_dim = int(sample_encoder.patch_repr_dim)
+            repr_dim = repr_dim_single * len(self.rl_cameras)
+            print("encoder output dim: ", repr_dim)
+            print("patch output dim: ", patch_repr_dim)
+            print(f"[QAgent] Image mode: {len(self.rl_cameras)} cameras, repr_dim={repr_dim}")
 
         assert len(prop_shape) == 1
         prop_dim = prop_shape[0] if cfg.use_prop else 0
@@ -99,8 +105,16 @@ class QAgent(nn.Module):
             self.vlm_projected_dim = 0
             self.vlm_projector = None
 
-        # Total prop dim seen by actor/critic includes projected VLM
-        total_prop_dim = prop_dim + self.vlm_projected_dim
+        # Object state (cube 6D pose) — concatenated directly to prop
+        self.object_state_dim = object_state_dim
+        if object_state_dim > 0:
+            print(f"Object state: {object_state_dim}D will be concatenated to prop")
+
+        # Total prop dim seen by actor/critic includes projected VLM + object state
+        total_prop_dim = prop_dim + self.vlm_projected_dim + self.object_state_dim
+        print(f"[QAgent] total_prop_dim={total_prop_dim} "
+              f"(prop={prop_dim} + vlm_proj={self.vlm_projected_dim} + obj_state={self.object_state_dim})")
+        print(f"[QAgent] repr_dim={repr_dim}, patch_repr_dim={patch_repr_dim}")
 
         # create critics & actor (with extended prop_dim)
         self.critic = Critic(
@@ -135,7 +149,13 @@ class QAgent(nn.Module):
             print("🧊 Encoder parameters frozen - no gradient updates will be performed")
 
         # Create optimizers (PyTorch will ignore frozen parameters)
-        self.encoder_opt = torch.optim.AdamW(self.encoders.parameters(), lr=self.cfg.critic_lr)
+        if self.state_only:
+            # State-only: no encoder params — use dummy param to avoid empty optimizer error
+            self._encoder_dummy_param = nn.Parameter(torch.zeros(1))
+            self.encoder_opt = torch.optim.AdamW([self._encoder_dummy_param], lr=self.cfg.critic_lr)
+            print("[QAgent] State-only: encoder_opt uses dummy param (no-op)")
+        else:
+            self.encoder_opt = torch.optim.AdamW(self.encoders.parameters(), lr=self.cfg.critic_lr)
         critic_params = list(self.critic.parameters())
         # Include learnable VLM projector in critic_opt (only if not frozen phase probe)
         if self.vlm_projector is not None and not self.phase_probe_mode:
@@ -384,19 +404,39 @@ class QAgent(nn.Module):
 
             # ── State post-concat validation ──
             assert obs["observation.state"].shape[-1] == 10 + self.vlm_projected_dim, (
-                f"_prepare_prop: state after concat = {obs['observation.state'].shape[-1]} "
+                f"_prepare_prop: state after VLM concat = {obs['observation.state'].shape[-1]} "
                 f"!= {10 + self.vlm_projected_dim}"
             )
 
-    def _encode(self, obs: dict[str, torch.Tensor], augment: bool) -> torch.Tensor:
-        r"""This function encodes the observation into feature tensor.
+        # ── Object state concatenation (cube 6D pose) ──
+        if self.object_state_dim > 0 and "observation.object_state" in obs:
+            obj_state = obs["observation.object_state"]  # (B, 7)
+            assert obj_state.dim() == 2, f"_prepare_prop: object_state must be 2D, got {obj_state.shape}"
+            assert obj_state.shape[-1] == self.object_state_dim, (
+                f"_prepare_prop: object_state dim {obj_state.shape[-1]} != {self.object_state_dim}"
+            )
+            state_before = obs["observation.state"].shape[-1]
+            obs["observation.state"] = torch.cat([obs["observation.state"], obj_state], dim=-1)
+            if not hasattr(self, '_obj_state_concat_logged'):
+                print(f"[QAgent._prepare_prop] Object state concat: "
+                      f"{state_before}D + {self.object_state_dim}D = "
+                      f"{obs['observation.state'].shape[-1]}D")
+                self._obj_state_concat_logged = True
 
-        Images may be stored in the replay buffers as uint8 to save GPU memory.  In
-        that case we convert them to float32 in \[0,1] before feeding them to the
-        encoders.  If the image is already a float tensor (offline dataset or
-        direct env observations during evaluation) we assume it is properly
-        normalised.
+    def _encode(self, obs: dict[str, torch.Tensor], augment: bool) -> torch.Tensor:
+        r"""Encode observation images into feature tensor.
+
+        In state-only mode (no cameras), returns a dummy empty tensor.
         """
+        if self.state_only:
+            # State-only mode: return empty feat (B, 0, 1)
+            B = obs["observation.state"].shape[0]
+            device = obs["observation.state"].device
+            if not hasattr(self, '_encode_state_only_logged'):
+                print(f"[QAgent._encode] State-only: returning empty feat (B={B}, 0, 1) on {device}")
+                self._encode_state_only_logged = True
+            return torch.zeros(B, 0, 1, device=device)
+
         # ── Strict input validation ──
         for cam_name in self.rl_cameras:
             assert cam_name in obs, f"QAgent._encode: missing camera '{cam_name}' in obs. Available keys: {list(obs.keys())}"
@@ -440,7 +480,11 @@ class QAgent(nn.Module):
 
     def _maybe_unsqueeze_(self, obs):
         should_unsqueeze = False
-        if obs[self.rl_cameras[0]].dim() == 3:
+        if self.state_only:
+            # State-only: check state dim instead of camera dim
+            if obs["observation.state"].dim() == 1:
+                should_unsqueeze = True
+        elif obs[self.rl_cameras[0]].dim() == 3:
             should_unsqueeze = True
 
         if should_unsqueeze:
@@ -453,8 +497,9 @@ class QAgent(nn.Module):
         assert not self.training
         assert not self.actor.training
         # ── Strict input validation ──
-        for cam_name in self.rl_cameras:
-            assert cam_name in obs, f"QAgent.act: missing camera '{cam_name}' in obs"
+        if not self.state_only:
+            for cam_name in self.rl_cameras:
+                assert cam_name in obs, f"QAgent.act: missing camera '{cam_name}' in obs"
         assert "observation.state" in obs, "QAgent.act: missing 'observation.state'"
         assert "observation.base_action" in obs, "QAgent.act: missing 'observation.base_action'"
         # Make a shallow copy of the observation dict

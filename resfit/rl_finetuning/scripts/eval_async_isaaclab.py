@@ -50,6 +50,7 @@ parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", 
 parser.add_argument("--use_depth", action="store_true", help="Enable depth observations for residual actor")
 parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
 parser.add_argument("--use_vlm", action="store_true", help="Enable VLM latent features")
+parser.add_argument("--use_state", action="store_true", help="Enable object state (cube 6D pose)")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -107,6 +108,7 @@ def make_eval_env(args):
         reward_type=getattr(args, 'reward_type', None) or 'dense_clipped',
         use_depth=getattr(args, 'use_depth', False),
         depth_norm_path=getattr(args, 'depth_norm_path', None),
+        use_state=getattr(args, 'use_state', False),
     )
     return env
 
@@ -114,7 +116,10 @@ def make_eval_env(args):
 def make_agent(env, device, args=None):
     """Construct a QAgent with the same architecture as training."""
     _use_depth = getattr(args, 'use_depth', False)
-    if _use_depth:
+    _use_state = getattr(args, 'use_state', False)
+    if _use_state:
+        image_keys = []  # state-only: no images
+    elif _use_depth:
         image_keys = ["observation.depth.front", "observation.depth.wrist"]
     else:
         image_keys = [
@@ -123,12 +128,22 @@ def make_agent(env, device, args=None):
             "observation.images.wrist",
         ]
     lowdim_dim = env.observation_space["observation.state"].shape[1]
-    img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
+    if image_keys:
+        img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
+    else:
+        img_c, img_h, img_w = 3, 84, 84  # dummy, not used in state-only
     action_dim = env.action_space.shape[1]
     _use_vlm = getattr(args, 'use_vlm', False)
+    if _use_state:
+        _use_vlm = False  # state-only: no VLM
     vlm_latent_dim = 0
     if _use_vlm and "observation.vlm_latent" in env.observation_space.spaces:
         vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
+
+    _use_state = getattr(args, 'use_state', False)
+    object_state_dim = 0
+    if _use_state and "observation.object_state" in env.observation_space.spaces:
+        object_state_dim = env.observation_space["observation.object_state"].shape[1]
 
     agent_cfg = QAgentConfig(
         actor_lr=1e-6,
@@ -149,6 +164,7 @@ def make_agent(env, device, args=None):
         cfg=agent_cfg,
         residual_actor=True,
         vlm_latent_dim=vlm_latent_dim,
+        object_state_dim=object_state_dim,
     )
     # Load frozen phase probe if provided
     if args is not None and getattr(args, 'phase_probe_path', None) and agent.vlm_projector is not None:
