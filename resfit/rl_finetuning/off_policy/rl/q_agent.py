@@ -30,6 +30,7 @@ class QAgent(nn.Module):
         vlm_latent_dim: int = 0,
         phase_probe_mode: bool = True,
         object_state_dim: int = 0,
+        asymmetric_critic: bool = False,
     ):
         """Initialize the Q-agent.
 
@@ -59,7 +60,8 @@ class QAgent(nn.Module):
         self.rl_cameras = rl_cameras
         self.cfg = cfg
         self.residual_actor = residual_actor
-        self.state_only = (len(rl_cameras) == 0)  # no images — MLP only
+        self.asymmetric_critic = asymmetric_critic  # actor=state-only, critic=depth
+        self.state_only = (len(rl_cameras) == 0) and (not asymmetric_critic)
 
         if self.state_only:
             # State-only mode: no encoders, repr_dim=0
@@ -70,7 +72,7 @@ class QAgent(nn.Module):
             print(f"[QAgent]   prop_dim={prop_shape[0]}, object_state_dim={object_state_dim}, "
                   f"vlm_latent_dim={vlm_latent_dim}")
         else:
-            # Build the per-camera encoders
+            # Build the per-camera encoders (used by critic, and actor if not asymmetric)
             self.encoders: nn.ModuleList = self._build_encoders(obs_shape)
             sample_encoder = self.encoders[0]
             repr_dim_single = int(sample_encoder.repr_dim)
@@ -78,7 +80,10 @@ class QAgent(nn.Module):
             repr_dim = repr_dim_single * len(self.rl_cameras)
             print("encoder output dim: ", repr_dim)
             print("patch output dim: ", patch_repr_dim)
-            print(f"[QAgent] Image mode: {len(self.rl_cameras)} cameras, repr_dim={repr_dim}")
+            if asymmetric_critic:
+                print(f"[QAgent] ASYMMETRIC mode: critic uses {len(self.rl_cameras)} cameras (repr_dim={repr_dim}), actor is state-only")
+            else:
+                print(f"[QAgent] Image mode: {len(self.rl_cameras)} cameras, repr_dim={repr_dim}")
 
         assert len(prop_shape) == 1
         prop_dim = prop_shape[0] if cfg.use_prop else 0
@@ -117,14 +122,27 @@ class QAgent(nn.Module):
         print(f"[QAgent] repr_dim={repr_dim}, patch_repr_dim={patch_repr_dim}")
 
         # create critics & actor (with extended prop_dim)
+        # For asymmetric mode: critic uses encoder features, actor is state-only
+        if self.asymmetric_critic:
+            actor_repr_dim = 0  # state-only actor
+            actor_patch_repr_dim = 1  # dummy
+            critic_repr_dim = repr_dim  # critic uses depth encoder
+            critic_patch_repr_dim = patch_repr_dim
+            print(f"[QAgent] Asymmetric: actor repr_dim=0 (state-only), critic repr_dim={critic_repr_dim}")
+        else:
+            actor_repr_dim = repr_dim
+            actor_patch_repr_dim = patch_repr_dim
+            critic_repr_dim = repr_dim
+            critic_patch_repr_dim = patch_repr_dim
+
         self.critic = Critic(
-            repr_dim=repr_dim,
-            patch_repr_dim=patch_repr_dim,
+            repr_dim=critic_repr_dim,
+            patch_repr_dim=critic_patch_repr_dim,
             prop_dim=total_prop_dim,
             action_dim=action_dim,
             cfg=self.cfg.critic,
         )
-        self.actor = Actor(repr_dim, patch_repr_dim, total_prop_dim, action_dim, cfg.actor, residual_actor=residual_actor)
+        self.actor = Actor(actor_repr_dim, actor_patch_repr_dim, total_prop_dim, action_dim, cfg.actor, residual_actor=residual_actor)
 
         self.critic_target = copy.deepcopy(self.critic)
         self.actor_target = copy.deepcopy(self.actor)
@@ -156,6 +174,9 @@ class QAgent(nn.Module):
             print("[QAgent] State-only: encoder_opt uses dummy param (no-op)")
         else:
             self.encoder_opt = torch.optim.AdamW(self.encoders.parameters(), lr=self.cfg.critic_lr)
+            if self.asymmetric_critic:
+                print(f"[QAgent] Asymmetric: encoder trains for critic only "
+                      f"({sum(p.numel() for p in self.encoders.parameters())} params)")
         critic_params = list(self.critic.parameters())
         # Include learnable VLM projector in critic_opt (only if not frozen phase probe)
         if self.vlm_projector is not None and not self.phase_probe_mode:
@@ -497,7 +518,7 @@ class QAgent(nn.Module):
         assert not self.training
         assert not self.actor.training
         # ── Strict input validation ──
-        if not self.state_only:
+        if not self.state_only and not self.asymmetric_critic:
             for cam_name in self.rl_cameras:
                 assert cam_name in obs, f"QAgent.act: missing camera '{cam_name}' in obs"
         assert "observation.state" in obs, "QAgent.act: missing 'observation.state'"
@@ -507,7 +528,12 @@ class QAgent(nn.Module):
         unsqueezed = self._maybe_unsqueeze_(obs)
 
         assert "feat" not in obs
-        obs["feat"] = self._encode(obs, augment=False)
+        if self.asymmetric_critic:
+            # Actor is state-only: skip encoding, use empty feat
+            B = obs["observation.state"].shape[0]
+            obs["feat"] = torch.zeros(B, 0, 1, device=obs["observation.state"].device)
+        else:
+            obs["feat"] = self._encode(obs, augment=False)
         self._prepare_prop(obs, detach_vlm=True)  # actor: VLM gradient blocked
 
         action = self._act_default(
@@ -963,12 +989,53 @@ class QAgent(nn.Module):
         # To not bootstrap on terminal states we zero out the discount factor for terminal next states
         effective_discount = discount * next_nonterminal
 
+        # ── Asymmetric critic validation (first 3 updates) ──
+        if not hasattr(self, '_asym_debug_n'):
+            self._asym_debug_n = 0
+        if self.asymmetric_critic and self._asym_debug_n < 3:
+            # Verify depth images are in the batch
+            for cam in self.rl_cameras:
+                assert cam in obs, f"ASYMMETRIC: missing '{cam}' in obs batch!"
+                v = obs[cam]
+                assert v.dim() == 4, f"ASYMMETRIC: {cam} must be 4D, got {v.shape}"
+                assert (v.abs() > 1e-6).any(), f"ASYMMETRIC: {cam} is all zeros!"
+                if cam in next_obs:
+                    assert (next_obs[cam].abs() > 1e-6).any(), f"ASYMMETRIC: next_{cam} is all zeros!"
+            # Verify object state
+            if self.object_state_dim > 0:
+                assert "observation.object_state" in obs, \
+                    f"ASYMMETRIC: missing observation.object_state in batch! obj_dim={self.object_state_dim}"
+                os_v = obs["observation.object_state"]
+                assert os_v.shape[-1] == self.object_state_dim, \
+                    f"ASYMMETRIC: object_state dim {os_v.shape[-1]} != expected {self.object_state_dim}"
+                assert (os_v.abs() > 1e-8).any(), "ASYMMETRIC: object_state is all zeros!"
+                assert "observation.object_state" in next_obs, "ASYMMETRIC: missing object_state in next_obs"
+            print(f"[ASYMMETRIC DEBUG #{self._asym_debug_n}] "
+                  f"obs.state={obs['observation.state'].shape} "
+                  f"obj_state={'observation.object_state' in obs}({self.object_state_dim}D) "
+                  f"depth_cams={[c for c in self.rl_cameras if c in obs]} "
+                  f"actor.state_only={self.actor.state_only} "
+                  f"critic.state_only={self.critic.q_ensemble.state_only if hasattr(self.critic, 'q_ensemble') else '?'}")
+            self._asym_debug_n += 1
+
         obs["feat"] = self._encode(obs, augment=True)
         self._prepare_prop(obs, detach_vlm=False)  # critic: VLM gradient flows
 
         with torch.no_grad():
             next_obs["feat"] = self._encode(next_obs, augment=True)
             self._prepare_prop(next_obs, detach_vlm=False)  # next_obs for target Q
+
+        # ── Post-encode asymmetric validation ──
+        if self.asymmetric_critic and self._asym_debug_n <= 3:
+            feat = obs["feat"]
+            prop = obs["observation.state"]
+            assert feat.shape[0] == B, f"ASYMMETRIC: feat batch {feat.shape[0]} != {B}"
+            if feat.numel() > 0:
+                assert (feat.abs() > 1e-8).any(), "ASYMMETRIC: encoded feat is all zeros!"
+                print(f"[ASYMMETRIC DEBUG] post-encode: feat={feat.shape} "
+                      f"feat_range=[{feat.min().item():.4f},{feat.max().item():.4f}] "
+                      f"prop(after_prepare)={prop.shape} "
+                      f"prop_range=[{prop.min().item():.4f},{prop.max().item():.4f}]")
 
         metrics = {}
         metrics["data/batch_R"] = reward.mean().item()

@@ -51,6 +51,11 @@ parser.add_argument("--use_depth", action="store_true", help="Enable depth obser
 parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
 parser.add_argument("--use_vlm", action="store_true", help="Enable VLM latent features")
 parser.add_argument("--use_state", action="store_true", help="Enable object state (cube 6D pose)")
+parser.add_argument("--object_state_mode", type=str, default="raw", choices=["raw", "relative", "full"])
+parser.add_argument("--contact_binary", action="store_true", help="Binary contact")
+parser.add_argument("--critic_hidden_dim", type=int, default=None, help="Critic MLP hidden dim")
+parser.add_argument("--actor_hidden_dim", type=int, default=None, help="Actor MLP hidden dim")
+parser.add_argument("--asymmetric_critic", action="store_true", help="Asymmetric: actor=state-only, critic=depth+state")
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 args_cli.enable_cameras = True
@@ -106,9 +111,11 @@ def make_eval_env(args):
         success_threshold=args.success_threshold,
         cube_perturb_table_path=getattr(args, 'cube_perturb_table_path', None),
         reward_type=getattr(args, 'reward_type', None) or 'dense_clipped',
-        use_depth=getattr(args, 'use_depth', False),
+        use_depth=getattr(args, 'use_depth', False) or getattr(args, 'asymmetric_critic', False),
         depth_norm_path=getattr(args, 'depth_norm_path', None),
-        use_state=getattr(args, 'use_state', False),
+        use_state=getattr(args, 'use_state', False) or getattr(args, 'asymmetric_critic', False),
+        object_state_mode=getattr(args, 'object_state_mode', 'raw'),
+        contact_binary=getattr(args, 'contact_binary', False),
     )
     return env
 
@@ -117,7 +124,14 @@ def make_agent(env, device, args=None):
     """Construct a QAgent with the same architecture as training."""
     _use_depth = getattr(args, 'use_depth', False)
     _use_state = getattr(args, 'use_state', False)
-    if _use_state:
+    _asymmetric = getattr(args, 'asymmetric_critic', False)
+    if _asymmetric:
+        # Asymmetric: critic uses depth, actor is state-only
+        # Must create agent with depth cameras (for encoder/checkpoint compat)
+        image_keys = ["observation.depth.front", "observation.depth.wrist"]
+        _use_depth = True
+        _use_state = True
+    elif _use_state:
         image_keys = []  # state-only: no images
     elif _use_depth:
         image_keys = ["observation.depth.front", "observation.depth.wrist"]
@@ -134,13 +148,13 @@ def make_agent(env, device, args=None):
         img_c, img_h, img_w = 3, 84, 84  # dummy, not used in state-only
     action_dim = env.action_space.shape[1]
     _use_vlm = getattr(args, 'use_vlm', False)
-    if _use_state:
-        _use_vlm = False  # state-only: no VLM
+    if _use_state or _asymmetric:
+        _use_vlm = False  # state-only / asymmetric: no VLM
     vlm_latent_dim = 0
     if _use_vlm and "observation.vlm_latent" in env.observation_space.spaces:
         vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
 
-    _use_state = getattr(args, 'use_state', False)
+    _use_state = getattr(args, 'use_state', False) or _asymmetric
     object_state_dim = 0
     if _use_state and "observation.object_state" in env.observation_space.spaces:
         object_state_dim = env.observation_space["observation.object_state"].shape[1]
@@ -155,6 +169,13 @@ def make_agent(env, device, args=None):
             action_l2_reg_weight=1.0,
         ),
     )
+    # Override critic hidden dim if specified
+    _critic_hdim = getattr(args, 'critic_hidden_dim', None)
+    if _critic_hdim is not None:
+        agent_cfg.critic.hidden_dim = _critic_hdim
+    _actor_hdim = getattr(args, 'actor_hidden_dim', None)
+    if _actor_hdim is not None:
+        agent_cfg.actor.hidden_dim = _actor_hdim
 
     agent = QAgent(
         obs_shape=(img_c, img_h, img_w),
@@ -165,6 +186,7 @@ def make_agent(env, device, args=None):
         residual_actor=True,
         vlm_latent_dim=vlm_latent_dim,
         object_state_dim=object_state_dim,
+        asymmetric_critic=_asymmetric,
     )
     # Load frozen phase probe if provided
     if args is not None and getattr(args, 'phase_probe_path', None) and agent.vlm_projector is not None:

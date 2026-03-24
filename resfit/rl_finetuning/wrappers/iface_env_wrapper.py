@@ -267,12 +267,16 @@ class IfaceEnvWrapper:
         use_depth: bool = False,  # Enable depth observations for residual actor
         depth_norm_path: str | None = None,  # Path to depth_normalization.json
         use_state: bool = False,  # Enable object state (cube 6D pose) observations
+        object_state_mode: str = "raw",  # "raw"|"relative"|"full"
+        contact_binary: bool = False,  # Use binary contact (0/1) instead of continuous force
     ):
         self.sim = sim
         self.csv_dir = Path(csv_dir).expanduser().resolve()
         self.reward_type = reward_type
         self.use_depth = use_depth
         self.use_state = use_state
+        self.object_state_mode = object_state_mode
+        self.contact_binary = contact_binary
         self.language_override = language_override
         self.random_cube_perturb = random_cube_perturb
         self.random_cube_xy_range = random_cube_xy_range
@@ -436,12 +440,19 @@ class IfaceEnvWrapper:
                     if isinstance(v, dict):
                         print(f"  {k}: min={v.get('min')}, max={v.get('max')}")
             print(f"[IfaceEnvWrapper] Depth obs spaces added: observation.depth.front, observation.depth.wrist")
-        # Object state (cube 6D pose): pos(3) + quat_wxyz(4) = 7D
-        self._object_state_dim = 7
+        # Object state dimension depends on mode:
+        #   raw:      cube_pos(3) + cube_quat_wxyz(4) = 7D
+        #   relative: rel_pos(3) + contact_binary(1) = 4D
+        #   full:     rel_pos(3) + cube_quat_wxyz(4) + contact_binary(1) = 8D
+        _obj_state_dims = {"raw": 7, "relative": 4, "full": 8}
+        self._object_state_dim = _obj_state_dims.get(self.object_state_mode, 7)
         if self.use_state:
             obs_spaces["observation.object_state"] = gym.spaces.Box(
                 low=-np.inf, high=np.inf, shape=(N, self._object_state_dim), dtype=np.float32)
-            print(f"[IfaceEnvWrapper] Object state mode ON: observation.object_state ({self._object_state_dim}D)")
+            print(f"[IfaceEnvWrapper] Object state mode={self.object_state_mode}: "
+                  f"observation.object_state ({self._object_state_dim}D)")
+            if self.contact_binary:
+                print(f"[IfaceEnvWrapper] Contact: binary (0/1)")
         self.observation_space = gym.spaces.Dict(obs_spaces)
 
         # ── VLM latent cache (updated on GR00T inference, cached between) ──
@@ -1123,6 +1134,8 @@ class IfaceEnvWrapper:
 
         # Contact force magnitude (scalar per env)
         contact_force_mag = self.left_finger_force[:N].norm(dim=-1, keepdim=True).detach().cpu().numpy().astype(np.float32)  # (N, 1)
+        if self.contact_binary:
+            contact_force_mag = (contact_force_mag > 0.1).astype(np.float32)  # binary 0/1
 
         # Concatenate: 3 + 4 + 2 + 1 = 10
         states = np.concatenate([ee_pos, ee_quat_xyzw, gripper_qpos, contact_force_mag], axis=-1).astype(np.float32)  # (N, 10)
@@ -1182,21 +1195,33 @@ class IfaceEnvWrapper:
             if self._depth_debug_count < 5:
                 self._depth_debug_count += 1
 
-        # Object state: cube 6D pose → pos(3) + quat_wxyz(4) = 7D
+        # Object state: mode-dependent
         if self.use_state:
             cube_state = self.cube.data.root_state_w[:N]  # (N, 13)
             cube_pos = cube_state[:, :3]   # (N, 3)
             cube_quat_wxyz = cube_state[:, 3:7]  # (N, 4)
-            obs["observation.object_state"] = torch.cat(
-                [cube_pos, cube_quat_wxyz], dim=-1
-            ).to(dtype=torch.float32)  # (N, 7)
+
+            hand_body_idx_t = self.robot.find_bodies("panda_hand")[0][0]
+            ee_pos_t = self.robot.data.body_pos_w[:N, hand_body_idx_t]  # (N, 3) tensor
+            rel_pos = cube_pos - ee_pos_t  # (N, 3)
+            contact_bin = (self.left_finger_force[:N].norm(dim=-1, keepdim=True) > 0.1).float()  # (N, 1)
+
+            if self.object_state_mode == "raw":
+                obj_state = torch.cat([cube_pos, cube_quat_wxyz], dim=-1)  # (N, 7)
+            elif self.object_state_mode == "relative":
+                obj_state = torch.cat([rel_pos, contact_bin], dim=-1)  # (N, 4)
+            elif self.object_state_mode == "full":
+                obj_state = torch.cat([rel_pos, cube_quat_wxyz, contact_bin], dim=-1)  # (N, 8)
+            else:
+                raise ValueError(f"Unknown object_state_mode: {self.object_state_mode}")
+
+            obs["observation.object_state"] = obj_state.to(dtype=torch.float32)
             # Debug: first 3 calls
             if not hasattr(self, '_obj_state_debug_count'):
                 self._obj_state_debug_count = 0
             if self._obj_state_debug_count < 3:
-                v = obs["observation.object_state"][0]
-                print(f"[OBJ_STATE] pos=({v[0]:.4f},{v[1]:.4f},{v[2]:.4f}) "
-                      f"quat=({v[3]:.4f},{v[4]:.4f},{v[5]:.4f},{v[6]:.4f})")
+                v = obs["observation.object_state"][0].detach().cpu().numpy()
+                print(f"[OBJ_STATE mode={self.object_state_mode}] {v}")
                 self._obj_state_debug_count += 1
 
         # ── Strict output validation ──

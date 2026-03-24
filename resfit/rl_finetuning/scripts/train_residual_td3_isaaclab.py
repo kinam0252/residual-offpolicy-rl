@@ -103,6 +103,7 @@ parser.add_argument("--random_cube_perturb", action="store_true", help="Randomiz
 parser.add_argument("--resume_checkpoint", type=str, default=None, help="Path to checkpoint to resume from (loads weights only, not optimizer)")
 parser.add_argument("--reward_type", type=str, default=None, choices=["sparse", "dense", "dense_clipped"], help="Reward type")
 parser.add_argument("--critic_hidden_dim", type=int, default=None, help="Critic MLP hidden dim (default 1024)")
+parser.add_argument("--actor_hidden_dim", type=int, default=None, help="Actor MLP hidden dim (default 1024)")
 parser.add_argument("--vlm_projected_dim", type=int, default=None, help="VLM projector output dim (default 256)")
 parser.add_argument("--phase_probe_path", type=str, default=None, help="Path to pre-trained phase probe .pt (frozen linear 2048->3)")
 parser.add_argument("--no_clip_q", action="store_true", help="Disable Q-target clipping to reward range")
@@ -112,6 +113,10 @@ parser.add_argument("--use_depth", action="store_true", help="Enable depth obser
 parser.add_argument("--depth_norm_path", type=str, default=None, help="Path to depth_normalization.json")
 parser.add_argument("--use_vlm", action="store_true", help="Enable VLM latent features for actor/critic")
 parser.add_argument("--use_state", action="store_true", help="Enable object state (cube 6D pose) as additional low-dim input")
+parser.add_argument("--asymmetric_critic", action="store_true", help="Asymmetric actor-critic: actor=state-only, critic=depth+state (requires --use_depth + --use_state)")
+parser.add_argument("--object_state_mode", type=str, default="raw", choices=["raw", "relative", "full"],
+                    help="Object state representation: raw=pos+quat(7D), relative=relpos+contact(4D), full=relpos+quat+contact(8D)")
+parser.add_argument("--contact_binary", action="store_true", help="Use binary contact (0/1) instead of continuous force magnitude")
 parser.add_argument("--min_save_success_rate", type=float, default=0.0, help="Only save periodic checkpoints when best success rate >= this threshold (0=always save)")
 parser.add_argument("--checkpoint_min_success", type=float, default=0.0, help="Only save periodic checkpoints when best_success >= this threshold (0=always save)")
 AppLauncher.add_app_launcher_args(parser)
@@ -342,6 +347,21 @@ exec {sys.executable} {eval_script} \\
         # Pass state mode if enabled
         if hasattr(self, '_use_state') and self._use_state:
             launcher_content = launcher_content.rstrip() + ' \\\n  --use_state'
+            _osm = getattr(self, '_object_state_mode', 'raw')
+            if _osm != 'raw':
+                launcher_content = launcher_content.rstrip() + f' \\\n  --object_state_mode {_osm}'
+            if getattr(self, '_contact_binary', False):
+                launcher_content = launcher_content.rstrip() + ' \\\n  --contact_binary'
+        # Pass critic hidden dim if non-default
+        _chd = getattr(self, '_critic_hidden_dim', None)
+        if _chd is not None:
+            launcher_content = launcher_content.rstrip() + f' \\\n  --critic_hidden_dim {_chd}'
+        _ahd = getattr(self, '_actor_hidden_dim', None)
+        if _ahd is not None:
+            launcher_content = launcher_content.rstrip() + f' \\\n  --actor_hidden_dim {_ahd}'
+        # Pass asymmetric critic mode
+        if getattr(self, '_asymmetric_critic', False):
+            launcher_content = launcher_content.rstrip() + ' \\\n  --asymmetric_critic'
         launcher_content += "\n"
         launcher_path.write_text(launcher_content)
         launcher_path.chmod(0o755)
@@ -616,8 +636,7 @@ def _add_transitions(
             obj_st = curr_obs_i.get("observation.object_state", None)
             if obj_st is not None:
                 os_v = obj_st.detach().cpu().numpy() if hasattr(obj_st, 'detach') else obj_st
-                _log(f"  object_state({len(os_v)}D): pos=({os_v[0]:+.4f},{os_v[1]:+.4f},{os_v[2]:+.4f}) "
-                     f"quat=({os_v[3]:+.4f},{os_v[4]:+.4f},{os_v[5]:+.4f},{os_v[6]:+.4f})")
+                _log(f"  object_state({len(os_v)}D): {os_v}")
             a = act.detach().cpu().numpy() if hasattr(act, 'detach') else act
             _log(f"  action(stored): {a}")
             rv = r.item() if hasattr(r, 'item') else r
@@ -1333,9 +1352,11 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         cube_perturb_table_path=getattr(ecfg, 'cube_perturb_table_path', None),
         random_cube_perturb=bool(getattr(args_cli, 'random_cube_perturb', False)),
         reward_type=str(getattr(ecfg, 'reward_type', 'dense_clipped')),
-        use_depth=bool(getattr(args_cli, 'use_depth', False)),
+        use_depth=bool(getattr(args_cli, 'use_depth', False)) or bool(getattr(args_cli, 'asymmetric_critic', False)),
         depth_norm_path=getattr(args_cli, 'depth_norm_path', None),
-        use_state=bool(getattr(args_cli, 'use_state', False)),
+        use_state=bool(getattr(args_cli, 'use_state', False)) or bool(getattr(args_cli, 'asymmetric_critic', False)),
+        object_state_mode=str(getattr(args_cli, 'object_state_mode', 'raw')),
+        contact_binary=bool(getattr(args_cli, 'contact_binary', False)),
     )
     eval_env = env  # same sim context, switch active_env_ids for eval
     _set_phase("env_ready")
@@ -1347,7 +1368,15 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     # If depth mode, replace RGB cameras with depth cameras for residual actor
     _use_depth = bool(getattr(args_cli, 'use_depth', False))
     _use_state = bool(getattr(args_cli, 'use_state', False))
-    if _use_state:
+    _asymmetric = bool(getattr(args_cli, 'asymmetric_critic', False))
+    if _asymmetric:
+        # Asymmetric: critic uses depth, actor uses state-only
+        # Force both depth and state on
+        _use_depth = True
+        _use_state = True
+        image_keys = ["observation.depth.front", "observation.depth.wrist"]
+        _log(f"ASYMMETRIC mode: critic uses depth {image_keys}, actor is state-only")
+    elif _use_state:
         image_keys = []  # state-only: no images
         _log(f"State-only mode: no image keys (encoder-free)")
     elif _use_depth:
@@ -1363,8 +1392,8 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     lowdim_keys = ["observation.state", "observation.base_action"]
     # Check if VLM latent is available from env AND explicitly enabled
     _use_vlm = bool(getattr(args_cli, 'use_vlm', False))
-    if _use_state:
-        _use_vlm = False  # state-only mode: no VLM
+    if _use_state or _asymmetric:
+        _use_vlm = False  # state-only / asymmetric mode: no VLM
     vlm_latent_dim = 0
     if _use_vlm and "observation.vlm_latent" in env.observation_space.spaces:
         vlm_latent_dim = env.observation_space["observation.vlm_latent"].shape[1]
@@ -1375,13 +1404,13 @@ def main(cfg: ResidualTD3IsaacLabConfig):
     else:
         _log(f"VLM latent not available in env")
     # Object state (cube 6D pose) — adds to lowdim
-    _use_state = bool(getattr(args_cli, 'use_state', False))
+    _use_state_for_obj = bool(getattr(args_cli, 'use_state', False)) or _asymmetric
     object_state_dim = 0
-    if _use_state and "observation.object_state" in env.observation_space.spaces:
+    if _use_state_for_obj and "observation.object_state" in env.observation_space.spaces:
         object_state_dim = env.observation_space["observation.object_state"].shape[1]
         lowdim_keys.append("observation.object_state")
-        _log(f"Object state enabled (--use_state): {object_state_dim}D")
-    elif _use_state:
+        _log(f"Object state enabled: {object_state_dim}D")
+    elif _use_state_for_obj:
         _log(f"WARNING: --use_state requested but observation.object_state not in env")
     # Warmup uses 1 env; main training loop will expand to all train envs
     num_envs = 1  # warmup with single env
@@ -1409,6 +1438,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         residual_actor=True,
         vlm_latent_dim=vlm_latent_dim,
         object_state_dim=object_state_dim,
+        asymmetric_critic=_asymmetric,
     )
 
     # Load frozen phase probe (must be before resume_checkpoint to set correct weights)
@@ -1491,6 +1521,9 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             "use_vlm": bool(getattr(args_cli, 'use_vlm', False)),
             "use_state": bool(getattr(args_cli, 'use_state', False)),
             "object_state_dim": int(object_state_dim),
+            "object_state_mode": str(getattr(args_cli, 'object_state_mode', 'raw')),
+            "contact_binary": bool(getattr(args_cli, 'contact_binary', False)),
+            "asymmetric_critic": bool(getattr(args_cli, 'asymmetric_critic', False)),
         }
         # Include perturbation table content if exists
         _pt = getattr(ecfg, 'cube_perturb_table_path', None)
@@ -1530,6 +1563,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
                     image_size=(ecfg.image_size_h, ecfg.image_size_w),
                     max_episodes=cfg.offline_data.num_episodes,
                     lowdim_keys=lowdim_keys,
+                    object_state_mode=str(getattr(args_cli, 'object_state_mode', 'raw')),
                 )
             _log("Populating offline buffer from CSV episodes...")
             return populate_offline_buffer_from_csv(
@@ -1724,6 +1758,11 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         async_eval._depth_norm_path = getattr(args_cli, 'depth_norm_path', None)
         async_eval._use_vlm = _use_vlm
         async_eval._use_state = _use_state
+        async_eval._object_state_mode = str(getattr(args_cli, 'object_state_mode', 'raw'))
+        async_eval._contact_binary = bool(getattr(args_cli, 'contact_binary', False))
+        async_eval._critic_hidden_dim = getattr(args_cli, 'critic_hidden_dim', None)
+        async_eval._actor_hidden_dim = getattr(args_cli, 'actor_hidden_dim', None)
+        async_eval._asymmetric_critic = _asymmetric
         async_eval_results_dir = outputs_dir / "async_eval_results"
         # Eval logs to its own wandb run (same project) — sharing a single run causes timeout/conflicts
         _wandb_run_id = None
@@ -2309,6 +2348,23 @@ def main(cfg: ResidualTD3IsaacLabConfig):
         assert not torch.isnan(next_obs["observation.state"]).any(), f"NaN in next_obs.state at step={global_step}"
         assert not torch.isnan(reward).any(), f"NaN in reward at step={global_step}"
 
+        # ── Asymmetric critic: verify depth + object_state in online obs ──
+        if _asymmetric and global_step < 5:
+            for _ck in image_keys:
+                assert _ck in obs, f"ASYM online: missing {_ck} in obs at step={global_step}"
+                _cv = obs[_ck]
+                assert _cv.dim() == 4 and _cv.shape[0] == num_envs, f"ASYM online: {_ck} shape {_cv.shape}"
+                assert (_cv.abs() > 1e-6).any(), f"ASYM online: {_ck} all zeros at step={global_step}"
+            if "observation.object_state" in obs:
+                _ov = obs["observation.object_state"]
+                assert _ov.shape == (num_envs, object_state_dim), \
+                    f"ASYM online: object_state shape {_ov.shape} != ({num_envs}, {object_state_dim})"
+                assert (_ov.abs() > 1e-8).any(), f"ASYM online: object_state all zeros at step={global_step}"
+            elif object_state_dim > 0:
+                _log(f"WARNING: asymmetric but object_state missing from online obs at step={global_step}")
+            _log(f"[ASYM ONLINE] step={global_step} depth_ok={all(k in obs for k in image_keys)} "
+                 f"obj_state={'observation.object_state' in obs}({object_state_dim}D)")
+
         # Store valid transitions only
         if valid_mask.all():
             _add_transitions(
@@ -2447,7 +2503,7 @@ def main(cfg: ResidualTD3IsaacLabConfig):
             _save_checkpoint(agent, _local_ckpt_dir / f"agent_step{global_step}.pt")
             # Also save to NAS only if performance threshold met
             _min_save = float(getattr(args_cli, 'min_save_success_rate', 0.0))
-            if best_success >= _min_save:
+            if _min_save <= 0 or best_success > _min_save:
                 import shutil
                 shutil.copy2(
                     str(_local_ckpt_dir / f"agent_step{global_step}.pt"),
@@ -2844,6 +2900,8 @@ if __name__ == "__main__":
         cfg.algo.actor_lr_warmup_steps = args_cli.actor_lr_warmup_steps
     if args_cli.critic_hidden_dim is not None:
         cfg.agent.critic.hidden_dim = args_cli.critic_hidden_dim
+    if args_cli.actor_hidden_dim is not None:
+        cfg.agent.actor.hidden_dim = args_cli.actor_hidden_dim
     if args_cli.vlm_projected_dim is not None:
         cfg.agent.vlm_projected_dim = args_cli.vlm_projected_dim
     if args_cli.offline_data_dir is not None:

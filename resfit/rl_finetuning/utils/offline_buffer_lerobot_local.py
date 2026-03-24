@@ -111,6 +111,7 @@ def populate_offline_buffer_from_lerobot_local(
     image_size: tuple[int, int] = (84, 84),
     max_episodes: int | None = None,
     lowdim_keys: list[str] | None = None,
+    object_state_mode: str = "raw",
 ) -> int:
     """Populate replay buffer from local LeRobot-style dataset folder.
 
@@ -151,6 +152,18 @@ def populate_offline_buffer_from_lerobot_local(
     episode_files = sorted(data_chunk.glob("episode_*.parquet"))
     if max_episodes is not None:
         episode_files = episode_files[:max_episodes]
+
+    # Asymmetric mode validation: check first episode has both depth AND cube_pos
+    _first_df = pd.read_parquet(episode_files[0]) if episode_files else None
+    _want_depth = any(k.startswith("observation.depth") for k in image_keys) if image_keys else False
+    _want_obj = lowdim_keys is not None and "observation.object_state" in lowdim_keys
+    if _want_depth and _want_obj and _first_df is not None:
+        _has_cube = "cube_pos" in _first_df.columns and "cube_quat_wxyz" in _first_df.columns
+        print(f"[offline-buffer] ASYMMETRIC check: depth_keys={[k for k in image_keys if 'depth' in k]} "
+              f"obj_state_wanted={_want_obj} parquet_has_cube_pos={_has_cube}")
+        if not _has_cube:
+            print(f"[offline-buffer] WARNING: depth+state requested but parquet missing cube_pos/cube_quat_wxyz! "
+                  f"Columns: {sorted(_first_df.columns.tolist())}")
 
     total_transitions = 0
 
@@ -230,30 +243,53 @@ def populate_offline_buffer_from_lerobot_local(
                     curr_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
                     next_obs["observation.vlm_latent"] = torch.zeros(2048, dtype=torch.float32)
 
-            # Object state: cube 6D pose from parquet (pos(3) + quat_wxyz(4) = 7D)
+            # Object state: mode-dependent from parquet (cube_pos + cube_quat_wxyz)
             _want_obj_state = lowdim_keys is not None and "observation.object_state" in lowdim_keys
             if _want_obj_state:
-                _has_cube_pos = "cube_pos" in df.columns and "cube_quat_wxyz" in df.columns
-                if _has_cube_pos:
-                    if not hasattr(populate_offline_buffer_from_lerobot_local, '_obj_states'):
-                        populate_offline_buffer_from_lerobot_local._obj_states = None
-                    if populate_offline_buffer_from_lerobot_local._obj_states is None or \
-                       populate_offline_buffer_from_lerobot_local._obj_states_ep != episode_name:
-                        _cp = np.stack(df["cube_pos"].to_numpy()).astype(np.float32)      # (T, 3)
-                        _cq = np.stack(df["cube_quat_wxyz"].to_numpy()).astype(np.float32) # (T, 4)
-                        populate_offline_buffer_from_lerobot_local._obj_states = np.concatenate([_cp, _cq], axis=-1)  # (T, 7)
-                        populate_offline_buffer_from_lerobot_local._obj_states_ep = episode_name
-                    _os = populate_offline_buffer_from_lerobot_local._obj_states
-                    curr_obs["observation.object_state"] = torch.tensor(_os[t], dtype=torch.float32)
-                    next_obs["observation.object_state"] = torch.tensor(_os[min(t+1, T-1)], dtype=torch.float32)
+                _has_cube = "cube_pos" in df.columns and "cube_quat_wxyz" in df.columns
+                if _has_cube:
+                    _ck = f"_obj_raw_{id(df)}"
+                    if not hasattr(populate_offline_buffer_from_lerobot_local, '_obj_cache_id') or \
+                       populate_offline_buffer_from_lerobot_local._obj_cache_id != _ck:
+                        populate_offline_buffer_from_lerobot_local._obj_cp = np.stack(df["cube_pos"].to_numpy()).astype(np.float32)
+                        populate_offline_buffer_from_lerobot_local._obj_cq = np.stack(df["cube_quat_wxyz"].to_numpy()).astype(np.float32)
+                        populate_offline_buffer_from_lerobot_local._obj_cache_id = _ck
+                    _cp = populate_offline_buffer_from_lerobot_local._obj_cp
+                    _cq = populate_offline_buffer_from_lerobot_local._obj_cq
+                    _tn = min(t + 1, T - 1)
+
+                    if object_state_mode == "raw":
+                        os_t = np.concatenate([_cp[t], _cq[t]])
+                        os_n = np.concatenate([_cp[_tn], _cq[_tn]])
+                    elif object_state_mode == "relative":
+                        rel_t = _cp[t] - state_t[:3]
+                        rel_n = _cp[_tn] - state_next[:3]
+                        ct_t = np.array([1.0 if contact_forces[t] > 0.1 else 0.0], dtype=np.float32)
+                        ct_n = np.array([1.0 if contact_forces[_tn] > 0.1 else 0.0], dtype=np.float32)
+                        os_t = np.concatenate([rel_t, ct_t])
+                        os_n = np.concatenate([rel_n, ct_n])
+                    elif object_state_mode == "full":
+                        rel_t = _cp[t] - state_t[:3]
+                        rel_n = _cp[_tn] - state_next[:3]
+                        ct_t = np.array([1.0 if contact_forces[t] > 0.1 else 0.0], dtype=np.float32)
+                        ct_n = np.array([1.0 if contact_forces[_tn] > 0.1 else 0.0], dtype=np.float32)
+                        os_t = np.concatenate([rel_t, _cq[t], ct_t])
+                        os_n = np.concatenate([rel_n, _cq[_tn], ct_n])
+                    else:
+                        os_t = np.concatenate([_cp[t], _cq[t]])
+                        os_n = np.concatenate([_cp[_tn], _cq[_tn]])
+
+                    curr_obs["observation.object_state"] = torch.tensor(os_t, dtype=torch.float32)
+                    next_obs["observation.object_state"] = torch.tensor(os_n, dtype=torch.float32)
                     if ep_idx == 0 and t == 0:
-                        print(f"[offline-lerobot] Object state loaded: shape={_os.shape} "
-                              f"sample={_os[0]}")
+                        print(f"[offline-lerobot] Object state mode={object_state_mode}: "
+                              f"dim={len(os_t)} sample={os_t}")
                 else:
-                    curr_obs["observation.object_state"] = torch.zeros(7, dtype=torch.float32)
-                    next_obs["observation.object_state"] = torch.zeros(7, dtype=torch.float32)
+                    _dim = {"raw": 7, "relative": 4, "full": 8}.get(object_state_mode, 7)
+                    curr_obs["observation.object_state"] = torch.zeros(_dim, dtype=torch.float32)
+                    next_obs["observation.object_state"] = torch.zeros(_dim, dtype=torch.float32)
                     if ep_idx == 0 and t == 0:
-                        print(f"[offline-lerobot] WARNING: cube_pos/cube_quat_wxyz not in parquet, using zeros")
+                        print(f"[offline-lerobot] WARNING: no cube_pos/cube_quat in parquet")
 
             for obs_key in image_keys:
                 if obs_key.startswith("observation.depth."):
