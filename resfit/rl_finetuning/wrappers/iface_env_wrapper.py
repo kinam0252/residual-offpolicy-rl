@@ -710,31 +710,50 @@ class IfaceEnvWrapper:
     # ─────────────────────────────────────────────────────────────────
     # step
     # ─────────────────────────────────────────────────────────────────
-    def step(self, residual_action: torch.Tensor | None = None):
-        """One sim step for all envs. Runs batched GR00T inference when needed, applies action + optional residual."""
+    def step(self, residual_action: torch.Tensor | None = None, render: bool = True):
+        """One sim step for all envs. Runs batched GR00T inference when needed, applies action + optional residual.
+
+        Args:
+            residual_action: Optional residual action tensor (N, action_dim).
+            render: If False, skip camera rendering (sim.step(render=False)).
+                    Cameras will still be force-rendered when GR00T inference is needed.
+                    Use render=False for state-only actor modes to save ~80% of rendering cost.
+        """
         N = self.num_envs
         sim_dt = self.sim_dt
         # Use min step count of active envs for control tick timing
         count = int(self._step_count[self._active_env_ids[0]].item()) if self._active_env_ids else 0
 
-        # Update cameras
-        for cam in (self.camera_front, self.camera_back, self.camera_wrist):
-            cam.update(dt=sim_dt)
-        try:
-            self.camera_front.set_world_poses_from_view(self._eye_front, self._target_pos)
-            self.camera_back.set_world_poses_from_view(self._eye_back, self._target_pos)
-        except Exception:
-            pass
-
         # GR00T inference for active envs that need it (batched)
         active = self._active_env_ids
+
+        # Check if GR00T inference is needed THIS step
+        need_infer = [eid for eid in active if self._steps_since_infer[eid] >= self.inference_interval]
+
+        # Camera update: always when render=True, or when GR00T inference is happening
+        # (GR00T reads cam.data.output["rgb"] which was rendered by the previous sim.step).
+        # NOTE: The previous sim.step must have rendered for camera data to be fresh.
+        # When render=False, we ensure rendering happens one step BEFORE inference
+        # by checking if next step will need inference.
+        _need_infer_next = any(
+            self._steps_since_infer[eid] + 1 >= self.inference_interval for eid in active
+        ) if not render else False
+        _render_this_step = render or bool(need_infer) or _need_infer_next
+
+        if _render_this_step:
+            for cam in (self.camera_front, self.camera_back, self.camera_wrist):
+                cam.update(dt=sim_dt)
+            try:
+                self.camera_front.set_world_poses_from_view(self._eye_front, self._target_pos)
+                self.camera_back.set_world_poses_from_view(self._eye_back, self._target_pos)
+            except Exception:
+                pass
 
         # SNAPSHOT: Save pre-inference base_action for each env.
         # This is the value _build_obs() returned to the actor, and must be
         # used in the control tick below to guarantee exact match.
         pre_step_base_action = {eid: self._current_action_7[eid].copy() for eid in active}
 
-        need_infer = [eid for eid in active if self._steps_since_infer[eid] >= self.inference_interval]
         if need_infer:
             self._run_groot_inference(need_infer)
             for eid in need_infer:
@@ -833,7 +852,7 @@ class IfaceEnvWrapper:
         # Apply targets + sim step (all envs at once)
         self.robot.set_joint_position_target(self._joint_pos_des, joint_ids=self.all_joint_ids)
         self.scene.write_data_to_sim()
-        self.sim.step()
+        self.sim.step(render=_render_this_step)
         self.scene.update(sim_dt)
 
         # Per-env shaped reward (distance + contact + height + success)
