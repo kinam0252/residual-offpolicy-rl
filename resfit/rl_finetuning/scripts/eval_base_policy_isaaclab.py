@@ -27,7 +27,8 @@ parser.add_argument("--cube_perturb_table_path", type=str, default=None)
 parser.add_argument("--reward_type", type=str, default="dense_clipped")
 parser.add_argument("--output_dir", type=str, default=None)
 parser.add_argument("--seed", type=int, default=42)
-parser.add_argument("--num_episodes", type=int, default=1, help="Number of episodes to run")
+parser.add_argument("--num_episodes", type=int, default=1, help="Number of episodes per round")
+parser.add_argument("--num_rounds", type=int, default=1, help="Number of rounds (each round = num_episodes episodes)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
@@ -69,20 +70,24 @@ def main():
     _log(f"Env ready: {N} envs")
 
     all_rates = []
-    
-    for ep in range(args.num_episodes):
+    round_rates = []
+
+    total_episodes = args.num_episodes * args.num_rounds
+    _log(f"Running {args.num_rounds} rounds × {args.num_episodes} episodes = {total_episodes} total")
+
+    for ep in range(total_episodes):
         env.reset()
         obs = env._build_obs()
-        
+
         ep_rewards = torch.zeros(N, device=device)
         ep_ever_success = torch.zeros(N, device=device)
-        
+
         zero_action = torch.zeros(N, 7, device=device, dtype=torch.float32)
-        
+
         for step in range(args.max_episode_steps):
             next_obs, reward, terminated, truncated, info = env.step(zero_action)
             ep_rewards += reward[:N].to(device)
-            
+
             cube_z = env.cube.data.root_state_w[:N, 2].to(device)
             cube_init_z = env._initial_cube_z[:N].to(device)
             cube_lifted = ((cube_z - cube_init_z) >= args.success_threshold).float()
@@ -91,31 +96,54 @@ def main():
                 _gate = _contact.any(dim=1).float().to(device)
                 cube_lifted = cube_lifted * _gate
             ep_ever_success = torch.max(ep_ever_success, cube_lifted)
-            
+
             obs = next_obs
             done = terminated | truncated
             if done[:N].all():
                 break
-        
+
         rate = ep_ever_success.mean().item()
         ret = ep_rewards.mean().item()
         all_rates.append(rate)
-        _log(f"Episode {ep}: success={rate*100:.1f}% return={ret:.1f}")
-    
-    mean_rate = np.mean(all_rates)
+
+        round_idx = ep // args.num_episodes
+        ep_in_round = ep % args.num_episodes
+        _log(f"  Round {round_idx+1} Ep{ep_in_round+1}: success={rate*100:.1f}% return={ret:.1f}")
+
+        # End of round summary
+        if (ep + 1) % args.num_episodes == 0:
+            round_ep_rates = all_rates[-args.num_episodes:]
+            round_avg = np.mean(round_ep_rates)
+            round_rates.append(round_avg)
+            _log(f"  Round {round_idx+1}: avg={round_avg*100:.1f}% "
+                 f"[{', '.join(f'{r*100:.0f}%' for r in round_ep_rates)}]")
+
+    # Final summary
+    overall_mean = np.mean(all_rates)
     _log(f"\n{'='*60}")
-    _log(f"BASE POLICY RESULT: success_rate={mean_rate:.3f} ({mean_rate*100:.1f}%)")
-    _log(f"  episodes={args.num_episodes}, envs={N}")
+    if args.num_rounds > 1:
+        _log(f"BASE POLICY: {args.num_rounds} rounds × {args.num_episodes} episodes")
+        _log(f"  Round averages: [{', '.join(f'{r*100:.1f}%' for r in round_rates)}]")
+        _log(f"  Grand mean: {np.mean(round_rates)*100:.1f}% ± {np.std(round_rates)*100:.1f}%")
+        _log(f"  Min round: {min(round_rates)*100:.1f}%  Max round: {max(round_rates)*100:.1f}%")
+    else:
+        _log(f"BASE POLICY RESULT: success_rate={overall_mean:.3f} ({overall_mean*100:.1f}%)")
+    _log(f"  total_episodes={total_episodes}, envs={N}")
     _log(f"{'='*60}")
     
     if args.output_dir:
         out = Path(args.output_dir)
         out.mkdir(parents=True, exist_ok=True)
         result = {
-            "success_rate": mean_rate,
-            "all_rates": all_rates,
+            "success_rate": overall_mean,
+            "all_episode_rates": all_rates,
+            "round_averages": round_rates,
+            "grand_mean": float(np.mean(round_rates)) if round_rates else overall_mean,
+            "grand_std": float(np.std(round_rates)) if len(round_rates) > 1 else 0.0,
             "num_envs": N,
-            "num_episodes": args.num_episodes,
+            "num_episodes_per_round": args.num_episodes,
+            "num_rounds": args.num_rounds,
+            "total_episodes": total_episodes,
             "max_episode_steps": args.max_episode_steps,
         }
         (out / "base_eval_result.json").write_text(json.dumps(result, indent=2))
