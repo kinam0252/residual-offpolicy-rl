@@ -1,16 +1,20 @@
 """
-Eval v31a (asymmetric state) checkpoint with FoundationPose predicted cube pose.
+Eval v31a (asymmetric state) with FoundationPose + DA-V2 predicted depth.
 
-Replaces GT observation.object_state with FoundationPose 6D pose prediction
-via TCP connection to fp_pose_server.py.
+Full perception pipeline:
+  RGB (sim) → DA-V2 → predicted depth → scale align → FoundationPose → predicted 6D pose
+  → replaces obs["observation.object_state"]
 
-Requires: fp_pose_server.py running on --fp_host:--fp_port
+This is the sim2real version — no GT depth or GT pose used during eval.
+GT pose is only used for:
+  1. First-frame registration mask (convex hull from GT position)
+  2. Tracking error logging (for debugging)
 
 Usage:
-  isaac_python eval_fp_state_isaaclab.py --headless --enable_cameras \
+  isaac_python eval_fp_da2_state_isaaclab.py --headless --enable_cameras \
     --checkpoint_path /path/to/agent_step34000.pt \
     --fp_host 127.0.0.1 --fp_port 5560 \
-    --num_episodes 3 --num_envs 20 ...
+    --num_episodes 30 ...
 """
 from __future__ import annotations
 import argparse, os, sys, time, json, socket, pickle, struct
@@ -18,9 +22,9 @@ from pathlib import Path
 
 from isaaclab.app import AppLauncher
 
-parser = argparse.ArgumentParser(description="Eval with FoundationPose state prediction")
+parser = argparse.ArgumentParser(description="Eval with FP+DA-V2 (full perception pipeline)")
 parser.add_argument("--checkpoint_path", type=str, required=True)
-parser.add_argument("--output_path", type=str, default=None, help="Output JSON path")
+parser.add_argument("--output_path", type=str, default=None)
 parser.add_argument("--fp_host", type=str, default="127.0.0.1")
 parser.add_argument("--fp_port", type=int, default=5560)
 parser.add_argument("--num_envs", type=int, default=20)
@@ -39,13 +43,9 @@ parser.add_argument("--depth_norm_path", type=str, default=None)
 parser.add_argument("--object_state_mode", type=str, default="raw")
 parser.add_argument("--critic_hidden_dim", type=int, default=1024)
 parser.add_argument("--actor_hidden_dim", type=int, default=512)
-parser.add_argument("--fp_register_every_n", type=int, default=0,
-                    help="Re-register FP every N steps (0=only on reset)")
-parser.add_argument("--da2_encoder", type=str, default="vits", choices=["vits", "vitl"],
-                    help="DA-V2 encoder for predicted depth")
+# DA-V2 args
+parser.add_argument("--da2_encoder", type=str, default="vits", choices=["vits", "vitl"])
 parser.add_argument("--da2_checkpoint", type=str, default=None)
-parser.add_argument("--use_gt_depth_for_fp", action="store_true",
-                    help="Use GT depth for FP (default: use DA-V2 predicted depth)")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 args.enable_cameras = True
@@ -65,7 +65,7 @@ from resfit.rl_finetuning.off_policy.common_utils import utils
 import isaaclab.sim as sim_utils
 from scipy.spatial.transform import Rotation
 
-_log = lambda msg: print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [fp-eval] {msg}", flush=True)
+_log = lambda msg: print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] [fp-da2-eval] {msg}", flush=True)
 
 # ── Camera params ──
 FL, HA = 22.0, 20.955
@@ -74,19 +74,21 @@ FX = FY = FL * CAM_W / HA
 CX, CY = CAM_W / 2.0, CAM_H / 2.0
 K_CAM = np.array([[FX, 0, CX], [0, FY, CY], [0, 0, 1]], dtype=np.float64)
 
-# Camera offset relative to env origin (from CameraCfg)
 CAM_FRONT_OFFSET = np.array([0.4, -0.7, 0.8])
 CAM_TARGET_OFFSET = np.array([0.25, 0.0, -0.05])
 
+# DA-V2 fixed alignment params for front camera (from offline least-squares)
+DA2_FIXED_S = -0.153
+DA2_FIXED_T = 1.35
+
 
 def compute_T_cv_w(cam_eye, cam_target):
-    """Compute OpenCV camera extrinsics (world→camera transform)."""
     z_cam = cam_eye - cam_target
     z_cam /= np.linalg.norm(z_cam)
     x_cam = np.cross(np.array([0., 0., 1.]), z_cam)
     x_cam /= np.linalg.norm(x_cam)
     y_cam = np.cross(z_cam, x_cam)
-    R_gl = np.array([x_cam, y_cam, z_cam]).T  # cam-to-world OpenGL
+    R_gl = np.array([x_cam, y_cam, z_cam]).T
     M_gl2cv = np.diag([1.0, -1.0, -1.0])
     R_cv = M_gl2cv @ R_gl.T
     t_cv = -R_cv @ cam_eye
@@ -97,15 +99,12 @@ def compute_T_cv_w(cam_eye, cam_target):
 
 
 def make_registration_mask(gt_pos_world, K, T_cv_w, H, W):
-    """Project GT cube position onto image and create convex hull mask."""
-    R_obj = np.eye(3)  # rough approx — just a sphere around center
     hx, hy, hz = 0.025, 0.06, 0.02
     corners = np.array([
         [-hx, -hy, -hz], [hx, -hy, -hz], [hx, hy, -hz], [-hx, hy, -hz],
         [-hx, -hy, hz], [hx, -hy, hz], [hx, hy, hz], [-hx, hy, hz],
     ])
     corners_world = corners + gt_pos_world
-    # Project to image
     pts_2d = []
     for c in corners_world:
         p_cam = T_cv_w[:3, :3] @ c + T_cv_w[:3, 3]
@@ -120,7 +119,6 @@ def make_registration_mask(gt_pos_world, K, T_cv_w, H, W):
         cv2.fillConvexPoly(mask, hull, 255)
         mask = cv2.dilate(mask, np.ones((15, 15), np.uint8))
     else:
-        # Fallback: circle at projected center
         p_cam = T_cv_w[:3, :3] @ gt_pos_world + T_cv_w[:3, 3]
         if p_cam[2] > 0.01:
             u = int(K[0, 0] * p_cam[0] / p_cam[2] + K[0, 2])
@@ -129,9 +127,17 @@ def make_registration_mask(gt_pos_world, K, T_cv_w, H, W):
     return mask
 
 
-class FPClient:
-    """TCP client for FoundationPose pose server."""
+def predict_depth_da2(da2_model, rgb_np, device):
+    """Run DA-V2 inference on a single RGB image, return metric-aligned depth."""
+    rgb_bgr = cv2.cvtColor(rgb_np, cv2.COLOR_RGB2BGR)
+    with torch.no_grad():
+        pred_rel = da2_model.infer_image(rgb_bgr)  # (H, W) relative depth
+    # Apply fixed scale alignment
+    pred_metric = np.clip(DA2_FIXED_S * pred_rel + DA2_FIXED_T, 0.01, 20.0).astype(np.float32)
+    return pred_metric
 
+
+class FPClient:
     def __init__(self, host, port, timeout=60):
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.sock.settimeout(timeout)
@@ -156,9 +162,6 @@ class FPClient:
                 return None
             data += chunk
         return data
-
-    def reset(self, env_id):
-        return self._send_recv({'env_id': env_id, 'mode': 'reset'})
 
     def reset_all(self):
         return self._send_recv({'env_id': -1, 'mode': 'reset_all'})
@@ -185,6 +188,7 @@ def main():
     device = torch.device(args.groot_policy_device)
     N = args.num_envs
 
+    # ── 1. Create env ──
     _log("Creating environment...")
     _sim = sim_utils.SimulationContext(sim_utils.SimulationCfg(dt=0.01, device="cuda:0"))
     env = IfaceEnvWrapper(
@@ -200,14 +204,14 @@ def main():
         success_threshold=args.success_threshold,
         cube_perturb_table_path=args.cube_perturb_table_path,
         reward_type=args.reward_type,
-        use_depth=True,  # need cameras for FP
+        use_depth=True,
         depth_norm_path=args.depth_norm_path,
         use_state=True,
         object_state_mode=args.object_state_mode,
     )
     _log(f"Env ready: {N} envs")
 
-    # Agent setup (asymmetric critic)
+    # ── 2. Create agent ──
     image_keys = ["observation.depth.front", "observation.depth.wrist"]
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     img_c, img_h, img_w = env.observation_space[image_keys[0]].shape[1:]
@@ -241,51 +245,45 @@ def main():
     agent.to(device)
     _log(f"Agent loaded from {args.checkpoint_path}")
 
-    # ── Load DA-V2 for predicted depth (unless --use_gt_depth_for_fp) ──
-    da2_model = None
-    if not args.use_gt_depth_for_fp:
-        _log("Loading DA-V2 for predicted depth...")
-        _da2_candidates = [
-            str(Path(__file__).resolve().parents[3] / "Depth-Anything-V2"),
-            "/home/nas_main/kinamkim/Repos/Intern/Depth-Anything-V2",
-        ]
-        da2_path = None
-        for _p in _da2_candidates:
-            if Path(_p).exists():
-                da2_path = _p
-                break
-        if da2_path is None:
-            raise FileNotFoundError(f"DA-V2 not found in: {_da2_candidates}")
-        sys.path.insert(0, da2_path)
-        from depth_anything_v2.dpt import DepthAnythingV2
-        da2_configs = {
-            'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
-            'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
-        }
-        da2_model = DepthAnythingV2(**da2_configs[args.da2_encoder])
-        ckpt_path = args.da2_checkpoint or str(Path(da2_path) / f"checkpoints/depth_anything_v2_{args.da2_encoder}.pth")
-        da2_model.load_state_dict(torch.load(ckpt_path, map_location='cpu'))
-        da2_model = da2_model.to(device).eval()
-        _log(f"DA-V2 loaded: {ckpt_path}")
-    else:
-        _log("Using GT depth for FP (--use_gt_depth_for_fp)")
+    # ── 3. Load DA-V2 ──
+    _log(f"Loading DA-V2 ({args.da2_encoder})...")
+    _da2_candidates = [
+        str(Path(__file__).resolve().parents[3] / "Depth-Anything-V2"),
+        "/home/nas_main/kinamkim/Repos/Intern/Depth-Anything-V2",
+    ]
+    da2_path = None
+    for _p in _da2_candidates:
+        if Path(_p).exists():
+            da2_path = _p
+            break
+    if da2_path is None:
+        raise FileNotFoundError(f"DA-V2 not found in: {_da2_candidates}")
+    sys.path.insert(0, da2_path)
+    from depth_anything_v2.dpt import DepthAnythingV2
+    da2_configs = {
+        'vits': {'encoder': 'vits', 'features': 64, 'out_channels': [48, 96, 192, 384]},
+        'vitl': {'encoder': 'vitl', 'features': 256, 'out_channels': [256, 512, 1024, 1024]},
+    }
+    da2_model = DepthAnythingV2(**da2_configs[args.da2_encoder])
+    ckpt_path = args.da2_checkpoint or str(Path(da2_path) / f"checkpoints/depth_anything_v2_{args.da2_encoder}.pth")
+    da2_model.load_state_dict(torch.load(ckpt_path, map_location='cpu'))
+    da2_model = da2_model.to(device).eval()
+    _log(f"DA-V2 loaded: {ckpt_path}")
 
-    # Fixed alignment params for DA-V2 (front camera only, from offline analysis)
-    da2_fixed_s, da2_fixed_t = -0.153, 1.35
-
-    # Connect to FP server
+    # ── 4. Connect to FP server ──
     fp = FPClient(args.fp_host, args.fp_port)
 
     # Per-env camera extrinsics
-    env_origins = env.scene.env_origins[:N].cpu().numpy()  # (N, 3)
+    env_origins = env.scene.env_origins[:N].cpu().numpy()
     T_cv_w_per_env = []
     for eid in range(N):
         eye = env_origins[eid] + CAM_FRONT_OFFSET
         target = env_origins[eid] + CAM_TARGET_OFFSET
         T_cv_w_per_env.append(compute_T_cv_w(eye, target))
     _log(f"Camera extrinsics computed for {N} envs")
+    _log(f"Pipeline: RGB → DA-V2 → metric depth → FoundationPose → 6D pose")
 
-    # Eval loop
+    # ── 5. Eval loop ──
     all_rates = []
     all_returns = []
     fp_errors = []
@@ -293,8 +291,6 @@ def main():
     for ep_i in range(args.num_episodes):
         _log(f"Running episode {ep_i+1}/{args.num_episodes}...")
         env.reset()
-
-        # Reset FP tracking for all envs
         fp.reset_all()
         fp_initialized = [False] * N
 
@@ -304,85 +300,70 @@ def main():
         ep_fp_errors = []
 
         for s in range(args.max_episode_steps):
-            # ── FoundationPose prediction for each env ──
-            # Camera data is valid (render=True ensures cameras have fresh data)
+            # ── Per-env: RGB → DA-V2 depth → FP pose prediction ──
             for eid in range(N):
                 try:
-                    # Get RGB from front camera
-                    rgb = _rgb_to_uint8(env.camera_front.data.output["rgb"], eid)  # (H, W, 3) uint8
+                    # Get RGB from front camera (640x480)
+                    rgb = _rgb_to_uint8(env.camera_front.data.output["rgb"], eid)
 
-                    # Get depth for FP
-                    if da2_model is not None:
-                        # DA-V2 predicted depth (aligned to metric scale)
-                        rgb_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                        with torch.no_grad():
-                            pred_rel = da2_model.infer_image(rgb_bgr)  # (H, W) relative
-                        depth = np.clip(da2_fixed_s * pred_rel + da2_fixed_t, 0.01, 20.0).astype(np.float32)
-                    else:
-                        # GT depth from simulator
-                        depth_raw = env.camera_front.data.output["depth"][eid]  # (H, W, 1) or (H, W)
-                        if depth_raw.dim() == 3:
-                            depth_raw = depth_raw[:, :, 0]
-                        depth = depth_raw.cpu().numpy().astype(np.float32)  # (H, W) in meters
+                    # DA-V2: predict depth from RGB
+                    pred_depth = predict_depth_da2(da2_model, rgb, device)  # (480, 640) metric
 
                     T_cv_w = T_cv_w_per_env[eid]
 
                     if not fp_initialized[eid]:
-                        # Registration: use GT pose to create mask
+                        # Registration: use GT pose for mask only
                         gt_pos = env.cube.data.root_state_w[eid, :3].cpu().numpy()
                         ob_mask = make_registration_mask(gt_pos, K_CAM, T_cv_w, CAM_H, CAM_W)
-                        result = fp.register(eid, rgb, depth, K_CAM, T_cv_w, ob_mask)
+                        result = fp.register(eid, rgb, pred_depth, K_CAM, T_cv_w, ob_mask)
                         fp_initialized[eid] = True
                     else:
-                        result = fp.track(eid, rgb, depth, K_CAM, T_cv_w)
+                        result = fp.track(eid, rgb, pred_depth, K_CAM, T_cv_w)
 
                     if result.get('success', False):
-                        fp_pos = result['pos']    # (3,) float32
-                        fp_quat = result['quat_wxyz']  # (4,) float32
+                        fp_pos = result['pos']
+                        fp_quat = result['quat_wxyz']
 
-                        # Compute tracking error vs GT
+                        # Tracking error (for logging only)
                         gt_pos = env.cube.data.root_state_w[eid, :3].cpu().numpy()
-                        trans_err = np.linalg.norm(fp_pos - gt_pos) * 100  # cm
+                        trans_err = np.linalg.norm(fp_pos - gt_pos) * 100
                         ep_fp_errors.append(trans_err)
 
-                        # Build object state based on mode
+                        # Build observation.object_state
                         if args.object_state_mode == "raw":
                             fp_state = np.concatenate([fp_pos, fp_quat]).astype(np.float32)
                         elif args.object_state_mode == "relative":
                             hand_idx = env.robot.find_bodies("panda_hand")[0][0]
                             ee_pos = env.robot.data.body_pos_w[eid, hand_idx].cpu().numpy()
                             rel_pos = fp_pos - ee_pos
-                            contact = (env.left_finger_force[eid].norm().item() > 0.1)
-                            fp_state = np.concatenate([rel_pos, [float(contact)]]).astype(np.float32)
+                            contact = float(env.left_finger_force[eid].norm().item() > 0.1)
+                            fp_state = np.concatenate([rel_pos, [contact]]).astype(np.float32)
                         elif args.object_state_mode == "full":
                             hand_idx = env.robot.find_bodies("panda_hand")[0][0]
                             ee_pos = env.robot.data.body_pos_w[eid, hand_idx].cpu().numpy()
                             rel_pos = fp_pos - ee_pos
-                            contact = (env.left_finger_force[eid].norm().item() > 0.1)
-                            fp_state = np.concatenate([rel_pos, fp_quat, [float(contact)]]).astype(np.float32)
+                            contact = float(env.left_finger_force[eid].norm().item() > 0.1)
+                            fp_state = np.concatenate([rel_pos, fp_quat, [contact]]).astype(np.float32)
                         else:
                             fp_state = np.concatenate([fp_pos, fp_quat]).astype(np.float32)
 
                         obs["observation.object_state"][eid] = torch.tensor(
                             fp_state, device=device, dtype=torch.float32)
                     else:
-                        # FP failed — keep GT state (no override)
-                        if s < 5:
+                        if s < 3:
                             _log(f"  FP failed env {eid} step {s}: {result.get('error', '?')}")
 
                 except Exception as e:
-                    if s < 5:
+                    if s < 3:
                         _log(f"  FP error env {eid} step {s}: {e}")
 
-            # Agent acts on (potentially FP-modified) obs
+            # Agent acts
             with torch.no_grad(), utils.eval_mode(agent):
                 residual = agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
 
-            # Step env (render=True — need fresh camera frames for FP next step)
             next_obs, reward, term, trunc, info = env.step(residual, render=True)
             ep_rewards += reward[:N].to(device)
 
-            # Success check
             cube_z = env.cube.data.root_state_w[:N, 2].to(device)
             cube_init_z = env._initial_cube_z[:N].to(device)
             lifted = ((cube_z - cube_init_z) >= args.success_threshold).float()
@@ -395,7 +376,6 @@ def main():
             if (term | trunc)[:N].all():
                 break
 
-            # Log progress
             if s == 0 or (s + 1) % 200 == 0:
                 mean_err = np.mean(ep_fp_errors[-N:]) if ep_fp_errors else 0
                 _log(f"  Ep{ep_i+1} step {s+1}: fp_err={mean_err:.2f}cm "
@@ -410,6 +390,14 @@ def main():
         _log(f"  Episode {ep_i+1}: success={rate*100:.1f}% return={ret:.1f} "
              f"fp_err={mean_fp_err:.2f}cm")
 
+        # Round summary every 3 episodes
+        if (ep_i + 1) % 3 == 0:
+            round_idx = (ep_i + 1) // 3
+            round_rates = all_rates[-3:]
+            round_avg = np.mean(round_rates)
+            _log(f"  Round {round_idx}: avg={round_avg*100:.1f}% "
+                 f"[{', '.join(f'{r*100:.0f}%' for r in round_rates)}]")
+
     avg_rate = np.mean(all_rates)
     avg_ret = np.mean(all_returns)
     avg_fp_err = np.mean(fp_errors)
@@ -418,21 +406,22 @@ def main():
          f"({'/'.join(f'{r*100:.0f}%' for r in all_rates)}) "
          f"fp_err={avg_fp_err:.2f}cm")
 
-    # Save results
     result = {
         "checkpoint": str(args.checkpoint_path),
-        "success_rate_3ep": avg_rate,
-        "mean_return_3ep": avg_ret,
+        "success_rate": avg_rate,
+        "mean_return": avg_ret,
         "all_rates": all_rates,
         "all_returns": all_returns,
         "fp_mean_error_cm": fp_errors,
         "num_episodes": args.num_episodes,
         "num_envs": N,
-        "mode": "fp_predicted_state",
+        "mode": "fp_da2_predicted_state",
         "object_state_mode": args.object_state_mode,
+        "da2_encoder": args.da2_encoder,
+        "da2_align": f"fixed s={DA2_FIXED_S} t={DA2_FIXED_T}",
     }
     out_path = args.output_path or str(
-        Path(args.checkpoint_path).parent.parent / "fp_eval_result.json"
+        Path(args.checkpoint_path).parent.parent / "fp_da2_eval_result.json"
     )
     Path(out_path).parent.mkdir(parents=True, exist_ok=True)
     Path(out_path).write_text(json.dumps(result, indent=2))
