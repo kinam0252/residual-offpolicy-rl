@@ -1032,10 +1032,6 @@ class QAgent(nn.Module):
             assert feat.shape[0] == B, f"ASYMMETRIC: feat batch {feat.shape[0]} != {B}"
             if feat.numel() > 0:
                 assert (feat.abs() > 1e-8).any(), "ASYMMETRIC: encoded feat is all zeros!"
-                print(f"[ASYMMETRIC DEBUG] post-encode: feat={feat.shape} "
-                      f"feat_range=[{feat.min().item():.4f},{feat.max().item():.4f}] "
-                      f"prop(after_prepare)={prop.shape} "
-                      f"prop_range=[{prop.min().item():.4f},{prop.max().item():.4f}]")
 
         metrics = {}
         metrics["data/batch_R"] = reward.mean().item()

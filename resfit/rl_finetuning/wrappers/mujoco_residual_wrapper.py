@@ -76,6 +76,7 @@ class MuJoCoResidualWrapper:
         residual_rot_scale: float = 0.05,   # radians
         residual_grip_scale: float = 0.1,
         action_clip: float = 1.0,
+        ema_alpha: float = 0.0,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -116,11 +117,16 @@ class MuJoCoResidualWrapper:
         self._chunk_idx: list[int] = [self.open_loop_horizon] * self.num_envs  # force first query
         self._held_base_action = np.zeros((self.num_envs, 8), dtype=np.float32)
 
+        # ── EMA smoothing for base action ──
+        self.ema_alpha = ema_alpha
+        self._ema_pos: list[np.ndarray | None] = [None] * self.num_envs
+        self._ema_quat: list[np.ndarray | None] = [None] * self.num_envs
+
         # ── Build observation space (augment with base_action) ──
         spaces = dict(vec_env.observation_space.spaces)
         spaces["observation.base_action"] = gym.spaces.Box(
             low=-np.inf, high=np.inf,
-            shape=(self.num_envs, 8),  # absolute action: pos3+quat4+grip1
+            shape=(self.num_envs, 7),  # 7D: pos3 + euler_rpy3 + grip1
             dtype=np.float32,
         )
         self.observation_space = gym.spaces.Dict(spaces)
@@ -147,6 +153,8 @@ class MuJoCoResidualWrapper:
         self._cached_chunks = [None] * self.num_envs
         self._chunk_idx = [self.open_loop_horizon] * self.num_envs
         self._held_base_action[:] = 0.0
+        self._ema_pos = [None] * self.num_envs
+        self._ema_quat = [None] * self.num_envs
 
         # Get first base action
         base_action = self._get_base_actions(force_infer=True)
@@ -170,14 +178,29 @@ class MuJoCoResidualWrapper:
             residual_np = np.asarray(residual_action)
 
         # Get current base actions (absolute)
+        _t0 = time.time()
         base_action = self._get_base_actions()  # (N, 8)
+        _dt_groot = time.time() - _t0
 
         # Combine base + residual → absolute target
         combined = self._combine_actions(base_action, residual_np)  # (N, 8)
 
         # Step MuJoCo env with combined absolute actions
         combined_t = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
-        raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t)
+        _t0 = time.time()
+        raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode="rl_only")
+        _dt_mujoco = time.time() - _t0
+
+        # Internal timing stats (exposed via info)
+        if not hasattr(self, "_step_timers"):
+            self._step_timers = {"groot_query": [], "mujoco_step": []}
+        self._step_timers["groot_query"].append(_dt_groot)
+        self._step_timers["mujoco_step"].append(_dt_mujoco)
+        if len(self._step_timers["groot_query"]) % 500 == 0:
+            gq = self._step_timers["groot_query"][-500:]
+            ms = self._step_timers["mujoco_step"][-500:]
+            print(f"[wrapper-timing] groot_query={sum(gq)/len(gq)*1000:.1f}ms "
+                  f"mujoco_step={sum(ms)/len(ms)*1000:.1f}ms", flush=True)
 
         # Store combined action for replay buffer
         info["scaled_action"] = torch.as_tensor(
@@ -188,17 +211,26 @@ class MuJoCoResidualWrapper:
         for i in range(self.num_envs):
             self._chunk_idx[i] += 1
 
-        # Reset chunks for terminated/truncated envs
+        # Reset chunks for terminated/truncated envs + auto-reset env
         done = terminated | truncated
         if done.any():
             done_ids = torch.where(done)[0].tolist()
             for eid in done_ids:
                 self._cached_chunks[eid] = None
                 self._chunk_idx[eid] = self.open_loop_horizon
+                self._ema_pos[eid] = None
+                self._ema_quat[eid] = None
+
+            # Auto-reset done environments so next step starts fresh
+            self.vec_env.reset_envs(done_ids)
+            # Rebuild obs from reset state
+            raw_obs = self.vec_env._build_obs_dict(render_mode="rl_only")
 
         # Get next base action for augmented obs
         next_base_action = self._get_base_actions()
         if done.any():
+            # After reset, zero out base action for done envs
+            # (will be populated on next GR00T query)
             for eid in torch.where(done)[0].tolist():
                 next_base_action[eid] = 0.0
 
@@ -214,20 +246,37 @@ class MuJoCoResidualWrapper:
     def _get_base_actions(self, force_infer: bool = False) -> np.ndarray:
         """Get current base actions for all envs, querying GR00T as needed.
 
+        Uses **batched inference**: collects all envs that need a new chunk,
+        builds a single batched observation (B=N_needing), and runs one
+        ``policy.get_action()`` call on the GPU.
+
         Returns (num_envs, 8) absolute actions: [pos3, quat4, grip1].
         """
-        actions = np.zeros((self.num_envs, 8), dtype=np.float32)
-
+        # Identify envs that need fresh inference
+        need_infer = []
         for i in range(self.num_envs):
-            # Check if we need a new chunk
             if (
                 force_infer
                 or self._cached_chunks[i] is None
                 or self._chunk_idx[i] >= self.open_loop_horizon
             ):
-                self._query_groot(i)
+                need_infer.append(i)
 
-            # Serve current token from cache
+        # Batch-infer all needed envs at once
+        if need_infer:
+            _t0 = time.time()
+            self._query_groot_batch(need_infer)
+            _dt = (time.time() - _t0) * 1000
+            if not hasattr(self, "_groot_infer_times"):
+                self._groot_infer_times = []
+            self._groot_infer_times.append(_dt)
+            if len(self._groot_infer_times) % 10 == 0:
+                avg = sum(self._groot_infer_times[-10:]) / 10
+                print(f"[groot-infer] batch={len(need_infer)} envs, time={_dt:.0f}ms, avg={avg:.0f}ms", flush=True)
+
+        # Serve current token from cache
+        actions = np.zeros((self.num_envs, 8), dtype=np.float32)
+        for i in range(self.num_envs):
             chunk = self._cached_chunks[i]
             idx = self._chunk_idx[i]
             if chunk is not None and idx < chunk["eef_pos"].shape[0]:
@@ -235,40 +284,90 @@ class MuJoCoResidualWrapper:
                 actions[i, 3:7] = chunk["eef_quat"][idx]
                 actions[i, 7] = chunk["gripper_width"][idx, 0]
             else:
-                # Fallback: current TCP pose
+                # Fallback: current TCP pose (shouldn't happen after batch infer)
                 groot_obs = self.vec_env.get_groot_obs(i, self.task_description)
                 actions[i, :3] = groot_obs["state"]["proprio.eef_pos"][0, 0]
                 actions[i, 3:7] = groot_obs["state"]["proprio.eef_quat"][0, 0]
                 actions[i, 7] = groot_obs["state"]["proprio.gripper_width"][0, 0, 0]
 
+        # Apply EMA smoothing to base action
+        if self.ema_alpha > 0:
+            for i in range(self.num_envs):
+                pos = actions[i, :3]
+                quat = actions[i, 3:7]
+                if self._ema_pos[i] is None:
+                    self._ema_pos[i] = pos.copy()
+                    self._ema_quat[i] = quat.copy()
+                else:
+                    self._ema_pos[i] = self.ema_alpha * self._ema_pos[i] + (1 - self.ema_alpha) * pos
+                    self._ema_quat[i] = self.ema_alpha * self._ema_quat[i] + (1 - self.ema_alpha) * quat
+                    self._ema_quat[i] = self._ema_quat[i] / np.linalg.norm(self._ema_quat[i])
+                actions[i, :3] = self._ema_pos[i].copy()
+                actions[i, 3:7] = self._ema_quat[i].copy()
+
         self._held_base_action = actions.copy()
         return actions
 
-    def _query_groot(self, env_idx: int) -> None:
-        """Query GR00T for a fresh action chunk for one environment."""
-        if self.policy is None:
-            # Skip mode: current pose as action (no movement)
-            groot_obs = self.vec_env.get_groot_obs(env_idx, self.task_description)
-            pos = groot_obs["state"]["proprio.eef_pos"][0, 0]
-            quat = groot_obs["state"]["proprio.eef_quat"][0, 0]
-            gw = groot_obs["state"]["proprio.gripper_width"][0, 0]
-            self._cached_chunks[env_idx] = {
-                "eef_pos": np.tile(pos, (self.action_horizon, 1)),
-                "eef_quat": np.tile(quat, (self.action_horizon, 1)),
-                "gripper_width": np.tile(gw, (self.action_horizon, 1)),
-            }
-            self._chunk_idx[env_idx] = 0
+    def _query_groot_batch(self, env_ids: list[int]) -> None:
+        """Batch-query GR00T for fresh action chunks for multiple envs at once.
+
+        Builds a single observation with batch dim B=len(env_ids) and runs
+        one GPU forward pass instead of N sequential calls.
+        """
+        if not env_ids:
             return
 
-        groot_obs = self.vec_env.get_groot_obs(env_idx, self.task_description)
-        action_result, _info = self.policy.get_action(groot_obs)
+        if self.policy is None:
+            # Skip mode
+            for eid in env_ids:
+                groot_obs = self.vec_env.get_groot_obs(eid, self.task_description)
+                pos = groot_obs["state"]["proprio.eef_pos"][0, 0]
+                quat = groot_obs["state"]["proprio.eef_quat"][0, 0]
+                gw = groot_obs["state"]["proprio.gripper_width"][0, 0]
+                self._cached_chunks[eid] = {
+                    "eef_pos": np.tile(pos, (self.action_horizon, 1)),
+                    "eef_quat": np.tile(quat, (self.action_horizon, 1)),
+                    "gripper_width": np.tile(gw, (self.action_horizon, 1)),
+                }
+                self._chunk_idx[eid] = 0
+            return
 
-        self._cached_chunks[env_idx] = {
-            "eef_pos": np.asarray(action_result["action.eef_pos"][0], dtype=np.float32),
-            "eef_quat": np.asarray(action_result["action.eef_quat"][0], dtype=np.float32),
-            "gripper_width": np.asarray(action_result["action.gripper_width"][0], dtype=np.float32),
+        B = len(env_ids)
+
+        # Collect per-env observations (each is B=1)
+        per_env_obs = [self.vec_env.get_groot_obs(eid, self.task_description) for eid in env_ids]
+
+        # Stack into batched observation (B=len(env_ids))
+        batched_obs = {
+            "video": {},
+            "state": {},
+            "language": {},
         }
-        self._chunk_idx[env_idx] = 0
+        # Video: (1,1,H,W,3) per env → (B,1,H,W,3)
+        for vk in per_env_obs[0]["video"]:
+            batched_obs["video"][vk] = np.concatenate(
+                [o["video"][vk] for o in per_env_obs], axis=0,
+            )
+        # State: (1,1,D) per env → (B,1,D)
+        for sk in per_env_obs[0]["state"]:
+            batched_obs["state"][sk] = np.concatenate(
+                [o["state"][sk] for o in per_env_obs], axis=0,
+            )
+        # Language: [[str]] per env → [[str]] * B
+        for lk in per_env_obs[0]["language"]:
+            batched_obs["language"][lk] = [o["language"][lk][0] for o in per_env_obs]
+
+        # Single batched inference call
+        action_result, _info = self.policy.get_action(batched_obs)
+
+        # Distribute results to per-env caches
+        for bi, eid in enumerate(env_ids):
+            self._cached_chunks[eid] = {
+                "eef_pos": np.asarray(action_result["action.eef_pos"][bi], dtype=np.float32),
+                "eef_quat": np.asarray(action_result["action.eef_quat"][bi], dtype=np.float32),
+                "gripper_width": np.asarray(action_result["action.gripper_width"][bi], dtype=np.float32),
+            }
+            self._chunk_idx[eid] = 0
 
     # ------------------------------------------------------------------
     # Action combining
@@ -317,10 +416,23 @@ class MuJoCoResidualWrapper:
         raw_obs: dict[str, torch.Tensor],
         base_action: np.ndarray,
     ) -> dict[str, torch.Tensor]:
-        """Add ``observation.base_action`` to the observation dict."""
+        """Add ``observation.base_action`` (7D) to the observation dict.
+
+        Converts 8D absolute (pos3+quat4+grip1) to 7D (pos3+euler3+grip1)
+        for QAgent compatibility.
+        """
         out = dict(raw_obs)
+        ba_7d = np.zeros((base_action.shape[0], 7), dtype=np.float32)
+        for i in range(base_action.shape[0]):
+            ba_7d[i, :3] = base_action[i, :3]  # pos
+            quat_xyzw = base_action[i, 3:7]
+            qn = np.linalg.norm(quat_xyzw)
+            if qn > 1e-6:
+                ba_7d[i, 3:6] = Rotation.from_quat(quat_xyzw / qn).as_euler("xyz")
+            # else: leave euler as zeros
+            ba_7d[i, 6] = base_action[i, 7]  # grip
         out["observation.base_action"] = torch.as_tensor(
-            base_action, device=self.device, dtype=torch.float32,
+            ba_7d, device=self.device, dtype=torch.float32,
         )
         return out
 

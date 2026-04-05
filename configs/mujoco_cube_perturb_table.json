@@ -1,0 +1,18 @@
+{
+  "description": "Cube XY perturbation table for MuJoCo. 5 success + 5 fail positions from GR00T baseline scan (50% target SR).",
+  "base_pos": [0.45, -0.05, 0.02],
+  "success_threshold_m": 0.03,
+  "baseline_success_rate": 0.5,
+  "envs": [
+    {"env_id": 0, "dx": 0.000, "dy": 0.000, "name": "center",         "baseline": "success"},
+    {"env_id": 1, "dx":-0.020, "dy":-0.020, "name": "near_BL_2cm",    "baseline": "success"},
+    {"env_id": 2, "dx": 0.040, "dy": 0.040, "name": "diag_FR_4cm",    "baseline": "success"},
+    {"env_id": 3, "dx": 0.060, "dy":-0.040, "name": "right_fwd_6cm",  "baseline": "success"},
+    {"env_id": 4, "dx": 0.000, "dy": 0.080, "name": "forward_8cm",    "baseline": "success"},
+    {"env_id": 5, "dx": 0.020, "dy": 0.000, "name": "right_2cm",      "baseline": "fail"},
+    {"env_id": 6, "dx": 0.000, "dy":-0.020, "name": "back_2cm",       "baseline": "fail"},
+    {"env_id": 7, "dx":-0.020, "dy": 0.020, "name": "near_FL_2cm",    "baseline": "fail"},
+    {"env_id": 8, "dx": 0.040, "dy": 0.000, "name": "right_4cm",      "baseline": "fail"},
+    {"env_id": 9, "dx":-0.040, "dy":-0.040, "name": "diag_BL_4cm",    "baseline": "fail"}
+  ]
+}

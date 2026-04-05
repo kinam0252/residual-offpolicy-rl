@@ -32,6 +32,8 @@ from typing import Any
 import cv2
 import gymnasium as gym
 import mujoco
+import time
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
@@ -68,6 +70,13 @@ LIFT_REWARD_THRESHOLD_M = 0.005  # 5 mm sparse reward threshold
 LIFT_SUCCESS_THRESHOLD_M = 0.04  # 4 cm — episode terminates on success
 FPS = 20
 
+# Depth normalization defaults (2nd/98th percentile from IsaacLab rollout)
+DEPTH_NORM_DEFAULTS = {
+    "front": {"min": 0.554, "max": 1.495},
+    "wrist": {"min": 0.056, "max": 0.711},
+    "back":  {"min": 0.720, "max": 1.495},
+}
+
 
 class MuJoCoVecEnv:
     """Vectorised MuJoCo environment for Franka FR3 cube-lift.
@@ -98,6 +107,8 @@ class MuJoCoVecEnv:
         reward_type: str = "sparse",
         device: str = "cuda:0",
         rl_img_size: int = RL_IMG_SIZE,
+        groot_img_size: int = 256,
+        depth_norm: dict[str, dict[str, float]] | None = None,
     ):
         setup_egl()
 
@@ -108,7 +119,9 @@ class MuJoCoVecEnv:
         self.reward_type = reward_type
         self.device = device
         self.rl_img_size = rl_img_size
+        self.groot_img_size = groot_img_size
         self.cube_size = cube_size
+        self._depth_norm = depth_norm or DEPTH_NORM_DEFAULTS
 
         # Camera calibration
         self._T_base_cam = load_calib(calib_path)
@@ -133,7 +146,7 @@ class MuJoCoVecEnv:
             self._envs.append(env)
 
         # ── Build gymnasium spaces ──
-        self._state_dim = 34  # matches IsaacLab: 9+9+7+3+6
+        self._state_dim = 10  # matches IfaceEnvWrapper: eef_pos(3)+eef_quat(4)+grip(2)+contact(1)
         obs_spaces: dict[str, gym.spaces.Space] = {
             "observation.state": gym.spaces.Box(
                 low=-np.inf, high=np.inf,
@@ -145,10 +158,19 @@ class MuJoCoVecEnv:
                 low=0, high=255,
                 shape=(num_envs, 3, rl_img_size, rl_img_size), dtype=np.uint8,
             )
-            obs_spaces[f"{resfit_key}_hires"] = gym.spaces.Box(
-                low=0, high=255,
-                shape=(num_envs, 3, RENDER_H, RENDER_W), dtype=np.uint8,
+
+        # Depth observation spaces
+        for depth_key in ["observation.depth.front", "observation.depth.wrist"]:
+            obs_spaces[depth_key] = gym.spaces.Box(
+                low=0.0, high=1.0,
+                shape=(num_envs, 1, rl_img_size, rl_img_size), dtype=np.float32,
             )
+        # Object state (cube pose: pos3 + quat_wxyz4 = 7D)
+        obs_spaces["observation.object_state"] = gym.spaces.Box(
+            low=-np.inf, high=np.inf,
+            shape=(num_envs, 7), dtype=np.float32,
+        )
+
         self.observation_space = gym.spaces.Dict(obs_spaces)
 
         # Action: 8-D absolute EEF target [pos3 + quat4 + grip1]
@@ -188,10 +210,17 @@ class MuJoCoVecEnv:
         # Front camera (top-down-ish view)
         front_cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "front")
 
-        # Persistent renderers
-        renderer_base = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
-        renderer_wrist = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
-        renderer_front = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
+        # Persistent renderers — GR00T cameras at RENDER_W×RENDER_H (640×360), RL at rl_img_size
+        _rs = self.rl_img_size
+        renderer_base = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)   # GR00T cam_base
+        renderer_wrist = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)  # GR00T cam_wrist
+        renderer_front = mujoco.Renderer(model, height=_rs, width=_rs)  # RL front (already target size)
+
+        # Depth renderers at rl_img_size (no resize needed)
+        depth_renderer_front = mujoco.Renderer(model, height=_rs, width=_rs)
+        depth_renderer_front.enable_depth_rendering()
+        depth_renderer_wrist = mujoco.Renderer(model, height=_rs, width=_rs)
+        depth_renderer_wrist.enable_depth_rendering()
 
         # Cube joint address
         cube_jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_joint")
@@ -235,6 +264,8 @@ class MuJoCoVecEnv:
             "renderer_base": renderer_base,
             "renderer_wrist": renderer_wrist,
             "renderer_front": renderer_front,
+            "depth_renderer_front": depth_renderer_front,
+            "depth_renderer_wrist": depth_renderer_wrist,
             "cam_base_id": cam_base_id,
             "cam_wrist_id": cam_wrist_id,
             "front_cam_id": front_cam_id,
@@ -263,7 +294,7 @@ class MuJoCoVecEnv:
             self._reset_single_env(eid)
 
     def step(
-        self, actions: torch.Tensor,
+        self, actions: torch.Tensor, render_mode: str = "full",
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor, dict]:
         """Step all environments with absolute EEF targets.
 
@@ -280,29 +311,39 @@ class MuJoCoVecEnv:
         terminated = np.zeros(self.num_envs, dtype=bool)
         truncated = np.zeros(self.num_envs, dtype=bool)
 
-        for i in range(self.num_envs):
+        _t_ik = time.time()
+        def _step_single_env(i):
             action = actions_np[i]
-            target_pos = action[:3]
-            target_quat_xyzw = action[3:7]
-            gripper_width = float(action[7])
-
-            self._apply_action(i, target_pos, target_quat_xyzw, gripper_width)
+            self._apply_action(i, action[:3], action[3:7], float(action[7]))
             self._step_counts[i] += 1
             self._last_actions[i] = action
-
-            # Reward
             rewards[i] = self._compute_reward(i)
-
-            # Success termination: grasped + lift >= threshold
             if self._is_success(i):
                 terminated[i] = True
-
-            # Truncation (episode length limit)
             if self._step_counts[i] >= self.max_episode_steps:
                 truncated[i] = True
 
+        if self.num_envs > 1 and hasattr(self, "_thread_pool"):
+            list(self._thread_pool.map(_step_single_env, range(self.num_envs)))
+        else:
+            for i in range(self.num_envs):
+                _step_single_env(i)
+        _dt_ik = time.time() - _t_ik
+
         # Build observations (terminal state, before any auto-reset)
-        obs_dict = self._build_obs_dict()
+        _t_obs = time.time()
+        obs_dict = self._build_obs_dict(render_mode=render_mode)
+        _dt_obs = time.time() - _t_obs
+
+        if not hasattr(self, "_vec_timers"):
+            self._vec_timers = {"ik_reward": [], "build_obs": []}
+        self._vec_timers["ik_reward"].append(_dt_ik)
+        self._vec_timers["build_obs"].append(_dt_obs)
+        if len(self._vec_timers["ik_reward"]) % 500 == 0:
+            ik = self._vec_timers["ik_reward"][-500:]
+            ob = self._vec_timers["build_obs"][-500:]
+            print(f"[vecenv-timing] ik+reward={sum(ik)/len(ik)*1000:.1f}ms "
+                  f"build_obs(render)={sum(ob)/len(ob)*1000:.1f}ms", flush=True)
 
         info: dict[str, Any] = {}
 
@@ -324,7 +365,7 @@ class MuJoCoVecEnv:
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
-        # Render cameras (640×360 RGB)
+        # Render cameras (groot_img_size × groot_img_size RGB)
         env["renderer_base"].update_scene(data, camera=env["cam_base_id"])
         img_base = env["renderer_base"].render().copy()
 
@@ -486,17 +527,61 @@ class MuJoCoVecEnv:
     def _compute_reward(self, env_idx: int) -> float:
         """Compute reward for a single environment."""
         env = self._envs[env_idx]
+        model, data, ids = env["model"], env["data"], env["ids"]
         cube_qposadr = env["cube_qposadr"]
         if cube_qposadr is None:
             return 0.0
 
-        cube_z = env["data"].qpos[cube_qposadr + 2]
+        cube_z = data.qpos[cube_qposadr + 2]
         lift_delta = cube_z - self._initial_cube_z[env_idx]
 
         if self.reward_type == "sparse":
             return 1.0 if lift_delta >= self.success_threshold else 0.0
-        else:
-            # Dense reward: height-based
+
+        elif self.reward_type == "dense":
+            # High-bonus dense reward (v1 style): success/height dominate distance
+            tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
+            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
+            finger_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
+
+            grasped = float(env["grasp_state"]["grasped"])
+
+            distance_reward = (1.0 - np.tanh(finger_cube_dist / 0.1)) * 1.0
+            contact_reward = grasped * 2.0
+            height_reward = (
+                float(lift_delta > 0.005)
+                * np.tanh(lift_delta / 0.1)
+                * 100.0
+                * grasped
+            )
+            success_reward = float(lift_delta >= self.success_threshold) * 100.0 * grasped
+
+            return float(distance_reward + contact_reward + height_reward + success_reward)
+
+        elif self.reward_type == "dense_clipped":
+            # 4-stage shaped reward matching IsaacLab v31a
+            tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
+            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
+            finger_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
+
+            grasped = float(env["grasp_state"]["grasped"])
+
+            distance_reward = (1.0 - np.tanh(finger_cube_dist / 0.1)) * 0.1
+            contact_reward = grasped * 0.2
+            height_reward = (
+                float(lift_delta > 0.005)
+                * np.tanh(lift_delta / 0.1)
+                * 0.5
+                * grasped
+            )
+            success_reward = float(lift_delta >= self.success_threshold) * 1.0 * grasped
+
+            return float(np.clip(
+                distance_reward + contact_reward + height_reward + success_reward,
+                0.0, 1.0,
+            ))
+
+        else:  # "dense"
             return float(np.clip(lift_delta * 100.0, 0.0, 1.0))
 
     def _is_success(self, env_idx: int) -> bool:
@@ -554,11 +639,21 @@ class MuJoCoVecEnv:
     # Internal: observation building
     # ------------------------------------------------------------------
 
-    def _build_obs_dict(self) -> dict[str, torch.Tensor]:
-        """Build RL observation dict for all environments."""
+    def _build_obs_dict(self, render_mode: str = "full") -> dict[str, torch.Tensor]:
+        """Build RL observation dict for all environments.
+
+        render_mode:
+            "full" - render everything (RGB + depth)
+            "rl_only" - skip RGB cameras, only render depth (for RL training steps)
+            "none" - skip all rendering (state-only obs)
+        """
         states = []
         images: dict[str, list[np.ndarray]] = {k: [] for k in self.CAMERA_MAP.values()}
-        images_hires: dict[str, list[np.ndarray]] = {f"{k}_hires": [] for k in self.CAMERA_MAP.values()}
+        depth_images: dict[str, list[np.ndarray]] = {
+            "observation.depth.front": [],
+            "observation.depth.wrist": [],
+        }
+        object_states = []
         raw_joint_pos_list = []
         raw_gripper_frac_list = []
 
@@ -583,8 +678,23 @@ class MuJoCoVecEnv:
                 gf = 1.0
             raw_gripper_frac_list.append(np.array([gf], dtype=np.float32))
 
-            # ── Camera images ──
-            self._render_cameras(i, images, images_hires)
+            # ── Camera images (skip if rl_only or none) ──
+            if render_mode == "full":
+                self._render_cameras(i, images)
+            else:
+                # Fill with zeros for keys that expect images
+                for key in images:
+                    images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
+
+            # ── Depth images (skip if none) ──
+            if render_mode != "none":
+                self._render_depth(i, depth_images)
+            else:
+                for key in depth_images:
+                    depth_images[key].append(np.zeros((1, self.rl_img_size, self.rl_img_size), dtype=np.float32))
+
+            # ── Object state (cube pose: pos3 + quat_wxyz4) ──
+            object_states.append(self._get_object_state(i))
 
         out: dict[str, torch.Tensor] = {}
 
@@ -605,66 +715,56 @@ class MuJoCoVecEnv:
         for key, frames in images.items():
             stacked = np.stack(frames)  # (N, 3, H, W)
             out[key] = torch.as_tensor(stacked, device=self.device, dtype=torch.uint8)
-        for key, frames in images_hires.items():
-            stacked = np.stack(frames)
-            out[key] = torch.as_tensor(stacked, device=self.device, dtype=torch.uint8)
+
+        # Depth images
+        for key, frames in depth_images.items():
+            stacked = np.stack(frames)  # (N, 1, H, W)
+            out[key] = torch.as_tensor(stacked, device=self.device, dtype=torch.float32)
+
+        # Object state
+        out["observation.object_state"] = torch.as_tensor(
+            np.stack(object_states), device=self.device, dtype=torch.float32,
+        )
 
         return out
 
     def _build_state(self, env_idx: int) -> np.ndarray:
-        """Build 34-D state vector matching IsaacLab convention.
+        """Build 10-D state vector matching IfaceEnvWrapper convention.
 
-        [dof_pos_scaled(9), dof_vel_scaled(9), cogact_ref(7), contact(3), ee_xyzrpy(6)]
+        [eef_pos(3), eef_quat_xyzw(4), gripper_qpos(2), contact_force(1)]
         """
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
-        # dof_pos_scaled: 7 arm joints + 2 finger joints → scaled to [-1, 1]
-        arm_pos = np.array([
-            data.qpos[model.jnt_qposadr[jid]] for jid in ids["jnt_ids"]
-        ])
-        arm_scaled = (arm_pos - self._joint_mid) / np.maximum(self._joint_half_range, 1e-8)
+        # EEF position (3) + orientation as quaternion xyzw (4)
+        tcp_pos, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
+        eef_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat()  # xyzw
 
-        # Finger joints (normalise 0..0.04 → -1..1)
-        finger_pos = []
+        # Gripper joint positions (2 fingers)
+        grip = []
         for fid in ids["finger_ids"]:
             if fid >= 0:
-                fp = data.qpos[model.jnt_qposadr[fid]]
-                finger_pos.append((fp / 0.04) * 2.0 - 1.0)  # 0→-1, 0.04→1
+                grip.append(data.qpos[model.jnt_qposadr[fid]])
             else:
-                finger_pos.append(0.0)
-        dof_pos_scaled = np.concatenate([arm_scaled, finger_pos]).astype(np.float32)  # (9,)
+                grip.append(0.04)
 
-        # dof_vel_scaled: zeros for kinematic mode
-        dof_vel_scaled = np.zeros(9, dtype=np.float32)
-
-        # cogact_reference: last applied action (first 7 dims)
-        cogact_ref = self._last_actions[env_idx, :7].copy()  # (7,)
-
-        # contact: [left, right, any]
-        contact = self._get_contacts(env_idx)  # (3,)
-
-        # ee_xyzrpy: TCP position (3) + euler RPY (3)
-        tcp_pos, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
-        rpy = Rotation.from_matrix(tcp_R).as_euler("xyz")
-        ee_xyzrpy = np.concatenate([tcp_pos, rpy]).astype(np.float32)  # (6,)
+        # Contact force (scalar): 1.0 if grasped, else 0.0
+        contact_force = 1.0 if env["grasp_state"]["grasped"] else 0.0
 
         state = np.concatenate([
-            dof_pos_scaled,   # 9
-            dof_vel_scaled,   # 9
-            cogact_ref,       # 7
-            contact,          # 3
-            ee_xyzrpy,        # 6
-        ])  # = 34
-        return state.astype(np.float32)
+            tcp_pos.astype(np.float32),           # 3
+            eef_quat_xyzw.astype(np.float32),     # 4
+            np.array(grip, dtype=np.float32),      # 2
+            np.array([contact_force], dtype=np.float32),  # 1
+        ])  # = 10
+        return state
 
     def _render_cameras(
         self,
         env_idx: int,
         images_out: dict[str, list[np.ndarray]],
-        images_hires_out: dict[str, list[np.ndarray]],
     ) -> None:
-        """Render all cameras for one environment and append to output lists."""
+        """Render RGB cameras. front at rl_img_size, cam_base/wrist at groot_img_size."""
         env = self._envs[env_idx]
         data = env["data"]
 
@@ -678,21 +778,63 @@ class MuJoCoVecEnv:
             resfit_key = self.CAMERA_MAP[mj_key]
             if cam_id >= 0:
                 renderer.update_scene(data, camera=cam_id)
-                img_rgb = renderer.render().copy()  # (H, W, 3) RGB uint8
+                img_rgb = renderer.render().copy()
             else:
-                img_rgb = np.zeros((RENDER_H, RENDER_W, 3), dtype=np.uint8)
+                img_rgb = np.zeros((self.rl_img_size, self.rl_img_size, 3), dtype=np.uint8)
 
-            # Hi-res: (3, H, W) CHW
-            img_chw_hires = np.transpose(img_rgb, (2, 0, 1))  # (3, H, W)
-            images_hires_out[f"{resfit_key}_hires"].append(img_chw_hires)
-
-            # Downscaled to rl_img_size
-            img_small = cv2.resize(
-                img_rgb, (self.rl_img_size, self.rl_img_size),
-                interpolation=cv2.INTER_LINEAR,
-            )
-            img_chw = np.transpose(img_small, (2, 0, 1))  # (3, rl_img_size, rl_img_size)
+            # Resize to rl_img_size if renderer is larger (GR00T cams)
+            h, w = img_rgb.shape[:2]
+            if h != self.rl_img_size or w != self.rl_img_size:
+                img_rgb = cv2.resize(
+                    img_rgb, (self.rl_img_size, self.rl_img_size),
+                    interpolation=cv2.INTER_LINEAR,
+                )
+            img_chw = np.transpose(img_rgb, (2, 0, 1))
             images_out[resfit_key].append(img_chw)
+
+    def _render_depth(
+        self,
+        env_idx: int,
+        depth_out: dict[str, list[np.ndarray]],
+    ) -> None:
+        """Render depth for front and wrist cameras, normalize to [0,1]."""
+        env = self._envs[env_idx]
+        data = env["data"]
+
+        depth_config = [
+            ("front", env["depth_renderer_front"], env["front_cam_id"]),
+            ("wrist", env["depth_renderer_wrist"], env["cam_wrist_id"]),
+        ]
+
+        for cam_name, renderer, cam_id in depth_config:
+            key = f"observation.depth.{cam_name}"
+            if cam_id >= 0:
+                renderer.update_scene(data, camera=cam_id)
+                depth_raw = renderer.render().copy()  # (rl_img_size, rl_img_size) float32
+            else:
+                depth_raw = np.zeros((self.rl_img_size, self.rl_img_size), dtype=np.float32)
+
+            # Normalize using per-camera min/max (no resize — renderer already at rl_img_size)
+            norm = self._depth_norm.get(cam_name, {"min": 0.0, "max": 1.0})
+            d_min, d_max = norm["min"], norm["max"]
+            depth_raw = np.clip(depth_raw, d_min, d_max)
+            depth_raw = (depth_raw - d_min) / max(d_max - d_min, 1e-6)
+
+            # Handle NaN/Inf
+            depth_raw = np.nan_to_num(depth_raw, nan=0.0, posinf=1.0, neginf=0.0)
+
+            # (1, H, W) for channel dimension
+            depth_out[key].append(depth_raw[np.newaxis].astype(np.float32))
+
+    def _get_object_state(self, env_idx: int) -> np.ndarray:
+        """Get cube pose as 7D vector: [pos_x, pos_y, pos_z, quat_w, quat_x, quat_y, quat_z]."""
+        env = self._envs[env_idx]
+        qa = env["cube_qposadr"]
+        if qa is not None:
+            pos = env["data"].qpos[qa:qa + 3].copy()
+            quat_wxyz = env["data"].qpos[qa + 3:qa + 7].copy()
+            return np.concatenate([pos, quat_wxyz]).astype(np.float32)
+        return np.zeros(7, dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Cube state access
@@ -726,7 +868,8 @@ class MuJoCoVecEnv:
     def close(self) -> None:
         """Release renderers."""
         for env in self._envs:
-            for key in ("renderer_base", "renderer_wrist", "renderer_front"):
+            for key in ("renderer_base", "renderer_wrist", "renderer_front",
+                        "depth_renderer_front", "depth_renderer_wrist"):
                 renderer = env.get(key)
                 if renderer is not None:
                     try:
