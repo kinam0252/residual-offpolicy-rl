@@ -55,8 +55,11 @@ def parse_args():
     p.add_argument("--output_dir", type=str, default="outputs/offline_data")
     p.add_argument("--device", type=str, default="cuda:0")
     p.add_argument("--debug", action="store_true", help="Print detailed reward debug info")
+    p.add_argument("--cube_yaw", type=float, default=0.0, help="Cube yaw rotation in degrees")
     p.add_argument("--env_ids", type=int, nargs="+", default=None,
                    help="Only collect for these env_ids (default: all)")
+    p.add_argument("--random_cube_range", type=str, default=None, help="JSON random cube range")
+    p.add_argument("--ema_alpha", type=float, default=0.0, help="EMA smoothing for GR00T base action (0=off)")
     return p.parse_args()
 
 
@@ -143,6 +146,14 @@ def main():
         print(f"  env {ec['env_id']:2d} ({ec['name']:>16s}): cube=({pos[0]:.3f}, {pos[1]:.3f})")
     
     # Create env (1 at a time for sequential collection)
+    # Parse random cube range
+    _rcr_parsed = None
+    if args.random_cube_range:
+        import json as _json2
+        _rcr = _json2.loads(args.random_cube_range)
+        _rcr_parsed = {"dx": (_rcr["dx"][0]/100.0, _rcr["dx"][1]/100.0), "dy": (_rcr["dy"][0]/100.0, _rcr["dy"][1]/100.0), "yaw": (float(_rcr.get("yaw",[0,0])[0]), float(_rcr.get("yaw",[0,0])[1]))}
+        print(f"  Random cube range: {_rcr_parsed}")
+
     print("\nCreating environment...")
     mujoco_env = MuJoCoVecEnv(
         num_envs=1,
@@ -152,6 +163,8 @@ def main():
         max_episode_steps=args.max_episode_steps,
         reward_type="dense",
         success_threshold=0.03,
+        cube_yaw_deg=args.cube_yaw,
+        random_cube_range=_rcr_parsed,
     )
     
     print("Loading GR00T policy...")
@@ -161,6 +174,7 @@ def main():
         embodiment_tag='NEW_EMBODIMENT',
         policy_device=args.device,
         task_description='lift the cube',
+        ema_alpha=args.ema_alpha,
     )
     print("Ready.\n")
     
@@ -299,6 +313,7 @@ def main():
             "checkpoint": args.groot_checkpoint,
             "reward_type": "dense",
             "success_threshold": 0.03,
+            "ema_alpha": args.ema_alpha,
         }, f, indent=2)
     print(f"Metadata: {meta_path}")
     

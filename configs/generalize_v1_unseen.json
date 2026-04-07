@@ -1,0 +1,69 @@
+{
+  "base_pos": [
+    0.45,
+    -0.05,
+    0.02
+  ],
+  "envs": [
+    {
+      "env_id": 0,
+      "dx": 0.03,
+      "dy": 0.0,
+      "name": "right_3cm"
+    },
+    {
+      "env_id": 1,
+      "dx": -0.03,
+      "dy": 0.0,
+      "name": "left_3cm"
+    },
+    {
+      "env_id": 2,
+      "dx": 0.0,
+      "dy": 0.04,
+      "name": "fwd_4cm"
+    },
+    {
+      "env_id": 3,
+      "dx": 0.0,
+      "dy": -0.03,
+      "name": "back_3cm"
+    },
+    {
+      "env_id": 4,
+      "dx": 0.03,
+      "dy": 0.03,
+      "name": "diag_FR_3cm"
+    },
+    {
+      "env_id": 5,
+      "dx": -0.03,
+      "dy": -0.03,
+      "name": "diag_BL_3cm"
+    },
+    {
+      "env_id": 6,
+      "dx": 0.08,
+      "dy": 0.0,
+      "name": "right_8cm"
+    },
+    {
+      "env_id": 7,
+      "dx": -0.06,
+      "dy": 0.0,
+      "name": "left_6cm"
+    },
+    {
+      "env_id": 8,
+      "dx": 0.0,
+      "dy": 0.1,
+      "name": "fwd_10cm"
+    },
+    {
+      "env_id": 9,
+      "dx": 0.0,
+      "dy": -0.06,
+      "name": "back_6cm"
+    }
+  ]
+}

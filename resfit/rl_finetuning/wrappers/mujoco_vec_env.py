@@ -77,6 +77,21 @@ DEPTH_NORM_DEFAULTS = {
     "back":  {"min": 0.720, "max": 1.495},
 }
 
+# ── Wrist camera v2: direct MuJoCo quat (15° tilt toward gripper) ──
+def _wrist_cam_mj_quat():
+    tilt = np.radians(15)
+    view_dir = np.array([np.sin(tilt), 0, np.cos(tilt)])
+    up_dir = np.array([1, 0, 0])
+    z = -view_dir / np.linalg.norm(view_dir)
+    x = np.cross(up_dir, z); x /= np.linalg.norm(x)
+    y = np.cross(z, x)
+    R = np.stack([x, y, z], axis=1)
+    q = Rotation.from_matrix(R).as_quat()  # xyzw
+    return np.array([q[3], q[0], q[1], q[2]])  # wxyz
+
+WRIST_CAM_MJ_QUAT = _wrist_cam_mj_quat()
+WRIST_CAM_MJ_POS = np.array([-0.08, 0.0, 0.0])
+
 
 class MuJoCoVecEnv:
     """Vectorised MuJoCo environment for Franka FR3 cube-lift.
@@ -98,6 +113,8 @@ class MuJoCoVecEnv:
         num_envs: int = 1,
         cube_positions: list[list[float]] | np.ndarray | None = None,
         cube_yaw_deg: float = 0.0,
+        random_cube_range: dict | None = None,
+        hover_offset: dict | None = None,
         cube_size: tuple[float, float, float] = CUBE_HALF_SIZE,
         scene_xml: str | None = None,
         calib_path: str | None = None,
@@ -138,6 +155,12 @@ class MuJoCoVecEnv:
         yaw = np.radians(cube_yaw_deg)
         q_xyzw = Rotation.from_euler("z", yaw).as_quat()
         self._cube_quat_wxyz = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+
+        # Random cube placement config (if set, overrides fixed positions on reset)
+        self._random_cube_range = random_cube_range
+        # Hover offset: {"xy": (dx, dy) or "random_xy": radius, "z": float or "random_z": (lo, hi)}
+        self._hover_offset = hover_offset  # {"dx": (-0.08, 0.14), "dy": (-0.15, 0.15), "yaw": (-10, 10)}
+        self._cube_base_pos = np.array([0.45, -0.05, 0.02])
 
         # ── Create N environments ──
         self._envs: list[dict[str, Any]] = []
@@ -210,6 +233,28 @@ class MuJoCoVecEnv:
         # Front camera (top-down-ish view)
         front_cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "front")
 
+        # ── Wrist cam v2: override quat/pos ──
+        model.cam_quat[cam_wrist_id] = WRIST_CAM_MJ_QUAT
+        model.cam_pos[cam_wrist_id] = WRIST_CAM_MJ_POS
+
+        # Hide hand/link6/link7 visual geoms (group 2 → 4) for wrist cam
+        hide_body_ids = []
+        for bname in ("hand", "fr3_link6", "fr3_link7"):
+            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, bname)
+            if bid >= 0:
+                hide_body_ids.append(bid)
+        for gi in range(model.ngeom):
+            if model.geom_bodyid[gi] in hide_body_ids and model.geom_group[gi] == 2:
+                model.geom_group[gi] = 4
+
+        # Scene options for cam_base (show hand, hide collision) and cam_wrist (hide hand)
+        opt_base = mujoco.MjvOption()
+        opt_base.geomgroup[3] = 0   # hide collision geoms
+        opt_base.geomgroup[4] = 1   # show hand/link geoms
+        opt_wrist = mujoco.MjvOption()
+        opt_wrist.geomgroup[3] = 0  # hide collision geoms
+        opt_wrist.geomgroup[4] = 0  # hide hand/link geoms
+
         # Persistent renderers — GR00T cameras at RENDER_W×RENDER_H (640×360), RL at rl_img_size
         _rs = self.rl_img_size
         renderer_base = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)   # GR00T cam_base
@@ -268,6 +313,8 @@ class MuJoCoVecEnv:
             "depth_renderer_wrist": depth_renderer_wrist,
             "cam_base_id": cam_base_id,
             "cam_wrist_id": cam_wrist_id,
+            "opt_base": opt_base,
+            "opt_wrist": opt_wrist,
             "front_cam_id": front_cam_id,
             "cube_qposadr": cube_qposadr,
             "cube_pos_init": cube_pos.copy(),
@@ -366,10 +413,12 @@ class MuJoCoVecEnv:
         model, data, ids = env["model"], env["data"], env["ids"]
 
         # Render cameras (groot_img_size × groot_img_size RGB)
-        env["renderer_base"].update_scene(data, camera=env["cam_base_id"])
+        env["renderer_base"].update_scene(data, camera=env["cam_base_id"],
+                                           scene_option=env["opt_base"])
         img_base = env["renderer_base"].render().copy()
 
-        env["renderer_wrist"].update_scene(data, camera=env["cam_wrist_id"])
+        env["renderer_wrist"].update_scene(data, camera=env["cam_wrist_id"],
+                                            scene_option=env["opt_wrist"])
         img_wrist = env["renderer_wrist"].render().copy()
 
         # TCP state
@@ -485,23 +534,50 @@ class MuJoCoVecEnv:
             if fid >= 0:
                 data.qpos[model.jnt_qposadr[fid]] = 0.04
 
-        # Reset cube to initial position
+        # Reset cube to initial position (randomize if configured)
         cube_qposadr = env["cube_qposadr"]
         if cube_qposadr is not None:
+            if self._random_cube_range is not None:
+                rng = self._random_cube_range
+                dx = np.random.uniform(rng["dx"][0], rng["dx"][1])
+                dy = np.random.uniform(rng["dy"][0], rng["dy"][1])
+                cube_pos = self._cube_base_pos.copy()
+                cube_pos[0] += dx
+                cube_pos[1] += dy
+                env["cube_pos_init"] = cube_pos
+                # Random yaw
+                yaw_lo, yaw_hi = rng.get("yaw", (0, 0))
+                yaw = np.random.uniform(yaw_lo, yaw_hi)
+                q_xyzw = Rotation.from_euler("z", np.radians(yaw)).as_quat()
+                cube_quat = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+                data.qpos[cube_qposadr + 3:cube_qposadr + 7] = cube_quat
+            else:
+                data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quat_wxyz
             data.qpos[cube_qposadr:cube_qposadr + 3] = env["cube_pos_init"]
-            data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quat_wxyz
 
         # Reset velocities
         data.qvel[:] = 0.0
 
         mujoco.mj_forward(model, data)
 
-        # IK to hover above cube (same as infer_gr00t_mujoco.py)
-        hover_pos = np.array([
-            env["cube_pos_init"][0],
-            env["cube_pos_init"][1],
-            0.25,
-        ])
+        # IK to hover above cube (with optional offset)
+        hover_x = env["cube_pos_init"][0]
+        hover_y = env["cube_pos_init"][1]
+        hover_z = 0.25
+        if self._hover_offset is not None:
+            ho = self._hover_offset
+            if "xy" in ho:
+                hover_x += ho["xy"][0]
+                hover_y += ho["xy"][1]
+            elif "random_xy" in ho:
+                r = ho["random_xy"]
+                hover_x += np.random.uniform(-r, r)
+                hover_y += np.random.uniform(-r, r)
+            if "z" in ho:
+                hover_z = ho["z"]
+            elif "random_z" in ho:
+                hover_z = np.random.uniform(ho["random_z"][0], ho["random_z"][1])
+        hover_pos = np.array([hover_x, hover_y, hover_z])
         hover_quat = Rotation.from_euler("xyz", [np.pi, 0, 0]).as_quat()  # point down
         solve_ik(
             model, data, ids["hand_id"], ids["jnt_ids"],
@@ -769,15 +845,16 @@ class MuJoCoVecEnv:
         data = env["data"]
 
         camera_config = [
-            ("front", env["renderer_front"], env["front_cam_id"]),
-            ("cam_base", env["renderer_base"], env["cam_base_id"]),
-            ("cam_wrist", env["renderer_wrist"], env["cam_wrist_id"]),
+            ("front", env["renderer_front"], env["front_cam_id"], None),
+            ("cam_base", env["renderer_base"], env["cam_base_id"], env["opt_base"]),
+            ("cam_wrist", env["renderer_wrist"], env["cam_wrist_id"], env["opt_wrist"]),
         ]
 
-        for mj_key, renderer, cam_id in camera_config:
+        for mj_key, renderer, cam_id, opt in camera_config:
             resfit_key = self.CAMERA_MAP[mj_key]
             if cam_id >= 0:
-                renderer.update_scene(data, camera=cam_id)
+                kw = {"scene_option": opt} if opt else {}
+                renderer.update_scene(data, camera=cam_id, **kw)
                 img_rgb = renderer.render().copy()
             else:
                 img_rgb = np.zeros((self.rl_img_size, self.rl_img_size, 3), dtype=np.uint8)
@@ -802,14 +879,15 @@ class MuJoCoVecEnv:
         data = env["data"]
 
         depth_config = [
-            ("front", env["depth_renderer_front"], env["front_cam_id"]),
-            ("wrist", env["depth_renderer_wrist"], env["cam_wrist_id"]),
+            ("front", env["depth_renderer_front"], env["front_cam_id"], None),
+            ("wrist", env["depth_renderer_wrist"], env["cam_wrist_id"], env["opt_wrist"]),
         ]
 
-        for cam_name, renderer, cam_id in depth_config:
+        for cam_name, renderer, cam_id, opt in depth_config:
             key = f"observation.depth.{cam_name}"
             if cam_id >= 0:
-                renderer.update_scene(data, camera=cam_id)
+                kw = {"scene_option": opt} if opt else {}
+                renderer.update_scene(data, camera=cam_id, **kw)
                 depth_raw = renderer.render().copy()  # (rl_img_size, rl_img_size) float32
             else:
                 depth_raw = np.zeros((self.rl_img_size, self.rl_img_size), dtype=np.float32)
@@ -891,12 +969,13 @@ class MuJoCoVecEnv:
         """Get a single rendered frame for video/debug."""
         env = self._envs[env_id]
         cam_map = {
-            "front": (env["renderer_front"], env["front_cam_id"]),
-            "back": (env["renderer_base"], env["cam_base_id"]),
-            "wrist": (env["renderer_wrist"], env["cam_wrist_id"]),
+            "front": (env["renderer_front"], env["front_cam_id"], None),
+            "back": (env["renderer_base"], env["cam_base_id"], env["opt_base"]),
+            "wrist": (env["renderer_wrist"], env["cam_wrist_id"], env["opt_wrist"]),
         }
-        renderer, cam_id = cam_map.get(camera, cam_map["front"])
-        renderer.update_scene(env["data"], camera=cam_id)
+        renderer, cam_id, opt = cam_map.get(camera, cam_map["front"])
+        kw = {"scene_option": opt} if opt else {}
+        renderer.update_scene(env["data"], camera=cam_id, **kw)
         frame = renderer.render().copy()
         if size is not None:
             frame = cv2.resize(frame, (size[1], size[0]), interpolation=cv2.INTER_LINEAR)

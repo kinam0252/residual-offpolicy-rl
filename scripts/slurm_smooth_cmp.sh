@@ -1,0 +1,21 @@
+#!/bin/bash
+#SBATCH --job-name=smooth_cmp
+#SBATCH --partition=core
+#SBATCH --qos=core-extra
+#SBATCH --gres=gpu:1
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=64G
+#SBATCH --time=00:15:00
+#SBATCH --output=/home/nas_main/kinamkim/slurms/smooth_cmp_%j.out
+#SBATCH --error=/home/nas_main/kinamkim/slurms/smooth_cmp_%j.err
+
+set -e
+. /home/nas_main/kinamkim/.venvs/groot/bin/activate
+export MUJOCO_GL=egl
+export LD_LIBRARY_PATH=~/.local/lib/gl:${LD_LIBRARY_PATH:-}
+export OMP_NUM_THREADS=1
+export PYTHONUNBUFFERED=1
+export DS_BUILD_OPS=0
+
+cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl
+python3 resfit/rl_finetuning/scripts/smoothing_comparison.py

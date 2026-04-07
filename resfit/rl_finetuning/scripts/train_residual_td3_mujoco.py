@@ -257,6 +257,8 @@ class AsyncEvaluator:
             cmd += ["--scene_xml", a.scene_xml]
         if a.calib_path:
             cmd += ["--calib_path", a.calib_path]
+        if a.random_cube_range:
+            cmd += ["--random_cube_range", a.random_cube_range]
         # W&B: log to same run as training
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [
@@ -395,6 +397,11 @@ def parse_args():
     p.add_argument("--cube_yaw", type=float, default=0.0)
     p.add_argument("--perturb_table", type=str, default=None,
                    help="Path to JSON cube perturbation table (overrides --cube_pos and --num_envs)")
+    p.add_argument("--random_cube_range", type=str, default=None,
+                   help="JSON string: {dx: [lo,hi], dy: [lo,hi], yaw: [lo,hi]} in cm/degrees")
+    p.add_argument("--curriculum_stages", type=str, default=None,
+                   help="JSON list of curriculum stages: [{step:N, range:{dx,dy,yaw}}, ...]")
+
     p.add_argument("--scene_xml", type=str, default=None)
     p.add_argument("--calib_path", type=str, default=None)
     p.add_argument("--max_episode_steps", type=int, default=300)
@@ -439,6 +446,8 @@ def parse_args():
                    help="Use offline data only for critic warmup, then switch to pure online")
     p.add_argument("--target_tau", type=float, default=None,
                    help="Soft target update rate (overrides default 0.01)")
+    p.add_argument("--critic_grad_clip_norm", type=float, default=None,
+                   help="Critic gradient clip norm (overrides default 1.0)")
     # Misc
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", type=str, default="cuda:0")
@@ -502,10 +511,42 @@ def main():
     else:
         cube_positions = [args.cube_pos] * args.num_envs
 
+    # Parse random cube range if provided
+    random_cube_range = None
+    if args.random_cube_range:
+        import json as _json2
+        rcr = _json2.loads(args.random_cube_range)
+        random_cube_range = {
+            "dx": (rcr["dx"][0] / 100.0, rcr["dx"][1] / 100.0),  # cm -> m
+            "dy": (rcr["dy"][0] / 100.0, rcr["dy"][1] / 100.0),
+            "yaw": tuple(rcr.get("yaw", [0, 0])),  # degrees
+        }
+        _log(f"Random cube range: dx={rcr['dx']}cm dy={rcr['dy']}cm yaw={rcr.get('yaw', [0,0])}°")
+
+
+    # Parse curriculum stages if provided
+    _curriculum_stages = None
+    if args.curriculum_stages:
+        import json as _json3
+        _curriculum_stages = _json3.loads(args.curriculum_stages)
+        # Convert cm to m for each stage
+        for _cs in _curriculum_stages:
+            _r = _cs["range"]
+            _cs["_parsed"] = {
+                "dx": (_r["dx"][0]/100.0, _r["dx"][1]/100.0),
+                "dy": (_r["dy"][0]/100.0, _r["dy"][1]/100.0),
+                "yaw": tuple(_r.get("yaw", [0, 0])),
+            }
+        _curriculum_stages.sort(key=lambda x: x["step"])
+        _log(f"Curriculum: {len(_curriculum_stages)} stages")
+        for _cs in _curriculum_stages:
+            _log(f"  step>={_cs['step']}: {_cs['range']}")
+
     mujoco_env = MuJoCoVecEnv(
         num_envs=args.num_envs,
         cube_positions=cube_positions,
         cube_yaw_deg=args.cube_yaw,
+        random_cube_range=random_cube_range,
         scene_xml=args.scene_xml,
         calib_path=args.calib_path,
         max_episode_steps=args.max_episode_steps,
@@ -571,6 +612,8 @@ def main():
     cfg.agent.critic.hidden_dim = args.critic_hidden_dim
     if args.target_tau is not None:
         cfg.agent.critic_target_tau = args.target_tau
+    if args.critic_grad_clip_norm is not None:
+        cfg.agent.critic_grad_clip_norm = args.critic_grad_clip_norm
 
     agent = QAgent(
         obs_shape=(img_c, img_h, img_w),
@@ -766,7 +809,20 @@ def main():
 
     while global_step <= args.total_timesteps:
         # ── (1) Collect transition ──
-        stddev = args.stddev_min  # constant noise (can add schedule later)
+
+        # Curriculum: update random_cube_range based on global_step
+        if _curriculum_stages is not None:
+            _new_range = None
+            for _cs in _curriculum_stages:
+                if global_step >= _cs["step"]:
+                    _new_range = _cs["_parsed"]
+            if _new_range is not None and _new_range != mujoco_env._random_cube_range:
+                mujoco_env._random_cube_range = _new_range
+                _log(f"[Curriculum] step={global_step}: range updated to {_new_range}")
+
+        # Linear noise schedule: stddev_max -> stddev_min over total_timesteps
+        frac = min(global_step / max(args.total_timesteps, 1), 1.0)
+        stddev = args.stddev_max + (args.stddev_min - args.stddev_max) * frac
 
         _t0 = time.perf_counter()
         with torch.no_grad(), utils.eval_mode(agent):

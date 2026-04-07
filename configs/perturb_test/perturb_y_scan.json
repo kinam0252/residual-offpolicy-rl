@@ -1,0 +1,71 @@
+{
+  "description": "Y-axis scan -8cm to +10cm",
+  "base_pos": [
+    0.45,
+    -0.05,
+    0.02
+  ],
+  "success_threshold_m": 0.03,
+  "envs": [
+    {
+      "dx": 0.0,
+      "dy": -0.08,
+      "name": "y_m8cm",
+      "env_id": 0
+    },
+    {
+      "dx": 0.0,
+      "dy": -0.06,
+      "name": "y_m6cm",
+      "env_id": 1
+    },
+    {
+      "dx": 0.0,
+      "dy": -0.04,
+      "name": "y_m4cm",
+      "env_id": 2
+    },
+    {
+      "dx": 0.0,
+      "dy": -0.02,
+      "name": "y_m2cm",
+      "env_id": 3
+    },
+    {
+      "dx": 0.0,
+      "dy": 0.0,
+      "name": "y_center",
+      "env_id": 4
+    },
+    {
+      "dx": 0.0,
+      "dy": 0.02,
+      "name": "y_p2cm",
+      "env_id": 5
+    },
+    {
+      "dx": 0.0,
+      "dy": 0.04,
+      "name": "y_p4cm",
+      "env_id": 6
+    },
+    {
+      "dx": 0.0,
+      "dy": 0.06,
+      "name": "y_p6cm",
+      "env_id": 7
+    },
+    {
+      "dx": 0.0,
+      "dy": 0.08,
+      "name": "y_p8cm",
+      "env_id": 8
+    },
+    {
+      "dx": 0.0,
+      "dy": 0.1,
+      "name": "y_p10cm",
+      "env_id": 9
+    }
+  ]
+}

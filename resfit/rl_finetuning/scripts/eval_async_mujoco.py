@@ -96,6 +96,7 @@ def evaluate(
     save_video: bool = False,
     video_dir: Path | None = None,
     eval_step: int = 0,
+    obs_noise_fn=None,
 ) -> dict[str, float]:
     """Run evaluation episodes with greedy policy (stddev=0).
 
@@ -129,6 +130,8 @@ def evaluate(
             # this is a no-op since no env is done yet.
 
             with torch.no_grad():
+                if obs_noise_fn is not None:
+                    obs = obs_noise_fn(obs)
                 action = agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
 
             # Check cube height BEFORE auto-reset happens (env.step auto-resets)
@@ -189,6 +192,8 @@ def parse_args():
     p.add_argument("--calib_path", type=str, default=None)
     p.add_argument("--cube_pos", type=float, nargs=3, default=[0.45, -0.05, 0.02])
     p.add_argument("--perturb_table", type=str, default=None)
+    p.add_argument("--random_cube_range", type=str, default=None,
+                   help="JSON string: {dx: [lo,hi], dy: [lo,hi], yaw: [lo,hi]} in cm/degrees")
     p.add_argument("--max_episode_steps", type=int, default=500)
     p.add_argument("--success_threshold", type=float, default=0.005)
     p.add_argument("--reward_type", type=str, default="dense_clipped")
@@ -249,9 +254,21 @@ def main():
     else:
         cube_positions = [args.cube_pos] * args.num_envs
 
+    # Parse random cube range
+    random_cube_range = None
+    if hasattr(args, "random_cube_range") and args.random_cube_range:
+        rcr = json.loads(args.random_cube_range)
+        random_cube_range = {
+            "dx": (rcr["dx"][0] / 100.0, rcr["dx"][1] / 100.0),
+            "dy": (rcr["dy"][0] / 100.0, rcr["dy"][1] / 100.0),
+            "yaw": tuple(rcr.get("yaw", [0, 0])),
+        }
+        _log(f"Random cube range: dx={rcr['dx']}cm dy={rcr['dy']}cm yaw={rcr.get('yaw',[0,0])}°")
+
     mujoco_env = MuJoCoVecEnv(
         num_envs=args.num_envs,
         cube_positions=cube_positions,
+        random_cube_range=random_cube_range,
         max_episode_steps=args.max_episode_steps,
         success_threshold=args.success_threshold,
         reward_type=args.reward_type,
