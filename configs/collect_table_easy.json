@@ -1,0 +1,233 @@
+{
+  "base_pos": [
+    0.45,
+    -0.05,
+    0.02
+  ],
+  "envs": [
+    {
+      "env_id": 0,
+      "name": "rand_easy_00",
+      "dx": 0.05952,
+      "dy": -0.095,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 1,
+      "name": "rand_easy_01",
+      "dx": 0.00125,
+      "dy": 0.04729,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 2,
+      "name": "rand_easy_02",
+      "dx": 0.09491,
+      "dy": -0.08261,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 3,
+      "name": "rand_easy_03",
+      "dx": -0.02583,
+      "dy": -0.05627,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 4,
+      "name": "rand_easy_04",
+      "dx": -0.02628,
+      "dy": -0.06023,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 5,
+      "name": "rand_easy_05",
+      "dx": 0.04629,
+      "dy": -0.05591,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 6,
+      "name": "rand_easy_06",
+      "dx": 0.08332,
+      "dy": -0.0987,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 7,
+      "name": "rand_easy_07",
+      "dx": 0.06774,
+      "dy": -0.03195,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 8,
+      "name": "rand_easy_08",
+      "dx": 0.10401,
+      "dy": -0.03268,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 9,
+      "name": "rand_easy_09",
+      "dx": -0.01646,
+      "dy": 0.0695,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 10,
+      "name": "rand_easy_10",
+      "dx": 0.083,
+      "dy": 0.04595,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 11,
+      "name": "rand_easy_11",
+      "dx": 0.10624,
+      "dy": -0.02429,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 12,
+      "name": "rand_easy_12",
+      "dx": 0.08612,
+      "dy": 0.0237,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 13,
+      "name": "rand_easy_13",
+      "dx": 0.05083,
+      "dy": 0.04091,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 14,
+      "name": "rand_easy_14",
+      "dx": 0.00191,
+      "dy": -0.04212,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 15,
+      "name": "rand_easy_15",
+      "dx": 0.00259,
+      "dy": -0.0798,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 16,
+      "name": "rand_easy_16",
+      "dx": 0.059,
+      "dy": -0.02703,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 17,
+      "name": "rand_easy_17",
+      "dx": -0.00067,
+      "dy": -0.0466,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 18,
+      "name": "rand_easy_18",
+      "dx": 0.06072,
+      "dy": 0.02183,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 19,
+      "name": "rand_easy_19",
+      "dx": 0.07208,
+      "dy": -0.06732,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 20,
+      "name": "rand_easy_20",
+      "dx": 0.10853,
+      "dy": 0.028,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 21,
+      "name": "rand_easy_21",
+      "dx": 0.06585,
+      "dy": 0.06857,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 22,
+      "name": "rand_easy_22",
+      "dx": 0.00207,
+      "dy": -0.09358,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 23,
+      "name": "rand_easy_23",
+      "dx": 0.00748,
+      "dy": -0.0578,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 24,
+      "name": "rand_easy_24",
+      "dx": 0.09269,
+      "dy": -0.03706,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 25,
+      "name": "rand_easy_25",
+      "dx": 0.02539,
+      "dy": 0.08291,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 26,
+      "name": "rand_easy_26",
+      "dx": 0.00708,
+      "dy": -0.05067,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 27,
+      "name": "rand_easy_27",
+      "dx": 0.00678,
+      "dy": 0.01692,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 28,
+      "name": "rand_easy_28",
+      "dx": 0.02592,
+      "dy": -0.05614,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 29,
+      "name": "rand_easy_29",
+      "dx": 0.04133,
+      "dy": -0.08182,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 30,
+      "name": "rand_easy_30",
+      "dx": -0.01465,
+      "dy": 0.02549,
+      "yaw": 0.0
+    },
+    {
+      "env_id": 31,
+      "name": "rand_easy_31",
+      "dx": 0.0291,
+      "dy": -0.08729,
+      "yaw": 0.0
+    }
+  ]
+}

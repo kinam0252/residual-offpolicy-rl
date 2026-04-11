@@ -248,7 +248,10 @@ class AsyncEvaluator:
             cmd += ["--save_video"]
         if a.asymmetric_critic:
             cmd += ["--asymmetric_critic"]
-        if a.perturb_table:
+        # Use eval_perturb_table for fixed eval positions if set
+        if a.eval_perturb_table:
+            cmd += ["--perturb_table", a.eval_perturb_table]
+        elif a.perturb_table:
             cmd += ["--perturb_table", a.perturb_table]
         else:
             cmd += ["--cube_pos"] + [str(x) for x in a.cube_pos]
@@ -257,7 +260,7 @@ class AsyncEvaluator:
             cmd += ["--scene_xml", a.scene_xml]
         if a.calib_path:
             cmd += ["--calib_path", a.calib_path]
-        if a.random_cube_range:
+        if not a.eval_perturb_table and a.random_cube_range:
             cmd += ["--random_cube_range", a.random_cube_range]
         # W&B: log to same run as training
         if a.wandb_mode != "disabled" and wandb_run_id:
@@ -399,6 +402,8 @@ def parse_args():
                    help="Path to JSON cube perturbation table (overrides --cube_pos and --num_envs)")
     p.add_argument("--random_cube_range", type=str, default=None,
                    help="JSON string: {dx: [lo,hi], dy: [lo,hi], yaw: [lo,hi]} in cm/degrees")
+    p.add_argument("--eval_perturb_table", type=str, default=None,
+                   help="Fixed perturb table for eval (overrides random_cube_range in eval only)")
     p.add_argument("--curriculum_stages", type=str, default=None,
                    help="JSON list of curriculum stages: [{step:N, range:{dx,dy,yaw}}, ...]")
 
