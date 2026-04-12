@@ -118,6 +118,7 @@ class MuJoCoVecEnv:
         cube_size: tuple[float, float, float] = CUBE_HALF_SIZE,
         scene_xml: str | None = None,
         calib_path: str | None = None,
+        use_calibrated_wrist: bool = False,
         max_episode_steps: int = 300,
         success_threshold: float = LIFT_REWARD_THRESHOLD_M,
         success_lift_threshold: float = LIFT_SUCCESS_THRESHOLD_M,
@@ -139,6 +140,7 @@ class MuJoCoVecEnv:
         self.groot_img_size = groot_img_size
         self.cube_size = cube_size
         self._depth_norm = depth_norm or DEPTH_NORM_DEFAULTS
+        self._use_calibrated_wrist = use_calibrated_wrist
 
         # Camera calibration
         self._T_base_cam = load_calib(calib_path)
@@ -233,9 +235,10 @@ class MuJoCoVecEnv:
         # Front camera (top-down-ish view)
         front_cam_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_CAMERA, "front")
 
-        # ── Wrist cam v2: override quat/pos ──
-        model.cam_quat[cam_wrist_id] = WRIST_CAM_MJ_QUAT
-        model.cam_pos[cam_wrist_id] = WRIST_CAM_MJ_POS
+        # ── Wrist cam: override with hardcoded values (32ep) or keep calibrated (66ep/100ep) ──
+        if not self._use_calibrated_wrist:
+            model.cam_quat[cam_wrist_id] = WRIST_CAM_MJ_QUAT
+            model.cam_pos[cam_wrist_id] = WRIST_CAM_MJ_POS
 
         # Hide hand/link6/link7 visual geoms (group 2 → 4) for wrist cam
         hide_body_ids = []
@@ -560,30 +563,7 @@ class MuJoCoVecEnv:
 
         mujoco.mj_forward(model, data)
 
-        # IK to hover above cube (with optional offset)
-        hover_x = env["cube_pos_init"][0]
-        hover_y = env["cube_pos_init"][1]
-        hover_z = 0.25
-        if self._hover_offset is not None:
-            ho = self._hover_offset
-            if "xy" in ho:
-                hover_x += ho["xy"][0]
-                hover_y += ho["xy"][1]
-            elif "random_xy" in ho:
-                r = ho["random_xy"]
-                hover_x += np.random.uniform(-r, r)
-                hover_y += np.random.uniform(-r, r)
-            if "z" in ho:
-                hover_z = ho["z"]
-            elif "random_z" in ho:
-                hover_z = np.random.uniform(ho["random_z"][0], ho["random_z"][1])
-        hover_pos = np.array([hover_x, hover_y, hover_z])
-        hover_quat = Rotation.from_euler("xyz", [np.pi, 0, 0]).as_quat()  # point down
-        solve_ik(
-            model, data, ids["hand_id"], ids["jnt_ids"],
-            hover_pos, hover_quat, max_iter=500, ns_gain=1.0,
-        )
-        mujoco.mj_forward(model, data)
+        # Robot starts at HOME_QPOS (from teleop data) -- no IK hover
 
         # Record initial cube z
         if cube_qposadr is not None:

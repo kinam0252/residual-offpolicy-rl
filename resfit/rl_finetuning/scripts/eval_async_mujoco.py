@@ -190,6 +190,8 @@ def parse_args():
     p.add_argument("--num_envs", type=int, default=10)
     p.add_argument("--scene_xml", type=str, default=None)
     p.add_argument("--calib_path", type=str, default=None)
+    p.add_argument("--use_calibrated_wrist", action="store_true", default=False,
+                   help="Use calibrated wrist cam from yaml (66ep/100ep). Default: hardcoded 15deg tilt (32ep).")
     p.add_argument("--cube_pos", type=float, nargs=3, default=[0.45, -0.05, 0.02])
     p.add_argument("--perturb_table", type=str, default=None)
     p.add_argument("--random_cube_range", type=str, default=None,
@@ -265,6 +267,18 @@ def main():
         }
         _log(f"Random cube range: dx={rcr['dx']}cm dy={rcr['dy']}cm yaw={rcr.get('yaw',[0,0])}°")
 
+    # ── Auto-detect camera calibration from GR00T checkpoint ──
+    _calib_path = args.calib_path
+    _use_calibrated_wrist = args.use_calibrated_wrist
+    if _calib_path is None:
+        ckpt_lower = args.groot_checkpoint.lower()
+        if "66ep" in ckpt_lower or "100ep" in ckpt_lower:
+            _calib_66ep = str(Path(__file__).resolve().parents[4] / "Mujoco_Franka" / "config" / "camera_info_66ep.yaml")
+            if Path(_calib_66ep).exists():
+                _calib_path = _calib_66ep
+                _use_calibrated_wrist = True
+                _log(f"Auto-detected 66ep/100ep checkpoint → using {_calib_66ep} + calibrated wrist")
+
     mujoco_env = MuJoCoVecEnv(
         num_envs=args.num_envs,
         cube_positions=cube_positions,
@@ -275,7 +289,8 @@ def main():
         device=args.device,
         rl_img_size=84,
         scene_xml=args.scene_xml,
-        calib_path=args.calib_path,
+        calib_path=_calib_path,
+        use_calibrated_wrist=_use_calibrated_wrist,
     )
 
     policy_device = args.groot_policy_device or args.device

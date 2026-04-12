@@ -260,6 +260,8 @@ class AsyncEvaluator:
             cmd += ["--scene_xml", a.scene_xml]
         if a.calib_path:
             cmd += ["--calib_path", a.calib_path]
+        if a.use_calibrated_wrist:
+            cmd += ["--use_calibrated_wrist"]
         if not a.eval_perturb_table and a.random_cube_range:
             cmd += ["--random_cube_range", a.random_cube_range]
         # W&B: log to same run as training
@@ -409,6 +411,8 @@ def parse_args():
 
     p.add_argument("--scene_xml", type=str, default=None)
     p.add_argument("--calib_path", type=str, default=None)
+    p.add_argument("--use_calibrated_wrist", action="store_true", default=False,
+                   help="Use calibrated wrist cam from yaml (66ep/100ep). Default: hardcoded 15deg tilt (32ep).")
     p.add_argument("--max_episode_steps", type=int, default=300)
     p.add_argument("--success_threshold", type=float, default=0.03)
     p.add_argument("--reward_type", type=str, default="dense_clipped", choices=["sparse", "dense", "dense_clipped"])
@@ -547,13 +551,28 @@ def main():
         for _cs in _curriculum_stages:
             _log(f"  step>={_cs['step']}: {_cs['range']}")
 
+    # ── Auto-detect camera calibration from GR00T checkpoint ──
+    _calib_path = args.calib_path
+    _use_calibrated_wrist = args.use_calibrated_wrist
+    if _calib_path is None:
+        ckpt_lower = args.groot_checkpoint.lower()
+        if "66ep" in ckpt_lower or "100ep" in ckpt_lower:
+            _calib_66ep = str(Path(__file__).resolve().parents[4] / "Mujoco_Franka" / "config" / "camera_info_66ep.yaml")
+            if Path(_calib_66ep).exists():
+                _calib_path = _calib_66ep
+                _use_calibrated_wrist = True
+                _log(f"Auto-detected 66ep/100ep checkpoint → using {_calib_66ep} + calibrated wrist")
+            else:
+                _log(f"WARNING: 66ep/100ep checkpoint detected but {_calib_66ep} not found, using default calib")
+
     mujoco_env = MuJoCoVecEnv(
         num_envs=args.num_envs,
         cube_positions=cube_positions,
         cube_yaw_deg=args.cube_yaw,
         random_cube_range=random_cube_range,
         scene_xml=args.scene_xml,
-        calib_path=args.calib_path,
+        calib_path=_calib_path,
+        use_calibrated_wrist=_use_calibrated_wrist,
         max_episode_steps=args.max_episode_steps,
         success_threshold=args.success_threshold,
         reward_type=args.reward_type,
