@@ -46,11 +46,14 @@ def parse_args():
     p.add_argument("--ema_alpha", type=float, default=0.0)
     p.add_argument("--success_threshold", type=float, default=0.03)
     p.add_argument("--calib_path", type=str, default=None)
+    p.add_argument("--use_calibrated_wrist", action="store_true", default=False)
     p.add_argument("--cube_yaw", type=float, default=0.0, help="Cube yaw rotation in degrees")
     p.add_argument("--hover_offset", type=str, default=None,
                    help="JSON: {xy:[dx,dy]} or {random_xy:0.05} or {z:0.30} or {random_z:[0.20,0.30]} in meters")
     p.add_argument("--obj_pos_noise", type=float, default=0.0, help="Gaussian noise std for object position (meters)")
     p.add_argument("--obj_rot_noise", type=float, default=0.0, help="Gaussian noise std for object rotation (degrees)")
+    p.add_argument("--save_video", action="store_true", help="Save eval videos")
+    p.add_argument("--video_dir", type=str, default=None, help="Directory to save videos")
     return p.parse_args()
 
 
@@ -104,6 +107,7 @@ def main():
         max_episode_steps=args.max_episode_steps,
         success_threshold=args.success_threshold,
         reward_type=args.reward_type,
+        use_calibrated_wrist=getattr(args, "use_calibrated_wrist", False),
         device=args.device,
     )
 
@@ -213,6 +217,8 @@ def main():
     print(f"Starting evaluation ({args.eval_num_episodes} episodes x {args.num_envs} envs)...", flush=True)
     t0 = time.time()
     try:
+        from pathlib import Path as _Path
+        _vdir = _Path(args.video_dir) if args.video_dir else None
         metrics = evaluate(
             env=env,
             agent=agent,
@@ -220,6 +226,8 @@ def main():
             device=device,
             image_keys=image_keys,
             obs_noise_fn=obs_noise_fn,
+            save_video=getattr(args, "save_video", False),
+            video_dir=_vdir,
         )
     except Exception as e:
         print(f"ERROR during evaluate(): {e}", flush=True)
