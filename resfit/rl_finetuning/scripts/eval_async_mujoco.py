@@ -310,7 +310,7 @@ def main():
 
     # ── Create agent (same architecture) ──
     _asymmetric = args.asymmetric_critic
-    object_state_dim = 7 if _asymmetric else 0
+    object_state_dim = 10 if _asymmetric else 0
     if _asymmetric:
         image_keys = ["observation.depth.front", "observation.depth.wrist"]
         img_c, img_h, img_w = 1, 84, 84
@@ -387,8 +387,12 @@ def main():
         _log(f"Found eval request: step={step}")
 
         try:
-            state_dict = torch.load(latest, map_location=device, weights_only=True)
-            agent.load_state_dict(state_dict)
+            # Support both old (plain state_dict) and new ({model, args}) format
+            ckpt = torch.load(latest, map_location=device, weights_only=False)
+            if isinstance(ckpt, dict) and "model" in ckpt:
+                agent.load_state_dict(ckpt["model"])
+            else:
+                agent.load_state_dict(ckpt)
             _log(f"  Loaded weights for step {step}")
 
             eval_start = time.time()

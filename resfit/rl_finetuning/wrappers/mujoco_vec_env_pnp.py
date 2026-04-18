@@ -75,6 +75,11 @@ BOWL_RADIUS = 0.095  # bowl radius in meters
 BOWL_HEIGHT = 0.005  # bowl base height
 DEFAULT_BOWL_POS = [0.42, 0.03, 0.0]  # from dataset analysis
 
+# Physics simulation constants
+PHYSICS_SUBSTEPS = 25       # 25 substeps × 0.002s = 0.05s per action (20Hz control)
+GRASP_CONTACT_THRESHOLD = 1  # min number of finger-cube contacts to count as grasped
+CUBE_SETTLED_VEL = 0.05     # max cube velocity to count as "settled" for success
+
 # Depth normalization defaults (2nd/98th percentile from IsaacLab rollout)
 DEPTH_NORM_DEFAULTS = {
     "front": {"min": 0.554, "max": 1.495},
@@ -166,8 +171,8 @@ def _make_model_with_cube_and_bowl(T_base_cam, cube_pos, bowl_pos,
         <body name="cube" pos="{cpos}" quat="{cquat}">
           <freejoint name="cube_joint"/>
           <geom name="cube_geom" type="box" size="{csz}" material="red_cube"
-                mass="0.1" friction="1.0 0.005 0.0001"
-                condim="4" solimp="0.95 0.99 0.001" solref="0.004 1"/>
+                mass="0.03" friction="5.0 0.5 0.1"
+                condim="6" solimp="0.95 0.99 0.001" solref="0.002 1"/>
           <site name="cube_site" size="0.001"/>
         </body>
         <body name="bowl" pos="{bpos}">
@@ -175,6 +180,12 @@ def _make_model_with_cube_and_bowl(T_base_cam, cube_pos, bowl_pos,
                 material="white_bowl" mass="0.3" pos="0 0 0.005"/>
         </body>
       </worldbody>
+      <equality>
+        <weld name="cube_grasp" body1="hand" body2="cube"
+              relpose="0 0 0.1034 1 0 0 0"
+              solref="0.0002 1" solimp="0.99 0.999 0.0001"
+              active="false"/>
+      </equality>
     </mujoco>
     """
     orig_dir = os.getcwd()
@@ -398,22 +409,60 @@ class MuJoCoVecEnvPnP:
         # Cube geom id (for contact detection)
         cube_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "cube_geom")
 
+        # Weld constraint id for grasp
+        weld_eq_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, "cube_grasp")
+
         # Bowl body id (for runtime repositioning)
         bowl_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "bowl")
 
-        # Finger geom ids
+        # Finger geom ids (for contact detection)
+        # Find collision geoms (group 3) belonging to finger bodies
         finger_geom_ids = []
-        for name in ("finger_left_pad", "finger_right_pad",
-                      "finger_left", "finger_right",
-                      "left_finger_pad", "right_finger_pad"):
-            gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, name)
-            if gid >= 0:
-                finger_geom_ids.append(gid)
+        for body_name in ("left_finger", "right_finger"):
+            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            if bid < 0:
+                continue
+            for gid in range(model.ngeom):
+                if model.geom_bodyid[gid] == bid and model.geom_group[gid] == 3:
+                    finger_geom_ids.append(gid)
+        # Fallback: try by name
         if not finger_geom_ids:
             for gid in range(model.ngeom):
                 name = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid)
                 if name and "finger" in name.lower():
                     finger_geom_ids.append(gid)
+        print(f"[PnP] Found {len(finger_geom_ids)} finger collision geom(s)")
+
+        # Actuator IDs for physics-based control
+        arm_actuator_ids = []
+        for jid in ids["jnt_ids"]:
+            jname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, jid)
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, jname)
+            arm_actuator_ids.append(aid)
+        # Set high friction on finger collision geoms for stable grasping
+        for gid in finger_geom_ids:
+            model.geom_friction[gid] = [5.0, 0.5, 0.1]
+            model.geom_condim[gid] = 6  # full friction cone
+
+        # Increase finger actuator kp for sufficient grasp force
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                model.actuator_gainprm[aid, 0] = 5000.0   # kp: 100 -> 5000
+                model.actuator_biasprm[aid, 1] = -5000.0   # -kp for position actuator
+                model.actuator_ctrlrange[aid] = [-0.01, 0.04]  # allow extra closing
+
+        # Extend finger joint range to allow tighter closing
+        for fname in ("finger_joint1", "finger_joint2"):
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, fname)
+            if jid >= 0:
+                model.jnt_range[jid] = [-0.01, 0.04]  # was [0, 0.04]
+
+        finger_actuator_ids = []
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                finger_actuator_ids.append(aid)
 
         # Set cube initial position
         if cube_qposadr is not None:
@@ -446,9 +495,12 @@ class MuJoCoVecEnvPnP:
             "cube_pos_init": cube_pos.copy(),
             "bowl_pos_init": bowl_pos.copy(),
             "cube_geom_id": cube_geom_id,
+            "weld_eq_id": weld_eq_id,
             "finger_geom_ids": finger_geom_ids,
             "bowl_body_id": bowl_body_id,
-            "grasp_state": {"grasped": False, "T_cube_in_tcp": None},
+            "grasp_state": {"grasped": False, "contact_count": 0},
+            "arm_actuator_ids": arm_actuator_ids,
+            "finger_actuator_ids": finger_actuator_ids,
         }
 
     # ------------------------------------------------------------------
@@ -576,7 +628,7 @@ class MuJoCoVecEnvPnP:
         return observation
 
     # ------------------------------------------------------------------
-    # Internal: action application (kinematic, same as infer_gr00t_mujoco.py)
+    # Internal: action application (PHYSICS-BASED with mj_step)
     # ------------------------------------------------------------------
 
     def _apply_action(
@@ -586,7 +638,15 @@ class MuJoCoVecEnvPnP:
         target_quat_xyzw: np.ndarray,
         gripper_width: float,
     ) -> None:
-        """Apply a single action step via IK + kinematic cube attachment."""
+        """Apply action via IK → ctrl targets → mj_step (physics simulation).
+
+        1. Save current sim state
+        2. Run IK on live data to find target joint positions
+        3. Restore sim state
+        4. Set data.ctrl with IK targets + finger targets
+        5. Run mj_step × PHYSICS_SUBSTEPS for actual dynamics
+        6. Update grasp state from contact detection
+        """
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
@@ -595,62 +655,100 @@ class MuJoCoVecEnvPnP:
         if qn > 1e-6:
             target_quat_xyzw = target_quat_xyzw / qn
 
-        # IK solve
+        # ── Step 1-3: IK on scratch state ──
+        # Save current state
+        qpos_save = data.qpos.copy()
+        qvel_save = data.qvel.copy()
+
+        # Run IK (modifies data.qpos for arm joints internally)
         solve_ik(
             model, data, ids["hand_id"], ids["jnt_ids"],
             target_pos, target_quat_xyzw, max_iter=50,
         )
 
-        # Set gripper
-        finger_pos = np.clip(gripper_width, 0.0, 1.0) * 0.04
-        for fid in ids["finger_ids"]:
-            if fid >= 0:
-                data.qpos[model.jnt_qposadr[fid]] = finger_pos
+        # Extract IK solution (target joint positions)
+        target_joint_pos = np.array([
+            data.qpos[model.jnt_qposadr[jid]] for jid in ids["jnt_ids"]
+        ])
 
-        # Kinematic cube attachment
-        cube_qposadr = env["cube_qposadr"]
-        grasp_state = env["grasp_state"]
-        if cube_qposadr is not None:
-            if not grasp_state["grasped"] and gripper_width < GRIPPER_CLOSE_THRESHOLD:
-                # Gripper just closed → check if cube is close enough to grasp
-                tcp_pos_now, tcp_R_now = get_tcp_pose(model, data, ids["hand_id"])
-                cube_pos_now = data.qpos[cube_qposadr:cube_qposadr + 3].copy()
-                cube_tcp_dist = np.linalg.norm(cube_pos_now - tcp_pos_now)
-
-                if cube_tcp_dist < 0.20:  # 15cm — accounts for TCP_OFFSET (10.3cm above fingertip)
-                    T_tcp = np.eye(4)
-                    T_tcp[:3, :3] = tcp_R_now
-                    T_tcp[:3, 3] = tcp_pos_now
-
-                    cube_qw = data.qpos[cube_qposadr + 3:cube_qposadr + 7].copy()
-                    cube_q_xyzw = [cube_qw[1], cube_qw[2], cube_qw[3], cube_qw[0]]
-                    T_cube = np.eye(4)
-                    T_cube[:3, :3] = Rotation.from_quat(cube_q_xyzw).as_matrix()
-                    T_cube[:3, 3] = cube_pos_now
-
-                    grasp_state["grasped"] = True
-                    grasp_state["T_cube_in_tcp"] = np.linalg.inv(T_tcp) @ T_cube
-
-            if grasp_state["grasped"]:
-                if gripper_width >= GRIPPER_CLOSE_THRESHOLD:
-                    # Gripper opened → release cube
-                    grasp_state["grasped"] = False
-                    grasp_state["T_cube_in_tcp"] = None
-                else:
-                    # Move cube with TCP
-                    tcp_pos_now, tcp_R_now = get_tcp_pose(model, data, ids["hand_id"])
-                    T_tcp = np.eye(4)
-                    T_tcp[:3, :3] = tcp_R_now
-                    T_tcp[:3, 3] = tcp_pos_now
-                    T_cube = T_tcp @ grasp_state["T_cube_in_tcp"]
-
-                    data.qpos[cube_qposadr:cube_qposadr + 3] = T_cube[:3, 3]
-                    q_c = Rotation.from_matrix(T_cube[:3, :3]).as_quat()  # xyzw
-                    data.qpos[cube_qposadr + 3:cube_qposadr + 7] = [
-                        q_c[3], q_c[0], q_c[1], q_c[2],
-                    ]  # wxyz
-
+        # Restore original state
+        data.qpos[:] = qpos_save
+        data.qvel[:] = qvel_save
         mujoco.mj_forward(model, data)
+
+        # ── Step 4: Set actuator ctrl targets ──
+        # Arm actuators: position targets from IK
+        for aid, target_q in zip(env["arm_actuator_ids"], target_joint_pos):
+            if aid >= 0:
+                data.ctrl[aid] = target_q
+
+        # Finger actuators: gripper width → finger joint target
+        # Subtract offset so fingers close 5mm tighter than commanded
+        finger_target = np.clip(gripper_width, 0.0, 1.0) * 0.04 - 0.010
+        finger_target = max(finger_target, -0.01)  # respect extended range
+        for aid in env["finger_actuator_ids"]:
+            data.ctrl[aid] = finger_target
+
+        # ── Step 5: Physics simulation ──
+        for _ in range(PHYSICS_SUBSTEPS):
+            mujoco.mj_step(model, data)
+
+        # ── Step 6: Update grasp state from contacts ──
+        self._update_grasp_state(env_idx, gripper_width)
+
+    def _update_grasp_state(self, env_idx: int, gripper_width: float) -> None:
+        """Update grasp state based on physics contacts + weld constraint."""
+        import numpy as np
+        env = self._envs[env_idx]
+        model, data = env["model"], env["data"]
+        grasp_state = env["grasp_state"]
+        contacts = self._get_contacts(env_idx)
+        any_contact = contacts[2] > 0.5
+        gripper_closing = gripper_width < GRIPPER_CLOSE_THRESHOLD
+
+        if gripper_closing and any_contact:
+            grasp_state["contact_count"] = min(
+                grasp_state["contact_count"] + 1, 10
+            )
+        else:
+            grasp_state["contact_count"] = max(
+                grasp_state["contact_count"] - 2, 0
+            )
+
+        was_grasped = grasp_state["grasped"]
+        # Once grasped (weld active), stay grasped while gripper closing
+        if was_grasped and gripper_closing:
+            grasp_state["grasped"] = True
+        else:
+            grasp_state["grasped"] = (
+            grasp_state["contact_count"] >= GRASP_CONTACT_THRESHOLD
+            and gripper_closing
+        )
+
+        # Enable/disable weld constraint for sustained grasp
+        weld_id = env.get("weld_eq_id", -1)
+        if weld_id >= 0:
+            if grasp_state["grasped"] and not was_grasped:
+                # Just grasped: compute relative pose and enable weld
+                hand_id = env["ids"]["hand_id"]
+                cube_body_id = model.geom_bodyid[env["cube_geom_id"]]
+                hand_pos = data.xpos[hand_id].copy()
+                hand_mat = data.xmat[hand_id].reshape(3, 3).copy()
+                cube_pos = data.xpos[cube_body_id].copy()
+                cube_mat = data.xmat[cube_body_id].reshape(3, 3).copy()
+                rel_pos = hand_mat.T @ (cube_pos - hand_pos)
+                rel_mat = hand_mat.T @ cube_mat
+                rel_quat = np.zeros(4)
+                mujoco.mju_mat2Quat(rel_quat, rel_mat.flatten())
+                model.eq_data[weld_id, 3:6] = rel_pos
+                model.eq_data[weld_id, 6:10] = rel_quat
+                model.eq_active0[weld_id] = 1
+                data.eq_active[weld_id] = 1
+                print(f"  [WELD] ACTIVATED at step, rel_pos={rel_pos}, rel_quat={rel_quat}")
+            elif not grasp_state["grasped"] and was_grasped:
+                model.eq_active0[weld_id] = 0
+                data.eq_active[weld_id] = 0
+                print(f"  [WELD] DEACTIVATED")
 
     # ------------------------------------------------------------------
     # Internal: reset
@@ -747,7 +845,18 @@ class MuJoCoVecEnvPnP:
         # Reset state
         self._step_counts[env_idx] = 0
         self._last_actions[env_idx] = 0.0
-        env["grasp_state"] = {"grasped": False, "T_cube_in_tcp": None}
+        env["grasp_state"] = {"grasped": False, "contact_count": 0}
+        weld_id = env.get("weld_eq_id", -1)
+        if weld_id >= 0:
+            env["model"].eq_active0[weld_id] = 0
+            env["data"].eq_active[weld_id] = 0
+
+        # Set ctrl to current joint positions (physics-based init)
+        for aid, jid in zip(env["arm_actuator_ids"], ids["jnt_ids"]):
+            if aid >= 0:
+                data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid]]
+        for aid in env["finger_actuator_ids"]:
+            data.ctrl[aid] = 0.04  # open
 
     # ------------------------------------------------------------------
     # Internal: reward (PnP 2-phase)
@@ -850,18 +959,23 @@ class MuJoCoVecEnvPnP:
             return 0.0
 
     def _is_success(self, env_idx: int) -> bool:
-        """Check if cube is within PNP_PLACE_THRESHOLD_M of bowl center and released."""
+        """Check if cube is within PNP_PLACE_THRESHOLD_M of bowl center.
+
+        Physics-based: check cube position + low velocity (settled).
+        No explicit release check — physics handles that naturally.
+        """
         env = self._envs[env_idx]
+        model, data = env["model"], env["data"]
         cube_qposadr = env["cube_qposadr"]
         bowl_body_id = env["bowl_body_id"]
         if cube_qposadr is None:
             return False
 
-        cube_pos = env["data"].qpos[cube_qposadr:cube_qposadr + 3].copy()
+        cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3].copy()
 
         # Bowl position
         if bowl_body_id >= 0:
-            bowl_pos = env["model"].body_pos[bowl_body_id].copy()
+            bowl_pos = model.body_pos[bowl_body_id].copy()
         else:
             bowl_pos = np.array(DEFAULT_BOWL_POS)
 
@@ -871,12 +985,17 @@ class MuJoCoVecEnvPnP:
             return False
 
         # Check cube is low (near table / bowl surface)
-        if cube_pos[2] > BOWL_HEIGHT + 0.03:
+        if cube_pos[2] > BOWL_HEIGHT + 0.05:
             return False
 
-        # Check gripper has released
-        if env["grasp_state"]["grasped"]:
-            return False
+        # Check cube has low velocity (settled, not bouncing/flying)
+        cube_jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_joint")
+        if cube_jnt_id >= 0:
+            cube_dofadr = model.jnt_dofadr[cube_jnt_id]
+            cube_vel = data.qvel[cube_dofadr:cube_dofadr + 6]
+            cube_linvel = np.linalg.norm(cube_vel[:3])
+            if cube_linvel > CUBE_SETTLED_VEL:
+                return False
 
         return True
 

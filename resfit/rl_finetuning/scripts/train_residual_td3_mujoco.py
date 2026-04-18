@@ -288,7 +288,7 @@ class AsyncEvaluator:
         """Save agent weights for the eval process to pick up. Non-blocking."""
         ckpt_path = self._checkpoint_dir / f"eval_request_step{global_step}.pt"
         tmp_path = ckpt_path.with_suffix(".pt.tmp")
-        torch.save(agent.state_dict(), tmp_path)
+        torch.save({"model": agent.state_dict(), "args": vars(self._args) if hasattr(self._args, "__dict__") else self._args}, tmp_path)
         tmp_path.rename(ckpt_path)
         _log(f"[AsyncEval] Triggered eval at step {global_step}")
 
@@ -973,7 +973,7 @@ def main():
                 if sr >= best_success:
                     best_success = sr
                     ckpt_path = checkpoint_dir / "best.pt"
-                    torch.save(agent.state_dict(), ckpt_path)
+                    torch.save({"model": agent.state_dict(), "args": vars(args)}, ckpt_path)
                     _log(f"  Saved best checkpoint: {ckpt_path}")
 
         # ── Collect async eval results (non-blocking) ──
@@ -987,7 +987,7 @@ def main():
                 if sr >= best_success:
                     best_success = sr
                     ckpt_path = checkpoint_dir / "best.pt"
-                    torch.save(agent.state_dict(), ckpt_path)
+                    torch.save({"model": agent.state_dict(), "args": vars(args)}, ckpt_path)
                     _log(f"  Saved best checkpoint: {ckpt_path}")
 
         # ── Periodic resume checkpoint ──
@@ -1025,7 +1025,7 @@ def main():
 
     # Save final checkpoint
     final_ckpt = checkpoint_dir / f"final_step{global_step}.pt"
-    torch.save(agent.state_dict(), final_ckpt)
+    torch.save({"model": agent.state_dict(), "args": vars(args)}, final_ckpt)
     _log(f"Final checkpoint: {final_ckpt}")
 
     if _wb is not None and _wb.run is not None:
