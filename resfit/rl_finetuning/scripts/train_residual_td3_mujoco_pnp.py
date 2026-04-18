@@ -256,8 +256,10 @@ class AsyncEvaluator:
             cmd += ["--save_video"]
         if a.asymmetric_critic:
             cmd += ["--asymmetric_critic"]
-        # Use eval_perturb_table for fixed eval positions if set
-        if a.eval_perturb_table:
+        # Eval positions priority: eval_positions_file > eval_perturb_table > perturb_table
+        if hasattr(a, "eval_positions_file") and a.eval_positions_file:
+            cmd += ["--eval_positions_file", a.eval_positions_file]
+        elif a.eval_perturb_table:
             cmd += ["--perturb_table", a.eval_perturb_table]
         elif a.perturb_table:
             cmd += ["--perturb_table", a.perturb_table]
@@ -270,9 +272,11 @@ class AsyncEvaluator:
             cmd += ["--calib_path", a.calib_path]
         if a.use_calibrated_wrist:
             cmd += ["--use_calibrated_wrist"]
-        if not a.eval_perturb_table and a.random_cube_range:
+        if not a.eval_perturb_table and not (hasattr(a, "eval_positions_file") and a.eval_positions_file) and a.random_cube_range:
             cmd += ["--random_cube_range", a.random_cube_range]
-        if hasattr(a, "episode_positions_file") and a.episode_positions_file:
+        # Only forward episode_positions_file when no fixed eval mode is active
+        _has_fixed_eval = (hasattr(a, "eval_positions_file") and a.eval_positions_file) or a.eval_perturb_table
+        if not _has_fixed_eval and hasattr(a, "episode_positions_file") and a.episode_positions_file:
             cmd += ["--episode_positions_file", a.episode_positions_file]
         if hasattr(a, "bowl_pos"):
             cmd += ["--bowl_pos"] + [str(x) for x in a.bowl_pos]
@@ -420,6 +424,9 @@ def parse_args():
                    help="JSON string: {dx: [lo,hi], dy: [lo,hi], yaw: [lo,hi]} in cm/degrees")
     p.add_argument("--eval_perturb_table", type=str, default=None,
                    help="Fixed perturb table for eval (overrides random_cube_range in eval only)")
+    p.add_argument("--eval_positions_file", type=str, default=None,
+                   help="Our eval config JSON [{cube_pos, bowl_pos, ...}] for fixed eval. "
+                        "Priority: eval_positions_file > eval_perturb_table > perturb_table")
     p.add_argument("--curriculum_stages", type=str, default=None,
                    help="JSON list of curriculum stages: [{step:N, range:{dx,dy,yaw}}, ...]")
 

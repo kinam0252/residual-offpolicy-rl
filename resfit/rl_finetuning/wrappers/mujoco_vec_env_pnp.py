@@ -229,6 +229,7 @@ class MuJoCoVecEnvPnP:
         bowl_positions: list[list[float]] | np.ndarray | None = None,
         episode_positions_file: str | None = None,
         cube_yaw_deg: float = 0.0,
+        cube_yaw_degs: list[float] | None = None,
         random_cube_range: dict | None = None,
         hover_offset: dict | None = None,
         cube_size: tuple[float, float, float] = PNP_CUBE_HALF_SIZE,
@@ -284,7 +285,19 @@ class MuJoCoVecEnvPnP:
             bowl_positions = np.tile(bowl_positions, (num_envs, 1))[:num_envs]
         self._bowl_positions = bowl_positions
 
-        # Cube quaternion (wxyz for MuJoCo)
+        # Cube quaternion (wxyz for MuJoCo) — per-env if cube_yaw_degs provided
+        if cube_yaw_degs is not None:
+            self._cube_quats_wxyz = []
+            for yd in cube_yaw_degs:
+                yaw = np.radians(yd)
+                q_xyzw = Rotation.from_euler("z", yaw).as_quat()
+                self._cube_quats_wxyz.append([q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]])
+            # Pad/tile to num_envs if needed
+            while len(self._cube_quats_wxyz) < num_envs:
+                self._cube_quats_wxyz.append(self._cube_quats_wxyz[-1])
+        else:
+            self._cube_quats_wxyz = None
+
         yaw = np.radians(cube_yaw_deg)
         q_xyzw = Rotation.from_euler("z", yaw).as_quat()
         self._cube_quat_wxyz = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
@@ -805,7 +818,10 @@ class MuJoCoVecEnvPnP:
                 # No perturbation (easy mode) — use fixed positions
                 if cube_qposadr is not None:
                     data.qpos[cube_qposadr:cube_qposadr + 3] = env["cube_pos_init"]
-                    data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quat_wxyz
+                    if self._cube_quats_wxyz is not None:
+                        data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quats_wxyz[env_idx]
+                    else:
+                        data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quat_wxyz
                 if bowl_body_id >= 0:
                     model.body_pos[bowl_body_id] = env["bowl_pos_init"]
             else:
@@ -827,7 +843,10 @@ class MuJoCoVecEnvPnP:
             # Fixed positions
             if cube_qposadr is not None:
                 data.qpos[cube_qposadr:cube_qposadr + 3] = env["cube_pos_init"]
-                data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quat_wxyz
+                if self._cube_quats_wxyz is not None:
+                    data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quats_wxyz[env_idx]
+                else:
+                    data.qpos[cube_qposadr + 3:cube_qposadr + 7] = self._cube_quat_wxyz
             if bowl_body_id >= 0:
                 model.body_pos[bowl_body_id] = env["bowl_pos_init"]
 

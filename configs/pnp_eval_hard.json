@@ -85,7 +85,7 @@
     "source": "original"
   },
   {
-    "episode": 0,
+    "episode": 5,
     "cube_pos": [
       0.41206020494435897,
       0.09519877803684663,
@@ -100,7 +100,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 1,
+    "episode": 6,
     "cube_pos": [
       0.3618227741677961,
       0.1309029621512019,
@@ -115,7 +115,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 2,
+    "episode": 7,
     "cube_pos": [
       0.38724387992152925,
       0.17561308131317727,
@@ -130,7 +130,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 3,
+    "episode": 8,
     "cube_pos": [
       0.41614293961232435,
       0.21209733311136192,
@@ -145,7 +145,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 4,
+    "episode": 9,
     "cube_pos": [
       0.41374218186717,
       -0.15725380103529543,
@@ -160,7 +160,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 0,
+    "episode": 10,
     "cube_pos": [
       0.4550872329578874,
       0.07671874474626708,
@@ -175,7 +175,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 1,
+    "episode": 11,
     "cube_pos": [
       0.32724606850456583,
       0.1098153668908669,
@@ -190,7 +190,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 2,
+    "episode": 12,
     "cube_pos": [
       0.4083267007950605,
       0.23584774756869903,
@@ -205,7 +205,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 3,
+    "episode": 13,
     "cube_pos": [
       0.35912018506766896,
       0.22818763569727202,
@@ -220,7 +220,7 @@
     "source": "perturbed"
   },
   {
-    "episode": 4,
+    "episode": 14,
     "cube_pos": [
       0.4490790292403779,
       -0.1730224804456386,

@@ -196,6 +196,10 @@ def parse_args():
     p.add_argument("--bowl_pos", type=float, nargs=3, default=[0.45, 0.15, 0.01])
     p.add_argument("--episode_positions_file", type=str, default=None)
     p.add_argument("--perturb_table", type=str, default=None)
+    p.add_argument("--eval_positions_file", type=str, default=None,
+                   help="Our eval config JSON: [{cube_pos, bowl_pos, cube_yaw_deg, ...}]. "
+                        "Creates envs with fixed positions (no randomization). "
+                        "Takes priority over --perturb_table.")
     p.add_argument("--random_cube_range", type=str, default=None,
                    help="JSON string: {dx: [lo,hi], dy: [lo,hi], yaw: [lo,hi]} in cm/degrees")
     p.add_argument("--max_episode_steps", type=int, default=500)
@@ -245,7 +249,18 @@ def main():
 
     # ΓöÇΓöÇ Create eval env ΓöÇΓöÇ
     _log("Creating eval MuJoCo environment...")
-    if args.perturb_table:
+    bowl_positions_list = None  # None → use default [args.bowl_pos]
+
+    if args.eval_positions_file:
+        # Our eval config format: [{cube_pos, bowl_pos, cube_yaw_deg, ...}]
+        with open(args.eval_positions_file) as f:
+            _eval_positions = json.load(f)
+        cube_positions = [p["cube_pos"] for p in _eval_positions]
+        bowl_positions_list = [p["bowl_pos"] for p in _eval_positions]
+        cube_yaw_degs = [p.get("cube_yaw_deg", 0.0) for p in _eval_positions]
+        args.num_envs = len(_eval_positions)
+        _log(f"eval_positions_file: {args.eval_positions_file} → {args.num_envs} fixed envs")
+    elif args.perturb_table:
         with open(args.perturb_table) as f:
             ptable = json.load(f)
         base_pos = ptable["base_pos"]
@@ -258,9 +273,9 @@ def main():
     else:
         cube_positions = [args.cube_pos] * args.num_envs
 
-    # Parse random cube range
+    # Parse random cube range (skipped when eval_positions_file is used)
     random_cube_range = None
-    if hasattr(args, "random_cube_range") and args.random_cube_range:
+    if not args.eval_positions_file and hasattr(args, "random_cube_range") and args.random_cube_range:
         _raw_rcr = json.loads(args.random_cube_range)
         def _cvt_one(r):
             if r is None: return None
@@ -283,6 +298,10 @@ def main():
                 _use_calibrated_wrist = True
                 _log(f"Auto-detected 66ep/100ep checkpoint ΓåÆ using {_calib_66ep} + calibrated wrist")
 
+    # episode_positions_file is for training (random selection on reset), not eval
+    _ep_positions_file = None if args.eval_positions_file else args.episode_positions_file
+    _cube_yaw_degs = cube_yaw_degs if args.eval_positions_file else None
+
     mujoco_env = MuJoCoVecEnv(
         num_envs=args.num_envs,
         cube_positions=cube_positions,
@@ -295,8 +314,9 @@ def main():
         scene_xml=args.scene_xml,
         calib_path=_calib_path,
         use_calibrated_wrist=_use_calibrated_wrist,
-        bowl_positions=[args.bowl_pos],
-        episode_positions_file=args.episode_positions_file,
+        bowl_positions=bowl_positions_list or [args.bowl_pos],
+        episode_positions_file=_ep_positions_file,
+        cube_yaw_degs=_cube_yaw_degs,
     )
 
     policy_device = args.groot_policy_device or args.device
