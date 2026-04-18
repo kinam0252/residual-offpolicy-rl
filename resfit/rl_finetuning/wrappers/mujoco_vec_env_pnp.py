@@ -1033,7 +1033,8 @@ class MuJoCoVecEnvPnP:
                         right_contact = 1.0
 
         any_contact = max(left_contact, right_contact)
-        return np.array([left_contact, right_contact, any_contact], dtype=np.float32)
+        both_contact = min(left_contact, right_contact)  # 1.0 only if BOTH fingers touch
+        return np.array([left_contact, right_contact, both_contact], dtype=np.float32)
 
     # ------------------------------------------------------------------
     # Internal: observation building
