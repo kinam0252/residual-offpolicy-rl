@@ -1,9 +1,12 @@
 """
-Sweep eval: iterate over all GR00T PnP checkpoints, evaluate each on easy positions.
+Sweep eval: iterate over all GR00T PnP checkpoints, evaluate each on fixed positions.
+Supports easy/normal/hard difficulty via --difficulty flag.
 Uses file-based locking so multiple SLURM jobs can run independently without conflict.
 
 Usage:
-    python scripts/eval_pnp_sweep.py [--max-evals N] [--output-dir DIR]
+    python scripts/eval_pnp_sweep.py --difficulty easy
+    python scripts/eval_pnp_sweep.py --difficulty normal
+    python scripts/eval_pnp_sweep.py --difficulty hard
 """
 import sys, os, json, time, importlib, types as _types, argparse, signal
 from pathlib import Path
@@ -32,7 +35,7 @@ try:
     v.validate_repo_id = _p
 except: pass
 
-_repo = str(Path(__file__).resolve().parents[1] / "residual-offpolicy-rl")
+_repo = str(Path(__file__).resolve().parents[1])
 if _repo not in sys.path:
     sys.path.insert(0, _repo)
 
@@ -55,14 +58,16 @@ FFMPEG = os.path.expanduser(
 )
 
 TRAINING_BASE = os.path.expanduser("~/DATA/INTERN/training")
-POSITIONS_FILE = os.path.join(_repo, "configs/pnp_sim33ep_positions.json")
+DIFFICULTY_CONFIGS = {
+    "easy": os.path.join(_repo, "configs/pnp_eval_easy.json"),
+    "normal": os.path.join(_repo, "configs/pnp_eval_normal.json"),
+    "hard": os.path.join(_repo, "configs/pnp_eval_hard.json"),
+}
 SCENE_XML = os.path.expanduser(
     "~/Repos/Intern/residual-offpolicy-rl_v1/mujoco_menagerie/franka_fr3/fr3_with_hand.xml"
 )
 
 # Eval config
-NUM_ENVS = 5
-NUM_EPISODES = 2  # 2 batches x 5 envs = 10 episodes per checkpoint
 MAX_STEPS = 500
 SEED = 42
 
@@ -182,121 +187,124 @@ def eval_checkpoint(ckpt_path, positions, output_dir):
 
     all_results = []
     total_success = 0
-    total_episodes = 0
-    last_ep_frames = None
+    total_episodes = num_envs
 
-    for ep in range(NUM_EPISODES):
-        obs = wrapper.reset()
+    obs = wrapper.reset()
 
-        # Override positions
-        for ei in range(num_envs):
-            env_data = vec_env._envs[ei]
-            data, model = env_data["data"], env_data["model"]
-            cqa = env_data["cube_qposadr"]
-            if cqa is not None:
-                data.qpos[cqa:cqa+3] = cube_positions[ei]
-                q_xyzw = Rotation.from_euler("z", np.radians(cube_yaws[ei])).as_quat()
-                data.qpos[cqa+3:cqa+7] = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
-            bowl_body_id = env_data["bowl_body_id"]
-            if bowl_body_id >= 0:
-                model.body_pos[bowl_body_id] = bowl_positions[ei]
-            env_data["cube_pos_init"] = np.array(cube_positions[ei])
-            env_data["bowl_pos_init"] = np.array(bowl_positions[ei])
-            mujoco.mj_forward(model, data)
+    # Override positions for all envs
+    for ei in range(num_envs):
+        env_data = vec_env._envs[ei]
+        data, model = env_data["data"], env_data["model"]
+        cqa = env_data["cube_qposadr"]
+        if cqa is not None:
+            data.qpos[cqa:cqa+3] = cube_positions[ei]
+            q_xyzw = Rotation.from_euler("z", np.radians(cube_yaws[ei])).as_quat()
+            data.qpos[cqa+3:cqa+7] = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+        bowl_body_id = env_data["bowl_body_id"]
+        if bowl_body_id >= 0:
+            model.body_pos[bowl_body_id] = bowl_positions[ei]
+        env_data["cube_pos_init"] = np.array(cube_positions[ei])
+        env_data["bowl_pos_init"] = np.array(bowl_positions[ei])
+        mujoco.mj_forward(model, data)
 
-        vec_env._step_counts = np.zeros(num_envs, dtype=int)
-        vec_env._episode_rewards = np.zeros(num_envs, dtype=np.float64)
+    vec_env._step_counts = np.zeros(num_envs, dtype=int)
+    vec_env._episode_rewards = np.zeros(num_envs, dtype=np.float64)
 
-        # Rebuild obs
-        obs = wrapper.reset()
-        for ei in range(num_envs):
-            env_data = vec_env._envs[ei]
-            data, model = env_data["data"], env_data["model"]
-            cqa = env_data["cube_qposadr"]
-            if cqa is not None:
-                data.qpos[cqa:cqa+3] = cube_positions[ei]
-                q_xyzw = Rotation.from_euler("z", np.radians(cube_yaws[ei])).as_quat()
-                data.qpos[cqa+3:cqa+7] = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
-            bowl_body_id = env_data["bowl_body_id"]
-            if bowl_body_id >= 0:
-                model.body_pos[bowl_body_id] = bowl_positions[ei]
-            env_data["cube_pos_init"] = np.array(cube_positions[ei])
-            env_data["bowl_pos_init"] = np.array(bowl_positions[ei])
-            mujoco.mj_forward(model, data)
+    # Rebuild obs after position override
+    obs = wrapper.reset()
+    for ei in range(num_envs):
+        env_data = vec_env._envs[ei]
+        data, model = env_data["data"], env_data["model"]
+        cqa = env_data["cube_qposadr"]
+        if cqa is not None:
+            data.qpos[cqa:cqa+3] = cube_positions[ei]
+            q_xyzw = Rotation.from_euler("z", np.radians(cube_yaws[ei])).as_quat()
+            data.qpos[cqa+3:cqa+7] = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+        bowl_body_id = env_data["bowl_body_id"]
+        if bowl_body_id >= 0:
+            model.body_pos[bowl_body_id] = bowl_positions[ei]
+        env_data["cube_pos_init"] = np.array(cube_positions[ei])
+        env_data["bowl_pos_init"] = np.array(bowl_positions[ei])
+        mujoco.mj_forward(model, data)
 
-        vec_env._step_counts = np.zeros(num_envs, dtype=int)
-        vec_env._episode_rewards = np.zeros(num_envs, dtype=np.float64)
+    vec_env._step_counts = np.zeros(num_envs, dtype=int)
+    vec_env._episode_rewards = np.zeros(num_envs, dtype=np.float64)
 
-        # Step loop
-        env_done = [False] * num_envs
-        env_success = [False] * num_envs
-        env_min_dist = [999.0] * num_envs
-        ep_frames = [[] for _ in range(num_envs)]
+    # Step loop — single batch, all 15 envs
+    env_done = [False] * num_envs
+    env_success = [False] * num_envs
+    env_min_dist = [999.0] * num_envs
+    ep_frames = [[] for _ in range(num_envs)]
 
-        for step in range(MAX_STEPS):
-            action = np.zeros((num_envs, wrapper.action_dim))
-            obs, rew, term, trunc, info = wrapper.step(action)
+    for step in range(MAX_STEPS):
+        action = np.zeros((num_envs, wrapper.action_dim))
+        obs, rew, term, trunc, info = wrapper.step(action)
 
-            if step % 3 == 0:
-                for ei in range(num_envs):
-                    if not env_done[ei]:
-                        frame = vec_env.get_frame(ei, camera='back', size=(240, 320))
-                        ep_frames[ei].append(frame)
-
-            done = term | trunc if hasattr(term, '__or__') else np.array(term) | np.array(trunc)
-
+        if step % 3 == 0:
             for ei in range(num_envs):
-                if env_done[ei]:
-                    continue
-                cqa = vec_env._envs[ei]["cube_qposadr"]
-                if cqa is not None:
-                    cp = vec_env._envs[ei]["data"].qpos[cqa:cqa+3].copy()
-                    d = np.linalg.norm(cp[:2] - np.array(bowl_positions[ei][:2]))
-                    env_min_dist[ei] = min(env_min_dist[ei], d)
-                    if d < 0.095 and cp[2] < 0.08:
-                        env_success[ei] = True
+                if not env_done[ei]:
+                    frame = vec_env.get_frame(ei, camera='back', size=(240, 320))
+                    ep_frames[ei].append(frame)
 
-                d_val = done[ei] if hasattr(done, '__getitem__') else done
-                if d_val:
-                    env_done[ei] = True
-                    t_val = term[ei] if hasattr(term, '__getitem__') else term
-                    if t_val:
-                        env_success[ei] = True
+        done = term | trunc if hasattr(term, '__or__') else np.array(term) | np.array(trunc)
 
-            if all(env_done):
-                break
-
-        n_succ = sum(env_success)
-        total_success += n_succ
-        total_episodes += num_envs
-        print(f"    Batch {ep+1}: {n_succ}/{num_envs} success")
         for ei in range(num_envs):
-            tag = "OK" if env_success[ei] else "FAIL"
-            all_results.append({
-                "batch": ep, "env": ei, "episode": positions[ei]["episode"],
-                "success": env_success[ei], "min_dist": env_min_dist[ei],
-            })
+            if env_done[ei]:
+                continue
+            cqa = vec_env._envs[ei]["cube_qposadr"]
+            if cqa is not None:
+                cp = vec_env._envs[ei]["data"].qpos[cqa:cqa+3].copy()
+                d = np.linalg.norm(cp[:2] - np.array(bowl_positions[ei][:2]))
+                env_min_dist[ei] = min(env_min_dist[ei], d)
+                if d < 0.095 and cp[2] < 0.08:
+                    env_success[ei] = True
 
-        if ep == NUM_EPISODES - 1:
-            last_ep_frames = ep_frames
+            d_val = done[ei] if hasattr(done, '__getitem__') else done
+            if d_val:
+                env_done[ei] = True
+                t_val = term[ei] if hasattr(term, '__getitem__') else term
+                if t_val:
+                    env_success[ei] = True
+
+        if all(env_done):
+            break
+
+    total_success = sum(env_success)
+    print(f"    Result: {total_success}/{num_envs} success")
+    for ei in range(num_envs):
+        all_results.append({
+            "env": ei, "episode": positions[ei].get("episode", ei),
+            "source": positions[ei].get("source", "unknown"),
+            "success": env_success[ei], "min_dist": env_min_dist[ei],
+        })
 
     sr = total_success / total_episodes if total_episodes > 0 else 0
     print(f"    SR: {total_success}/{total_episodes} = {sr:.0%}")
 
-    # Save video
+    # Save video — arrange as grid (5 cols)
     video_path = os.path.join(output_dir, "eval_grid.mp4")
-    if imageio is not None and last_ep_frames is not None:
-        max_len = max(len(f) for f in last_ep_frames)
+    if imageio is not None and ep_frames and any(len(f) > 0 for f in ep_frames):
+        max_len = max(len(f) for f in ep_frames)
+        ncols = 5
+        nrows = (num_envs + ncols - 1) // ncols
+        # Pad ep_frames to full grid
+        h, w = ep_frames[0][0].shape[:2] if ep_frames[0] else (240, 320)
+        black = np.zeros((h, w, 3), dtype=np.uint8)
         grid_frames = []
         for t in range(max_len):
-            row = []
-            for ei in range(num_envs):
-                if t < len(last_ep_frames[ei]):
-                    row.append(last_ep_frames[ei][t])
-                elif last_ep_frames[ei]:
-                    row.append(last_ep_frames[ei][-1])
-            if row:
-                grid_frames.append(np.concatenate(row, axis=1))
+            rows = []
+            for r in range(nrows):
+                row = []
+                for c in range(ncols):
+                    ei = r * ncols + c
+                    if ei < num_envs and t < len(ep_frames[ei]):
+                        row.append(ep_frames[ei][t])
+                    elif ei < num_envs and ep_frames[ei]:
+                        row.append(ep_frames[ei][-1])
+                    else:
+                        row.append(black)
+                rows.append(np.concatenate(row, axis=1))
+            grid_frames.append(np.concatenate(rows, axis=0))
 
         tmp_path = video_path + ".tmp.mp4"
         imageio.mimwrite(tmp_path, grid_frames, fps=15, macro_block_size=1)
@@ -319,27 +327,32 @@ def eval_checkpoint(ckpt_path, positions, output_dir):
         "total_success": total_success,
         "total_episodes": total_episodes,
         "max_steps": MAX_STEPS,
-        "num_envs": NUM_ENVS,
-        "num_episode_batches": NUM_EPISODES,
+        "num_envs": num_envs,
         "episodes": all_results,
     }
 
 
 def main():
     parser = argparse.ArgumentParser(description="Sweep eval over GR00T PnP checkpoints")
-    parser.add_argument("--output-dir", default=os.path.expanduser("~/Repos/Intern/outputs/pnp_eval_sweep"))
+    parser.add_argument("--difficulty", default="easy", choices=["easy", "normal", "hard"],
+                        help="Difficulty level (easy/normal/hard)")
+    parser.add_argument("--output-dir", default=None,
+                        help="Output directory (default: outputs/pnp_eval_sweep_{difficulty})")
     parser.add_argument("--max-evals", type=int, default=0, help="Max checkpoints to eval (0=all)")
     args = parser.parse_args()
 
+    if args.output_dir is None:
+        args.output_dir = os.path.expanduser(f"~/Repos/Intern/outputs/pnp_eval_sweep_{args.difficulty}")
     os.makedirs(args.output_dir, exist_ok=True)
 
-    # Load positions (easy = first 5)
-    with open(POSITIONS_FILE) as f:
-        all_pos = json.load(f)
-    positions = all_pos[:5]
+    # Load positions from difficulty config
+    config_path = DIFFICULTY_CONFIGS[args.difficulty]
+    with open(config_path) as f:
+        positions = json.load(f)
 
     print(f"{'='*70}")
-    print(f"PnP Eval Sweep — Easy (5 positions), {MAX_STEPS} steps, {NUM_EPISODES} batches")
+    print(f"PnP Eval Sweep — {args.difficulty.upper()} ({len(positions)} envs), {MAX_STEPS} steps")
+    print(f"Config: {config_path}")
     print(f"Output: {args.output_dir}")
     print(f"PID: {os.getpid()}, SLURM_JOB_ID: {os.environ.get('SLURM_JOB_ID', 'N/A')}")
     print(f"{'='*70}")
@@ -398,6 +411,7 @@ def main():
             result = eval_checkpoint(ckpt["path"], positions, ckpt_output)
             elapsed = time.time() - t_start
             result["elapsed_seconds"] = elapsed
+            result["difficulty"] = args.difficulty
             result["slurm_job_id"] = os.environ.get("SLURM_JOB_ID", "N/A")
             result["timestamp"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
