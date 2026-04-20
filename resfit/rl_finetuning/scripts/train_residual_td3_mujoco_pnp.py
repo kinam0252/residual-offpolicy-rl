@@ -104,8 +104,14 @@ def _load_offline_data(
     image_keys: list,
     lowdim_keys: list,
     device: str = "cpu",
+    reward_relabel: str = "none",
 ) -> None:
-    """Load offline .npz files into the replay buffer (vectorised)."""
+    """Load offline .npz files into the replay buffer (vectorised).
+
+    Args:
+        reward_relabel: "none" = use original reward (clamped to [0,1]),
+                        "sparse" = relabel using 'success' field (1.0 if success else 0.0).
+    """
     from pathlib import Path as _P
     npz_files = sorted(_P(data_dir).rglob("*.npz"))
     if not npz_files:
@@ -113,6 +119,9 @@ def _load_offline_data(
         return
 
     total_loaded = 0
+    _relabel_success_count = 0
+    _relabel_total_count = 0
+    _log(f"  [offline] reward_relabel={reward_relabel}, data_dir={data_dir}, files={len(npz_files)}")
     for npz_path in npz_files:
         _log(f"  Loading {npz_path.name}...")
         data = np.load(str(npz_path), allow_pickle=True)
@@ -156,7 +165,18 @@ def _load_offline_data(
             boundary = done_t.view(-1, *([1] * (v.ndim - 1))).expand_as(v)
             next_obs_td[k] = torch.where(boundary, v, shifted)
 
-        reward_t = torch.from_numpy(data["reward"].astype(np.float32))
+        reward_t = torch.from_numpy(data["reward"].astype(np.float32)).clamp(0.0, 1.0)
+        if reward_relabel == "sparse":
+            if "success" in data:
+                success_val = float(data["success"].flat[0])
+                sparse_r = torch.full((n,), success_val, dtype=torch.float32)
+                n_success = int(success_val) * n
+                _relabel_success_count += n_success
+                _relabel_total_count += n
+                reward_t = sparse_r
+            else:
+                _relabel_total_count += n
+                _log(f"    WARNING: reward_relabel=sparse but no 'success' field in {npz_path.name}, using clipped reward")
         action_t = torch.from_numpy(data["action"].astype(np.float32))
         # Add one-by-one but with pre-converted tensors (much faster than np indexing)
         for i in range(n):
@@ -174,6 +194,17 @@ def _load_offline_data(
         _log(f"    {npz_path.name}: {n} transitions loaded")
 
     _log(f"  Loaded {total_loaded} transitions from {len(npz_files)} files")
+    if reward_relabel == "sparse":
+        _log(f"  [offline] SPARSE RELABEL: {_relabel_success_count}/{_relabel_total_count} "
+             f"success transitions ({_relabel_success_count/_relabel_total_count*100:.2f}%)")
+    # Log reward stats from buffer sample
+    if total_loaded > 0:
+        sample_size = min(1000, len(offline_rb))
+        sample = offline_rb.sample(sample_size)
+        r = sample["next", "reward"]
+        _log(f"  [offline] Reward stats (sample {sample_size}): "
+             f"min={r.min().item():.4f}, max={r.max().item():.4f}, "
+             f"mean={r.mean().item():.4f}, nonzero={int((r > 0).sum().item())}/{sample_size}")
 
 
 def _add_transitions(
@@ -472,6 +503,9 @@ def parse_args():
     # Offline data
     p.add_argument("--offline_data_dir", type=str, default=None)
     p.add_argument("--offline_fraction", type=float, default=0.5)
+    p.add_argument("--offline_reward_relabel", type=str, default="none",
+                   choices=["none", "sparse"],
+                   help="Relabel offline rewards: 'sparse' uses success field")
     p.add_argument("--offline_pretrain_only", action="store_true",
                    help="Use offline data only for critic warmup, then switch to pure online")
     p.add_argument("--target_tau", type=float, default=None,
@@ -502,6 +536,12 @@ def parse_args():
 def main():
     args = parse_args()
     device = torch.device(args.device if torch.cuda.is_available() else "cpu")
+
+    # Log key config for debugging
+    _log(f"[CONFIG] reward_type={args.reward_type}, gamma={args.gamma}, action_scale={args.action_scale}")
+    _log(f"[CONFIG] offline_fraction={args.offline_fraction}, offline_reward_relabel={args.offline_reward_relabel}")
+    _log(f"[CONFIG] action_l2_reg={args.action_l2_reg}, target_tau={args.target_tau}")
+    _log(f"[CONFIG] actor_lr={args.actor_lr}, critic_lr={args.critic_lr}, n_step={args.n_step}")
 
     # Seed
     random.seed(args.seed)
@@ -715,6 +755,7 @@ def main():
             "buffer_size": args.buffer_size,
             "image_keys": sorted(image_keys),
             "lowdim_keys": sorted(lowdim_keys),
+            "reward_relabel": args.offline_reward_relabel,
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key_dict, sort_keys=True).encode()).hexdigest()[:16]
         _cache_root = Path(__file__).resolve().parents[3] / "buffer_cache"
@@ -740,6 +781,7 @@ def main():
                 image_keys=image_keys,
                 lowdim_keys=lowdim_keys,
                 device="cpu",
+                reward_relabel=args.offline_reward_relabel,
             )
             _log(f"Offline buffer populated: {len(offline_rb)} transitions")
             # Save cache for next run
