@@ -123,7 +123,7 @@ def run_eval_with_video(positions, groot_ckpt, residual_ckpt, output_dir, label,
         cube_positions=cube_positions,
         bowl_positions=bowl_positions,
         max_episode_steps=MAX_STEPS,
-        reward_type="dense",
+        reward_type="dense_clipped",
         scene_xml=SCENE_XML,
     )
 
@@ -175,10 +175,13 @@ def run_eval_with_video(positions, groot_ckpt, residual_ckpt, output_dir, label,
     vec_env._step_counts = np.zeros(num_envs, dtype=int)
     vec_env._episode_rewards = np.zeros(num_envs, dtype=np.float64)
 
-    # Per-env frame buffers
+    # Per-env frame buffers and reward tracking
     env_frames = [[] for _ in range(num_envs)]
     env_done = [False] * num_envs
     env_success = [False] * num_envs
+    env_cum_reward = np.zeros(num_envs, dtype=np.float64)
+    env_max_reward = np.zeros(num_envs, dtype=np.float64)
+    env_success_step = [None] * num_envs  # step when terminated (success)
 
     os.makedirs(output_dir, exist_ok=True)
     t0 = time.time()
@@ -198,9 +201,15 @@ def run_eval_with_video(positions, groot_ckpt, residual_ckpt, output_dir, label,
             if env_done[ei]:
                 continue
 
+            # Track reward
+            r_val = float(rew[ei]) if hasattr(rew, '__getitem__') else float(rew)
+            env_cum_reward[ei] += r_val
+            env_max_reward[ei] = max(env_max_reward[ei], r_val)
+
             t_val = term[ei] if hasattr(term, '__getitem__') else term
             if t_val:
                 env_success[ei] = True
+                env_success_step[ei] = step
 
             # Record frame every 2 steps to keep video size manageable
             if step % 2 == 0:
@@ -228,10 +237,12 @@ def run_eval_with_video(positions, groot_ckpt, residual_ckpt, output_dir, label,
             for fr in env_frames[ei]:
                 writer.append_data(fr)
             writer.close()
-            print(f"  env{ei:2d}: {tag} ({len(env_frames[ei])} frames) → {vpath}", flush=True)
+            steps_taken = env_success_step[ei] if env_success_step[ei] is not None else MAX_STEPS
+            print(f"  env{ei:2d}: {tag} | steps={steps_taken:3d} | cum_R={env_cum_reward[ei]:.2f} | max_r={env_max_reward[ei]:.3f} → {vpath}", flush=True)
 
     sr = n_success / num_envs
-    print(f"\n  {label}: SR={sr*100:.1f}% ({n_success}/{num_envs}) in {elapsed:.0f}s", flush=True)
+    avg_cum_r = np.mean(env_cum_reward)
+    print(f"\n  {label}: SR={sr*100:.1f}% ({n_success}/{num_envs}) | avg_cum_R={avg_cum_r:.2f} in {elapsed:.0f}s", flush=True)
 
     # Save results
     result = {
@@ -240,8 +251,16 @@ def run_eval_with_video(positions, groot_ckpt, residual_ckpt, output_dir, label,
         "success_rate": sr,
         "n_success": n_success,
         "n_total": num_envs,
-        "per_env": {f"env{i}": int(env_success[i]) for i in range(num_envs)},
+        "avg_cumulative_reward": float(avg_cum_r),
+        "per_env": {},
     }
+    for i in range(num_envs):
+        result["per_env"][f"env{i}"] = {
+            "success": int(env_success[i]),
+            "cumulative_reward": float(env_cum_reward[i]),
+            "max_step_reward": float(env_max_reward[i]),
+            "steps": env_success_step[i] if env_success_step[i] is not None else MAX_STEPS,
+        }
     with open(os.path.join(output_dir, "results.json"), "w") as f:
         json.dump(result, f, indent=2)
 
