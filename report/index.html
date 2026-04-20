@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MuJoCo Residual RL — Report Index</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --heading: #e6edf3; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 24px; }
+  .container { max-width: 900px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 28px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  h2 { color: var(--heading); font-size: 20px; margin: 28px 0 12px; }
+  .subtitle { color: var(--text); opacity: 0.7; margin-bottom: 24px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 8px 0; }
+  .card .title { font-size: 15px; font-weight: 600; color: var(--heading); }
+  .card .desc { font-size: 13px; color: var(--text); opacity: 0.8; margin-top: 4px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; margin-left: 8px; }
+  .badge-green { background: #1b4332; color: var(--green); }
+  .badge-yellow { background: #3d2e00; color: var(--yellow); }
+  .badge-blue { background: #1a3a5c; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>MuJoCo Residual RL — Reports</h1>
+<p class="subtitle">GR00T VLA + Residual TD3 fine-tuning on Franka FR3 | Updated 2026-04-20</p>
+
+<h2>📦 Common — Shared Infrastructure</h2>
+
+<div class="card">
+  <div class="title"><a href="common/system_overview.html">System Overview</a></div>
+  <div class="desc">전체 시스템 아키텍처: GR00T wrapper, residual actor, MuJoCo vec env, reward 설계, 학습 파이프라인</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="common/parallel_eval.html">Parallel Evaluation System</a></div>
+  <div class="desc">Multi-env 병렬 평가: 고정 위치 configs, 배치 eval, SR 측정 방법론</div>
+</div>
+
+<h2>🟦 Cube Lift</h2>
+
+<div class="card">
+  <div class="title"><a href="lift/training_experiments.html">Training Experiments</a> <span class="badge badge-green">100% SR</span></div>
+  <div class="desc">Cube Lift 학습 실험 전체: R1-R3 라운드, v57/v71 100% SR 달성, multi-seed 검증, 난이도별 분석</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="lift/act_residual_plan.html">ACT Base Policy + Residual RL Plan</a></div>
+  <div class="desc">ACT(Action Chunking Transformer) base policy + residual RL 통합 계획: LeRobot 데이터셋, wrapper 설계</div>
+</div>
+
+<h2>🟥 Pick-and-Place</h2>
+
+<div class="card">
+  <div class="title"><a href="pnp/residual_td3_experiments.html">Residual TD3 Experiments</a> <span class="badge badge-yellow">73.3% → ongoing</span></div>
+  <div class="desc">PnP 학습 실험: 3 라운드 (gamma sweep → sparse+L2 → dense+moderate L2), E3 best config (L2=5.0, 80% SR), lift 대비 분석, reward/speed 비교, 실패 원인 진단</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="pnp/physics_grasping.html">Physics-Based Grasping</a></div>
+  <div class="desc">Kinematic → physics sim 전환: weld constraint, 마찰/질량 파라미터 튜닝, grasp 안정성</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="pnp/data_pipeline.html">Data Collection & Training Pipeline</a></div>
+  <div class="desc">Offline 데이터 수집 파이프라인: GR00T rollout, npz 포맷, sparse relabeling, 난이도별 수집</div>
+</div>
+
+</div>
+</body>
+</html>

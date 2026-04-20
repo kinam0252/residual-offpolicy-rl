@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>04 - Parallel Evaluation System</title>
+<style>
+  body { font-family: 'Segoe UI', sans-serif; max-width: 900px; margin: 40px auto; padding: 0 20px; line-height: 1.6; color: #333; }
+  h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; }
+  h2 { color: #d93025; margin-top: 30px; }
+  h3 { color: #188038; }
+  table { border-collapse: collapse; width: 100%; margin: 15px 0; }
+  th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+  th { background: #f0f0f0; }
+  code { background: #f5f5f5; padding: 2px 6px; border-radius: 3px; font-size: 0.9em; }
+  pre { background: #f5f5f5; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 0.85em; }
+  .highlight { background: #fff3cd; padding: 10px; border-left: 4px solid #ffc107; margin: 15px 0; }
+  .section { margin: 25px 0; padding: 15px; border: 1px solid #e0e0e0; border-radius: 8px; }
+  .diagram { background: #fafafa; padding: 15px; border: 1px solid #ccc; border-radius: 5px; font-family: monospace; white-space: pre; }
+</style>
+</head>
+<body>
+
+<h1>04 - Parallel Evaluation System</h1>
+<p><strong>Date:</strong> 2025-04-17</p>
+<p><strong>Goal:</strong> How the eval system works — parallel MuJoCo environments for checkpoint evaluation</p>
+
+<h2>1. Architecture Overview</h2>
+<div class="section">
+<div class="diagram">
+┌─────────────────────────────────────────────────────┐
+│                  eval_checkpoint.py                   │
+│                                                       │
+│  1. Load perturb_table JSON → cube_positions[]        │
+│  2. Create MuJoCoVecEnv(num_envs=N, cube_positions)   │
+│  3. Wrap with MuJoCoResidualWrapper (GR00T + residual)│
+│  4. Load agent checkpoint                             │
+│  5. Call evaluate() → returns metrics dict             │
+└────────────────────┬────────────────────────────────┘
+                     │
+                     ▼
+┌─────────────────────────────────────────────────────┐
+│              evaluate() in eval_async_mujoco.py       │
+│                                                       │
+│  for ep in range(num_episodes):                       │
+│    obs, _ = env.reset()     ← resets ALL N envs       │
+│    for step in range(max_steps):                      │
+│      action = agent.act(obs)  ← batch inference       │
+│      obs, rew, term, trunc, info = env.step(action)   │
+│      track per-env done/success                       │
+│      if all envs done: break                          │
+│    aggregate success counts                           │
+│  return {success_rate, mean_return, per_env_sr}       │
+└─────────────────────────────────────────────────────┘
+</div>
+</div>
+
+<h2>2. Parallel Execution Model</h2>
+<div class="section">
+<p><strong>Key: All N environments step simultaneously in a single <code>env.step(action)</code> call.</strong></p>
+
+<h3>Data Flow per Step</h3>
+<ol>
+  <li><strong>Observation:</strong> <code>obs</code> is a dict of batched tensors, shape <code>(N, ...)</code>
+    <ul>
+      <li><code>observation.images.front</code>: <code>(N, 3, 84, 84)</code></li>
+      <li><code>observation.images.wrist</code>: <code>(N, 3, 84, 84)</code></li>
+      <li><code>observation.state</code>: <code>(N, state_dim)</code></li>
+      <li><code>observation.base_action</code>: <code>(N, action_dim)</code> — GR00T's base action</li>
+    </ul>
+  </li>
+  <li><strong>Action:</strong> <code>agent.act(obs)</code> returns <code>(N, action_dim)</code> — batched residual actions</li>
+  <li><strong>Step:</strong> <code>env.step(action)</code> internally:
+    <ul>
+      <li>MuJoCoResidualWrapper combines base + residual for each env</li>
+      <li>MuJoCoVecEnv loops over <code>_apply_action(env_idx, action)</code> for each env</li>
+      <li>Each env runs IK + <code>mj_step × 25</code> independently</li>
+      <li>Returns batched <code>(obs, reward, terminated, truncated, info)</code></li>
+    </ul>
+  </li>
+</ol>
+
+<div class="highlight">
+<strong>Note:</strong> "Parallel" here means vectorized Python loop over envs, NOT multi-process/GPU parallelism. Each env has its own MuJoCo model/data pair. The parallelism is at the batch level for neural network inference (GR00T + actor), while physics stepping is sequential per env.
+</div>
+</div>
+
+<h2>3. Environment Configuration</h2>
+<div class="section">
+<h3>Perturb Table (JSON Config)</h3>
+<p>Each eval uses a JSON file defining cube positions for N environments:</p>
+<pre>
+// configs/pnp_common5_positions.json
+{
+  "base_pos": [0.45, -0.05, 0.02],
+  "envs": [
+    {"dx": 0.047, "dy": 0.134, "episode": 2, "cube_yaw_deg": -32.0},
+    {"dx": -0.076, "dy": 0.164, "episode": 7, "cube_yaw_deg": 5.4},
+    {"dx": -0.033, "dy": 0.273, "episode": 12, "cube_yaw_deg": -19.9},
+    {"dx": -0.034, "dy": -0.125, "episode": 15, "cube_yaw_deg": -0.9},
+    {"dx": -0.025, "dy": -0.116, "episode": 18, "cube_yaw_deg": -6.0}
+  ]
+}
+</pre>
+<p><code>num_envs</code> is automatically set to <code>len(envs)</code> from the table.</p>
+
+<h3>Difficulty Levels</h3>
+<table>
+  <tr><th>Config</th><th>Description</th><th># Envs</th></tr>
+  <tr><td><code>pnp_common5_positions.json</code></td><td>5 unique positions from training data (ep 2,7,12,15,18)</td><td>5</td></tr>
+  <tr><td><code>eval_table_easy.json</code></td><td>Small perturbation around center</td><td>varies</td></tr>
+  <tr><td><code>eval_table_normal.json</code></td><td>Moderate range</td><td>varies</td></tr>
+  <tr><td><code>eval_table_hard.json</code></td><td>Wide range + yaw variation</td><td>varies</td></tr>
+  <tr><td><code>eval_rand_*.json</code></td><td>Random sampling configs (easy/mid/wide/extreme)</td><td>varies</td></tr>
+</table>
+</div>
+
+<h2>4. Two Eval Modes</h2>
+<div class="section">
+<h3>A. Standalone Eval (<code>eval_checkpoint.py</code>)</h3>
+<p>One-shot evaluation of a specific checkpoint:</p>
+<pre>
+python -m resfit.rl_finetuning.scripts.eval_checkpoint \
+  --checkpoint outputs/pnp_100ep_100k/best.pt \
+  --perturb_table configs/pnp_common5_positions.json \
+  --groot_checkpoint /path/to/groot/checkpoint-30000 \
+  --eval_num_episodes 2 \
+  --ema_alpha 0.9 \
+  --action_scale 0.2 \
+  --actor_hidden_dim 512 --critic_hidden_dim 1024 \
+  --asymmetric_critic \
+  --save_video --video_dir outputs/eval_videos
+</pre>
+
+<h3>B. Async Eval (<code>eval_async_mujoco.py</code>)</h3>
+<p>Continuous polling loop — runs alongside training:</p>
+<pre>
+python -m resfit.rl_finetuning.scripts.eval_async_mujoco \
+  --checkpoint_dir outputs/pnp_100ep_100k \
+  --output_dir outputs/pnp_100ep_100k/eval_results \
+  --groot_checkpoint /path/to/groot/checkpoint-30000 \
+  --perturb_table configs/pnp_common5_positions.json \
+  --eval_num_episodes 2 \
+  --wandb_run_id &lt;training_run_id&gt;
+</pre>
+<p>Polls for <code>eval_request_step*.pt</code> files, evaluates, logs to W&amp;B, deletes request files.</p>
+</div>
+
+<h2>5. Success Criteria</h2>
+<div class="section">
+<ul>
+  <li><strong>terminated=True</strong> → success (from <code>_is_success()</code> in vec_env)</li>
+  <li><strong>truncated=True</strong> → timeout (max_episode_steps reached)</li>
+  <li>Success condition: cube lifted ≥ threshold above initial height AND near bowl</li>
+  <li>Per-env success rate: <code>sr_env{i}</code> = successes / num_episodes for env i</li>
+  <li>Overall: <code>success_rate</code> = total successes / (num_envs × num_episodes)</li>
+</ul>
+</div>
+
+<h2>6. GR00T + Residual Policy Inference</h2>
+<div class="section">
+<div class="diagram">
+Per step:
+  obs (images + state)
+       │
+       ├──→ GR00T VLA (3B params) ──→ base_action (7D: pos3 + rot3 + grip1)
+       │         ↓ (open-loop: runs every 16 steps)
+       │    cached base_action
+       │
+       ├──→ TD3 Actor (small MLP) ──→ residual_action (7D, scaled)
+       │
+       └──→ combined = base_action + residual_action
+                    │
+                    ▼
+              env.step(combined)
+</div>
+<p><strong>EMA smoothing:</strong> When <code>ema_alpha > 0</code>, actions are smoothed: <code>a_t = α × a_{t-1} + (1-α) × a_raw</code></p>
+</div>
+
+<h2>7. Fair Eval Results (Kinematic Mode, for reference)</h2>
+<div class="section">
+<table>
+  <tr><th>Checkpoint</th><th>EMA</th><th>Easy (5pos)</th><th>Normal</th><th>Hard</th></tr>
+  <tr><td>33ep/100k</td><td>none</td><td>60%</td><td>20%</td><td>20%</td></tr>
+  <tr><td>100ep/100k</td><td>0.9</td><td>40%</td><td>60%</td><td>0%</td></tr>
+  <tr><td>33ep/200k</td><td>0.9</td><td>40%</td><td>0%</td><td>0%</td></tr>
+</table>
+<p>These were evaluated under the old kinematic grasping mode. Physics-based eval is in progress.</p>
+</div>
+
+<h2>8. Key Script Locations</h2>
+<div class="section">
+<table>
+  <tr><th>Script</th><th>Purpose</th></tr>
+  <tr><td><code>resfit/rl_finetuning/scripts/eval_checkpoint.py</code></td><td>Standalone checkpoint evaluation</td></tr>
+  <tr><td><code>resfit/rl_finetuning/scripts/eval_async_mujoco.py</code></td><td>Continuous async eval (polls checkpoint_dir)</td></tr>
+  <tr><td><code>resfit/rl_finetuning/scripts/eval_groot_only.py</code></td><td>GR00T base policy only (no residual)</td></tr>
+  <tr><td><code>resfit/rl_finetuning/scripts/eval_ema_09.py</code></td><td>EMA=0.9 specific eval</td></tr>
+  <tr><td><code>resfit/rl_finetuning/wrappers/mujoco_vec_env_pnp.py</code></td><td>Vectorized MuJoCo environment (physics sim)</td></tr>
+  <tr><td><code>resfit/rl_finetuning/wrappers/mujoco_residual_wrapper_pnp.py</code></td><td>GR00T + residual wrapper</td></tr>
+  <tr><td><code>configs/pnp_common5_positions.json</code></td><td>5 canonical eval positions</td></tr>
+  <tr><td><code>configs/eval_table_*.json</code></td><td>Difficulty-level eval configs</td></tr>
+</table>
+</div>
+
+</body>
+</html>

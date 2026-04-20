@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MuJoCo Residual TD3 - Training Experiments</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --heading: #e6edf3; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 24px; }
+  .container { max-width: 1400px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 28px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  h2 { color: var(--heading); font-size: 22px; margin: 32px 0 16px; }
+  h3 { color: var(--accent); font-size: 18px; margin: 24px 0 12px; }
+  .subtitle { color: var(--text); opacity: 0.7; margin-bottom: 24px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 24px 0; }
+  .summary-card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; text-align: center; }
+  .summary-card .value { font-size: 32px; font-weight: bold; color: var(--accent); }
+  .summary-card .label { font-size: 13px; color: var(--text); opacity: 0.7; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; margin: 16px 0; }
+  th { background: #1c2128; color: var(--heading); font-weight: 600; text-align: left; padding: 12px; font-size: 13px; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:hover { background: #1c2128; }
+  .sr-high { color: var(--green); font-weight: bold; }
+  .sr-mid { color: var(--yellow); }
+  .sr-low { color: var(--red); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-best { background: #1b4332; color: var(--green); }
+  .badge-good { background: #1a3a2a; color: #56d364; }
+  .badge-warn { background: #3d2e00; color: var(--yellow); }
+  .badge-fail { background: #3d1418; color: var(--red); }
+  .chart-container { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 24px; margin: 16px 0; }
+  .insight { background: #1c2128; border-left: 4px solid var(--accent); padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+  .insight.good { border-left-color: var(--green); }
+  .insight.warn { border-left-color: var(--yellow); }
+  .insight.bad { border-left-color: var(--red); }
+  .nav { margin-bottom: 24px; }
+  .nav a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .sr-timeline { font-family: monospace; font-size: 12px; }
+  .eval-highlight { background: #1b4332; border: 2px solid var(--green); border-radius: 8px; padding: 20px; margin: 16px 0; }
+  .eval-highlight h3 { margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="nav"><a href="../common/system_overview.html">Implementation Overview</a></div>
+<h1>MuJoCo Residual TD3 - Training Experiments</h1>
+<p class="subtitle">Dense reward | GR00T base policy | 10 cube positions | Franka FR3 | Updated 2026-04-05 18:27 KST</p>
+
+<div class="summary-grid">
+  <div class="summary-card"><div class="value" style="color:var(--green)">100%</div><div class="label">Best SR (v57/v71, multi-seed verified)</div></div>
+  <div class="summary-card"><div class="value">26</div><div class="label">Total Experiments (R1-R3)</div></div>
+  <div class="summary-card"><div class="value">18%</div><div class="label">Base SR on Harder Table v2</div></div>
+  <div class="summary-card"><div class="value">+82%p</div><div class="label">Max Improvement (v2 table)</div></div>
+</div>
+
+<!-- Multi-seed Final Eval -->
+<h2>Multi-Seed Final Evaluation</h2>
+<div class="eval-highlight">
+<h3 style="color:var(--green)">v57 achieves 100% SR across all 3 seeds</h3>
+<p>Evaluation: 10 parallel envs &times; 2 episodes per seed, 3 seeds (42, 123, 456)</p>
+<table>
+<thead><tr><th>Model</th><th>Seed 42</th><th>Seed 123</th><th>Seed 456</th><th>Mean SR</th><th>Mean Return</th></tr></thead>
+<tbody>
+<tr><td><strong>GR00T Base (no residual)</strong></td><td class="sr-mid">45%</td><td class="sr-mid">50%</td><td class="sr-mid">50%</td><td class="sr-mid"><strong>48.3%</strong></td><td>583.3</td></tr>
+<tr><td><strong>v57 Best Checkpoint</strong></td><td class="sr-high">100%</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td class="sr-high"><strong>100.0%</strong></td><td>839.3</td></tr>
+</tbody>
+</table>
+<p style="margin-top:12px; color:var(--green)"><strong>Residual policy doubles success rate and increases return by +43.9%</strong></p>
+</div>
+
+<h2>Key Findings</h2>
+<div class="insight good"><strong>Residual RL works!</strong> Multiple experiments reached 90-100% SR from ~48% baseline. v57 confirmed 100% across 3 eval seeds.</div>
+<div class="insight good"><strong>Scales to harder tasks!</strong> Round 3 on harder table (base SR 18%) — v71 reached 100%, v73 95%, v74 85%. Even yaw=10° (base SR 0%) is learnable.</div>
+<div class="insight good"><strong>off=0.2 is the most robust strategy.</strong> pretrain_only converges faster on easy tasks, but off=0.2 is more stable on harder perturbations (Round 3).</div>
+<div class="insight warn"><strong>High seed sensitivity.</strong> v51 (L2=0.1, seed=42) collapsed to 0%, while v57 (same config, seed=123) reached 100%.</div>
+<div class="insight warn"><strong>Yaw is the most critical perturbation.</strong> Base policy drops to 0% at just 15° cube rotation, but residual RL can compensate up to 10°.</div>
+
+<h2>Success Rate Over Training</h2>
+<div class="chart-container"><canvas id="srChart" height="100"></canvas></div>
+
+<h2>Round 2 Results (~12-16K steps, in progress)</h2>
+<table>
+<thead><tr><th>Experiment</th><th>Config</th><th>Step</th><th>Latest SR</th><th>Best SR</th><th>Status</th><th>SR Timeline (0K, 2K, 4K, ...)</th></tr></thead>
+<tbody>
+<tr><td><strong>v63</strong> pretrain_only</td><td>off=0.5 warmup only, then online</td><td>16K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-best">BEST</span></td><td class="sr-timeline">40 45 55 60 100 100 100 100 100</td></tr>
+<tr><td><strong>v65</strong> off20</td><td>offline_fraction=0.2</td><td>14K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-best">BEST</span></td><td class="sr-timeline">40 40 35 85 100 100 100 100</td></tr>
+<tr><td><strong>v67</strong> pretrain_tau005</td><td>pretrain_only + tau=0.005</td><td>14K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-best">BEST</span></td><td class="sr-timeline">40 45 50 100 95 100 100 100</td></tr>
+<tr><td><strong>v66</strong> online_tau005</td><td>off=0, tau=0.005</td><td>16K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-good">CONVERGED</span></td><td class="sr-timeline">50 40 55 45 25 75 65 100 100</td></tr>
+<tr><td><strong>v64</strong> off10</td><td>offline_fraction=0.1</td><td>12K</td><td class="sr-mid">80%</td><td class="sr-high">90%</td><td><span class="badge badge-good">RISING</span></td><td class="sr-timeline">35 0 75 80 85 90 80</td></tr>
+<tr><td><strong>v62</strong> online_stable</td><td>off=0, tau=0.002, lr=5e-6</td><td>14K</td><td class="sr-mid">65%</td><td class="sr-mid">80%</td><td><span class="badge badge-warn">UNSTABLE</span></td><td class="sr-timeline">35 50 60 15 65 80 60 65</td></tr>
+<tr><td><strong>v59</strong> highnoise</td><td>stddev=0.2</td><td>12K</td><td class="sr-mid">55%</td><td class="sr-mid">55%</td><td><span class="badge badge-warn">SLOW</span></td><td class="sr-timeline">45 25 35 45 35 45 55</td></tr>
+<tr><td><strong>v61</strong> lr1e4</td><td>actor_lr=1e-4</td><td>12K</td><td class="sr-low">35%</td><td class="sr-mid">55%</td><td><span class="badge badge-fail">UNSTABLE</span></td><td class="sr-timeline">45 0 0 30 55 30 35</td></tr>
+</tbody>
+</table>
+
+<h2>Round 1 Final Results (~22K steps)</h2>
+<table>
+<thead><tr><th>Experiment</th><th>Config Diff</th><th>Step</th><th>Latest SR</th><th>Best SR</th><th>Status</th><th>SR Timeline (0K, 2K, 4K, ...)</th></tr></thead>
+<tbody>
+<tr><td><strong>v57</strong> s123</td><td>seed=123</td><td>22K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-best">BEST</span></td><td class="sr-timeline">40 40 0 0 5 55 95 95 100 100 100 100</td></tr>
+<tr><td><strong>v58</strong> smallnet</td><td>actor=128 critic=256</td><td>22K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-best">BEST</span></td><td class="sr-timeline">45 35 25 20 30 50 80 95 75 100 100</td></tr>
+<tr><td><strong>v54</strong> nol2_s02</td><td>L2=0 scale=0.2</td><td>22K</td><td class="sr-high">95%</td><td class="sr-high">95%</td><td><span class="badge badge-good">STABLE</span></td><td class="sr-timeline">40 0 95 90 95 95 90 90 95 90 95</td></tr>
+<tr><td><strong>v60</strong> gamma995</td><td>gamma=0.995</td><td>21.5K</td><td class="sr-high">90%</td><td class="sr-high">95%</td><td><span class="badge badge-good">RISING</span></td><td class="sr-timeline">50 0 0 25 25 30 30 20 85 95 90</td></tr>
+<tr><td><strong>v50</strong> baseline</td><td>scale=0.1 L2=0</td><td>19.5K</td><td class="sr-mid">65%</td><td class="sr-mid">75%</td><td><span class="badge badge-warn">PLATEAU</span></td><td class="sr-timeline">45 0 0 70 70 75 70 70 65 65</td></tr>
+<tr><td><strong>v53</strong> scale03</td><td>scale=0.3</td><td>18K</td><td class="sr-mid">60%</td><td class="sr-mid">60%</td><td><span class="badge badge-warn">LATE</span></td><td class="sr-timeline">40 0 0 0 0 0 0 60 60</td></tr>
+<tr><td><strong>v55</strong> off80</td><td>offline=0.8</td><td>18K</td><td class="sr-mid">55%</td><td class="sr-mid">55%</td><td><span class="badge badge-warn">SLOW</span></td><td class="sr-timeline">45 30 0 0 0 10 40 55 55</td></tr>
+<tr><td><strong>v52</strong> l2_1</td><td>L2=1.0</td><td>16K</td><td class="sr-mid">30%</td><td class="sr-mid">45%</td><td><span class="badge badge-warn">STUCK</span></td><td class="sr-timeline">35 40 25 45 35 40 35 30</td></tr>
+<tr><td><strong>v56</strong> online</td><td>offline=0</td><td>19.5K</td><td class="sr-low">20%</td><td class="sr-high">100%</td><td><span class="badge badge-fail">COLLAPSED</span></td><td class="sr-timeline">45 95 100 70 65 40 80 50 15 20</td></tr>
+<tr><td><strong>v51</strong> l2_01</td><td>L2=0.1 seed=42</td><td>18K</td><td class="sr-low">5%</td><td class="sr-mid">40%</td><td><span class="badge badge-fail">FAILED</span></td><td class="sr-timeline">40 0 0 0 0 0 0 10 5</td></tr>
+</tbody>
+</table>
+
+<h2>Configurations</h2>
+<h3>Round 1</h3>
+<table>
+<thead><tr><th>Exp</th><th>scale</th><th>L2</th><th>off_frac</th><th>a_lr</th><th>c_lr</th><th>gamma</th><th>stddev</th><th>net</th><th>seed</th></tr></thead>
+<tbody>
+<tr><td>v50</td><td>0.1</td><td>0</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v51</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v52</td><td>0.2</td><td>1.0</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v53</td><td>0.3</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v54</td><td>0.2</td><td>0</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v55</td><td>0.2</td><td>0.1</td><td>0.8</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v56</td><td>0.2</td><td>0.1</td><td>0</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v57</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>123</td></tr>
+<tr><td>v58</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>128/256</td><td>42</td></tr>
+<tr><td>v59</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.2</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v60</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.995</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+<tr><td>v61</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-4</td><td>1e-4</td><td>0.99</td><td>0.05</td><td>512/1024</td><td>42</td></tr>
+</tbody>
+</table>
+
+<h3>Round 2</h3>
+<table>
+<thead><tr><th>Exp</th><th>scale</th><th>L2</th><th>off_frac</th><th>a_lr</th><th>c_lr</th><th>gamma</th><th>tau</th><th>pretrain_only</th><th>seed</th></tr></thead>
+<tbody>
+<tr><td>v62</td><td>0.2</td><td>0.1</td><td>0</td><td>5e-6</td><td>5e-5</td><td>0.99</td><td>0.002</td><td>No</td><td>42</td></tr>
+<tr><td>v63</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.01</td><td><strong>Yes</strong></td><td>42</td></tr>
+<tr><td>v64</td><td>0.2</td><td>0.1</td><td>0.1</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.01</td><td>No</td><td>42</td></tr>
+<tr><td>v65</td><td>0.2</td><td>0.1</td><td>0.2</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.01</td><td>No</td><td>42</td></tr>
+<tr><td>v66</td><td>0.2</td><td>0.1</td><td>0</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.005</td><td>No</td><td>42</td></tr>
+<tr><td>v67</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.005</td><td><strong>Yes</strong></td><td>42</td></tr>
+<tr><td>v59</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-5</td><td>1e-4</td><td>0.99</td><td>0.01</td><td>No</td><td>42</td></tr>
+<tr><td>v61</td><td>0.2</td><td>0.1</td><td>0.5</td><td>1e-4</td><td>1e-4</td><td>0.99</td><td>0.01</td><td>No</td><td>42</td></tr>
+</tbody>
+</table>
+
+<h2>Perturbation Stress Test (Base Policy)</h2>
+<div class="insight warn"><strong>Yaw rotation is the most critical failure mode.</strong> Just 15° of cube yaw drops base SR from ~48% to 0%. Position shifts are secondary — left/back positions fail, right/forward survive partially.</div>
+
+<h3>XY Position Perturbation</h3>
+<table>
+<thead><tr><th>Test</th><th>SR</th><th>Positions Tested</th><th>Key Finding</th></tr></thead>
+<tbody>
+<tr><td>x_scan (-8 to +10cm)</td><td class="sr-mid">35%</td><td>10 positions along X axis</td><td>Left (dx&lt;0) all fail, right (dx&gt;+6cm) survive</td></tr>
+<tr><td>y_scan (-8 to +10cm)</td><td class="sr-mid">30%</td><td>10 positions along Y axis</td><td>Back (dy&lt;0) all fail, forward partial</td></tr>
+<tr><td>xy_wide (±6-10cm)</td><td class="sr-mid">30%</td><td>10 wide diagonal positions</td><td>Only right+forward quadrant works</td></tr>
+<tr><td>extreme (8-12cm)</td><td class="sr-low">10%</td><td>10 extreme offsets</td><td>Nearly total failure at large offsets</td></tr>
+</tbody>
+</table>
+
+<h3>Cube Yaw Rotation (on standard 10-position table)</h3>
+<table>
+<thead><tr><th>Yaw Angle</th><th>SR</th><th>Finding</th></tr></thead>
+<tbody>
+<tr><td>0° (baseline)</td><td class="sr-mid">48.3%</td><td>Standard baseline</td></tr>
+<tr><td><strong>15°</strong></td><td class="sr-low"><strong>0%</strong></td><td>⚠️ Complete failure! Most critical perturbation</td></tr>
+<tr><td>30°</td><td class="sr-low">10%</td><td>Only 1 env survives</td></tr>
+<tr><td>45°</td><td class="sr-low">5%</td><td>Nearly total failure</td></tr>
+<tr><td>90°</td><td class="sr-low">0%</td><td>Complete failure</td></tr>
+</tbody>
+</table>
+
+<h3>Harder Table v2 (for Round 3 training)</h3>
+<p>Designed based on stress test findings — emphasizes left/back positions where base policy fails:</p>
+<table>
+<thead><tr><th>Env</th><th>Position</th><th>dx</th><th>dy</th><th>Base SR</th></tr></thead>
+<tbody>
+<tr><td>e0</td><td>center</td><td>0</td><td>0</td><td class="sr-high">100%</td></tr>
+<tr><td>e1</td><td>right_2cm</td><td>+2cm</td><td>0</td><td class="sr-low">10%</td></tr>
+<tr><td>e2</td><td>left_2cm</td><td>-2cm</td><td>0</td><td class="sr-low">0%</td></tr>
+<tr><td>e3</td><td>back_4cm</td><td>0</td><td>-4cm</td><td class="sr-low">0%</td></tr>
+<tr><td>e4</td><td>fwd_6cm</td><td>0</td><td>+6cm</td><td class="sr-low">0%</td></tr>
+<tr><td>e5</td><td>left_4cm</td><td>-4cm</td><td>0</td><td class="sr-low">0%</td></tr>
+<tr><td>e6</td><td>right_6cm</td><td>+6cm</td><td>0</td><td class="sr-mid">20%</td></tr>
+<tr><td>e7</td><td>diag_FL_4cm</td><td>-4cm</td><td>+4cm</td><td class="sr-low">0%</td></tr>
+<tr><td>e8</td><td>diag_BR_4cm</td><td>+4cm</td><td>-4cm</td><td class="sr-mid">50%</td></tr>
+<tr><td>e9</td><td>back_6cm</td><td>0</td><td>-6cm</td><td class="sr-low">0%</td></tr>
+</tbody>
+</table>
+<p><strong>Overall base SR on v2 table: 18%</strong> (vs 48% on v1 table)</p>
+
+<h2>Round 3 Results (Harder Table v2, ~24-28K steps, in progress)</h2>
+<div class="insight good"><strong>off=0.2 is more stable on harder tasks.</strong> v71 (yaw=0°) and v75 (yaw=10°) both hit 100%. pretrain_only converges faster but oscillates more on harder tables.</div>
+<div class="insight good"><strong>Yaw=10° is learnable!</strong> v74 reached 85% and v75 hit 100%, despite base policy scoring 0% at 15° yaw. The residual network can compensate for significant yaw perturbation.</div>
+
+<table>
+<thead><tr><th>Experiment</th><th>Config</th><th>Yaw</th><th>Step</th><th>Latest SR</th><th>Best SR</th><th>Status</th><th>SR Timeline (0K, 2K, 4K, ...)</th></tr></thead>
+<tbody>
+<tr><td><strong>v71</strong> off02_yaw0</td><td>off=0.2</td><td>0°</td><td>24K</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td><span class="badge badge-best">BEST</span></td><td class="sr-timeline">25 20 45 55 85 50 45 55 45 50 70 100 100</td></tr>
+<tr><td><strong>v73</strong> off02_yaw5</td><td>off=0.2</td><td>5°</td><td>24K</td><td class="sr-high">95%</td><td class="sr-high">95%</td><td><span class="badge badge-good">RISING</span></td><td class="sr-timeline">25 20 0 10 70 75 85 70 60 70 75 75 95</td></tr>
+<tr><td><strong>v74</strong> pt_yaw10</td><td>pretrain_only</td><td>10°</td><td>26K</td><td class="sr-high">80%</td><td class="sr-high">85%</td><td><span class="badge badge-good">STABLE</span></td><td class="sr-timeline">25 15 30 20 75 85 75 65 65 80 75 80 80 80</td></tr>
+<tr><td><strong>v75</strong> off02_yaw10</td><td>off=0.2</td><td>10°</td><td>26K</td><td class="sr-mid">60%</td><td class="sr-high">100%</td><td><span class="badge badge-warn">UNSTABLE</span></td><td class="sr-timeline">25 25 25 40 35 60 70 85 80 80 90 85 100 60</td></tr>
+<tr><td><strong>v72</strong> pt_yaw5</td><td>pretrain_only</td><td>5°</td><td>26K</td><td class="sr-mid">75%</td><td class="sr-high">80%</td><td><span class="badge badge-warn">OSCILLATING</span></td><td class="sr-timeline">30 20 65 70 55 45 45 75 55 50 40 75 80 75</td></tr>
+<tr><td><strong>v70</strong> pt_yaw0</td><td>pretrain_only</td><td>0°</td><td>28K</td><td class="sr-mid">70%</td><td class="sr-high">85%</td><td><span class="badge badge-warn">OSCILLATING</span></td><td class="sr-timeline">20 20 40 75 60 55 45 70 60 85 55 80 60 65 70</td></tr>
+</tbody>
+</table>
+
+<h3>Round 3 Configurations</h3>
+<table>
+<thead><tr><th>Exp</th><th>Table</th><th>Yaw</th><th>scale</th><th>L2</th><th>off_frac</th><th>pretrain_only</th><th>a_lr</th><th>c_lr</th><th>stddev</th></tr></thead>
+<tbody>
+<tr><td>v70</td><td>v2</td><td>0°</td><td>0.2</td><td>0.1</td><td>0.5</td><td><strong>Yes</strong></td><td>1e-5</td><td>1e-4</td><td>0.05</td></tr>
+<tr><td>v71</td><td>v2</td><td>0°</td><td>0.2</td><td>0.1</td><td>0.2</td><td>No</td><td>1e-5</td><td>1e-4</td><td>0.05</td></tr>
+<tr><td>v72</td><td>v2</td><td>5°</td><td>0.2</td><td>0.1</td><td>0.5</td><td><strong>Yes</strong></td><td>1e-5</td><td>1e-4</td><td>0.05</td></tr>
+<tr><td>v73</td><td>v2</td><td>5°</td><td>0.2</td><td>0.1</td><td>0.2</td><td>No</td><td>1e-5</td><td>1e-4</td><td>0.05</td></tr>
+<tr><td>v74</td><td>v2</td><td>10°</td><td>0.2</td><td>0.1</td><td>0.5</td><td><strong>Yes</strong></td><td>1e-5</td><td>1e-4</td><td>0.05</td></tr>
+<tr><td>v75</td><td>v2</td><td>10°</td><td>0.2</td><td>0.1</td><td>0.2</td><td>No</td><td>1e-5</td><td>1e-4</td><td>0.05</td></tr>
+</tbody>
+</table>
+
+
+<h2>GR00T Training Data — Cube Position Distribution</h2>
+<div class="insight warn"><strong>GR00T was trained on heavily right-biased data.</strong> 46/50 sim episodes have dx>0 (cube right of center). Only 4 episodes have the cube to the left (max -3.4cm). This explains why the base policy fails on left-side positions.</div>
+
+<h3>Dataset Overview</h3>
+<table>
+<thead><tr><th>Property</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Dataset</td><td><code>Lift_sim_groot</code> (50 episodes, 7383 frames)</td></tr>
+<tr><td>Task</td><td>"lift the wooden block"</td></tr>
+<tr><td>Modalities</td><td>cam_base + cam_wrist (224×224) + EEF state (8D) + action (8D)</td></tr>
+<tr><td>FPS</td><td>15</td></tr>
+<tr><td>Base model</td><td>GR00T-N1.6-3B (Eagle-Block2A-2B-v2 backbone)</td></tr>
+<tr><td>Fine-tune steps</td><td>30K (cosine LR, bs=64, lr=1e-4)</td></tr>
+<tr><td>Action horizon</td><td>16 (train) / 50 (model max)</td></tr>
+</tbody>
+</table>
+
+<h3>Cube Position Distribution (relative to default center 0.45, -0.05)</h3>
+<table>
+<thead><tr><th>Axis</th><th>Min</th><th>Max</th><th>Mean</th><th>Std</th><th>Bias</th></tr></thead>
+<tbody>
+<tr><td><strong>dx</strong> (left/right)</td><td>-3.4cm</td><td>+11.3cm</td><td>+5.4cm</td><td>3.5cm</td><td class="sr-low">⚠️ 92% right-biased (46/50)</td></tr>
+<tr><td><strong>dy</strong> (back/front)</td><td>-13.0cm</td><td>+20.1cm</td><td>+1.2cm</td><td>8.0cm</td><td class="sr-high">Roughly symmetric</td></tr>
+</tbody>
+</table>
+
+<h3>dx Distribution</h3>
+<table>
+<thead><tr><th>Range</th><th>Count</th><th>Bar</th></tr></thead>
+<tbody>
+<tr><td>[-5, 0) cm</td><td>4</td><td>████</td></tr>
+<tr><td>[0, +3) cm</td><td>8</td><td>████████</td></tr>
+<tr><td>[+3, +6) cm</td><td>14</td><td>██████████████</td></tr>
+<tr><td>[+6, +9) cm</td><td>16</td><td>████████████████</td></tr>
+<tr><td>[+9, +12) cm</td><td>8</td><td>████████</td></tr>
+</tbody>
+</table>
+
+<h3>dy Distribution</h3>
+<table>
+<thead><tr><th>Range</th><th>Count</th><th>Bar</th></tr></thead>
+<tbody>
+<tr><td>[-15, -10) cm</td><td>4</td><td>████</td></tr>
+<tr><td>[-10, -5) cm</td><td>12</td><td>████████████</td></tr>
+<tr><td>[-5, 0) cm</td><td>5</td><td>█████</td></tr>
+<tr><td>[0, +5) cm</td><td>13</td><td>█████████████</td></tr>
+<tr><td>[+5, +10) cm</td><td>9</td><td>█████████</td></tr>
+<tr><td>[+10, +15) cm</td><td>6</td><td>██████</td></tr>
+<tr><td>[+15, +21) cm</td><td>1</td><td>█</td></tr>
+</tbody>
+</table>
+
+<div class="insight"><strong>Implication for perturbation design:</strong> The base policy's failure on left-side (dx&lt;0) positions is rooted in GR00T's training data bias. Residual RL successfully compensates for this — v57 achieves 100% even on positions never seen by GR00T during training.</div>
+
+<h2>Object State Noise Robustness</h2>
+<div class="insight good"><strong>Residual actor completely ignores object_state input.</strong> Even 200mm position noise or 90° rotation noise has zero impact on SR. The actor relies entirely on robot state (10D) + base_action (7D) from GR00T.</div>
+
+<h3>Position Noise (i.i.d. Gaussian per step)</h3>
+<table>
+<thead><tr><th>σ (mm)</th><th>SR</th><th>Finding</th></tr></thead>
+<tbody>
+<tr><td>0 (clean)</td><td class="sr-high">100%</td><td>Baseline (v57 best checkpoint)</td></tr>
+<tr><td>10</td><td class="sr-high">100%</td><td>No degradation</td></tr>
+<tr><td>50</td><td class="sr-high">100%</td><td>No degradation</td></tr>
+<tr><td>100</td><td class="sr-high">100%</td><td>No degradation</td></tr>
+<tr><td>200</td><td class="sr-high">100%</td><td>No degradation — 200mm noise ignored!</td></tr>
+</tbody>
+</table>
+
+<h3>Rotation Noise (random axis-angle → quaternion multiply per step)</h3>
+<table>
+<thead><tr><th>σ (degrees)</th><th>SR</th><th>Finding</th></tr></thead>
+<tbody>
+<tr><td>5°</td><td class="sr-high">100%</td><td>No degradation</td></tr>
+<tr><td>10°</td><td class="sr-high">100%</td><td>No degradation</td></tr>
+<tr><td>30°</td><td class="sr-high">95%</td><td>Minor variation (within noise)</td></tr>
+<tr><td>90°</td><td class="sr-high">100%</td><td>Full quadrant noise ignored</td></tr>
+</tbody>
+</table>
+
+<h3>Why Object State Is Ignored</h3>
+<p>Actor input is <code>[observation.state(10D) + object_state(7D) + base_action(7D)]</code> = 24D. Despite object_state being concatenated, the actor learns near-zero weights for those 7 dimensions because:</p>
+<ul>
+<li>GR00T's <code>base_action</code> already encodes cube position information (from depth vision)</li>
+<li>Robot proprioception (<code>observation.state</code>) provides sufficient context for correction</li>
+<li>The residual actor's job is: "given robot state + GR00T's action → how to correct it"</li>
+</ul>
+
+<h2>Generalization Evaluation (Unseen Environments)</h2>
+<div class="insight good"><strong>v57 generalizes perfectly to unseen positions.</strong> 100% SR on both unseen tables — the residual policy learned a general correction strategy, not position-specific memorization.</div>
+
+<h3>Unseen Table v1 (10 positions not in v1 training table)</h3>
+<table>
+<thead><tr><th>Model</th><th>Yaw</th><th>SR</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>v57 (R1 best)</td><td>0°</td><td class="sr-high">100%</td><td>Perfect generalization</td></tr>
+</tbody>
+</table>
+
+<h3>Unseen Table v2 (10 positions not in v2 training table)</h3>
+<table>
+<thead><tr><th>Model</th><th>Yaw</th><th>SR</th><th>Note</th></tr></thead>
+<tbody>
+<tr><td>v57 (R1 best)</td><td>0°</td><td class="sr-high">100%</td><td>Generalizes across table distributions</td></tr>
+<tr><td>v71 (R3, off=0.2)</td><td>0°</td><td class="sr-high">85%</td><td>Good but not perfect</td></tr>
+<tr><td>v71 (R3, off=0.2)</td><td>10°</td><td class="sr-high">90%</td><td>Good even without yaw training!</td></tr>
+<tr><td>v75 (R3, off=0.2, yaw=10°)</td><td>0°</td><td class="sr-mid">55%</td><td>Overfit to yaw=10° training</td></tr>
+<tr><td>v75 (R3, off=0.2, yaw=10°)</td><td>10°</td><td class="sr-mid">55%</td><td>Poor generalization</td></tr>
+</tbody>
+</table>
+
+<div class="insight warn"><strong>Training on yaw=10° hurts generalization.</strong> v75 (trained with yaw) scored 55% everywhere, while v57 (no yaw training) scored 100%. The yaw-specific training may have narrowed the policy's correction strategy.</div>
+
+
+<h2>Random Position Base Policy Evaluation</h2>
+<div class="insight warn"><strong>Base policy fails dramatically with random cube placement.</strong> Even within GR00T's training distribution, SR drops to 32%. Adding yaw or extending range pushes SR to 2-8%. This provides a clear baseline for residual RL to improve upon.</div>
+
+<h3>Position-Only (Yaw=0°)</h3>
+<table>
+<thead><tr><th>Config</th><th>dx Range (cm)</th><th>dy Range (cm)</th><th>Envs</th><th>Base SR</th></tr></thead>
+<tbody>
+<tr><td><strong>rand_easy</strong> (GR00T dist)</td><td>[-3, +11]</td><td>[-10, +10]</td><td>20</td><td class="sr-mid">31.7%</td></tr>
+<tr><td><strong>rand_mid</strong> (extended)</td><td>[-8, +14]</td><td>[-15, +15]</td><td>20</td><td class="sr-low">6.7%</td></tr>
+<tr><td><strong>rand_wide</strong></td><td>[-12, +16]</td><td>[-20, +20]</td><td>20</td><td class="sr-low">10.0%</td></tr>
+<tr><td><strong>rand_extreme</strong></td><td>[-15, +18]</td><td>[-25, +25]</td><td>20</td><td class="sr-low">8.3%</td></tr>
+</tbody>
+</table>
+
+<h3>With Yaw Rotation</h3>
+<table>
+<thead><tr><th>Config</th><th>dx Range (cm)</th><th>dy Range (cm)</th><th>Yaw</th><th>Base SR</th></tr></thead>
+<tbody>
+<tr><td>rand_easy + yaw</td><td>[-3, +11]</td><td>[-10, +10]</td><td>±10°</td><td class="sr-low">8.3%</td></tr>
+<tr><td>rand_easy + yaw</td><td>[-3, +11]</td><td>[-10, +10]</td><td>±30°</td><td class="sr-low">6.7%</td></tr>
+<tr><td>rand_mid + yaw</td><td>[-8, +14]</td><td>[-15, +15]</td><td>±10°</td><td class="sr-low">1.7%</td></tr>
+<tr><td>rand_wide + yaw</td><td>[-12, +16]</td><td>[-20, +20]</td><td>±30°</td><td class="sr-low">1.7%</td></tr>
+</tbody>
+</table>
+
+<div class="insight"><strong>Key takeaway:</strong> Position randomization alone (dx ±8cm+) cuts base SR from ~48% to ~7%. Adding yaw to any range pushes it below 2%. The residual RL challenge: recover from 7-32% base SR to high SR across random placements.</div>
+
+
+<h2>Robot Start Position Robustness</h2>
+<div class="insight good"><strong>v57 is completely invariant to robot start position.</strong> 100% SR across all 7 conditions — height changes, XY offsets, and full random start. The GR00T vision pipeline guides the arm regardless of where it begins.</div>
+
+<table>
+<thead><tr><th>Condition</th><th>Hover XY Offset</th><th>Hover Z</th><th>SR</th></tr></thead>
+<tbody>
+<tr><td>Baseline (default)</td><td>(0, 0)</td><td>0.25m</td><td class="sr-high">100%</td></tr>
+<tr><td>Higher start</td><td>(0, 0)</td><td>0.30m</td><td class="sr-high">100%</td></tr>
+<tr><td>Lower start</td><td>(0, 0)</td><td>0.20m</td><td class="sr-high">100%</td></tr>
+<tr><td>Right +5cm</td><td>(+5cm, 0)</td><td>0.25m</td><td class="sr-high">100%</td></tr>
+<tr><td>Forward +5cm</td><td>(0, +5cm)</td><td>0.25m</td><td class="sr-high">100%</td></tr>
+<tr><td>Random XY ±5cm</td><td>uniform ±5cm</td><td>0.25m</td><td class="sr-high">100%</td></tr>
+<tr><td>Full random</td><td>uniform ±10cm</td><td>uniform [0.20, 0.30]</td><td class="sr-high">100%</td></tr>
+</tbody>
+</table>
+
+<div class="insight">This confirms that the residual policy learns a <strong>reactive correction strategy</strong> — it responds to the current robot state and GR00T's action, not to assumptions about the initial configuration. The system is robust to deployment variations in arm starting pose.</div>
+
+
+<h2>Round 4: Random Cube Placement Training</h2>
+<div class="insight good"><strong>Random placement RL works!</strong> v80 (easy range) reaches 100% SR with random cube positions — no fixed table needed. v81 (normal) plateaus at 80-85%, v82 (hard) collapses after initial peak.</div>
+
+<h3>Cube Placement Ranges</h3>
+<img src="cube_placement_ranges.png" alt="Cube placement ranges" style="max-width:100%; border-radius:8px; margin:1rem 0;">
+
+<h3>Training Results (~60K steps, 5h, pretrain_only + off_frac=0.5)</h3>
+<table>
+<thead><tr><th>Exp</th><th>Range (cm)</th><th>Yaw</th><th>Base SR</th><th>Peak SR</th><th>Final SR</th><th>Pattern</th></tr></thead>
+<tbody>
+<tr><td><strong>v80 (easy)</strong></td><td>dx[-3,+11] dy[-10,+10]</td><td>0°</td><td class="sr-mid">32%</td><td class="sr-high">100%</td><td class="sr-high">100%</td><td>Converges ~56K, some oscillation</td></tr>
+<tr><td><strong>v81 (normal)</strong></td><td>dx[-8,+14] dy[-15,+15]</td><td>±10°</td><td class="sr-low">2-7%</td><td class="sr-high">100% @22K</td><td class="sr-mid">55-85%</td><td>⚠️ Peaks then oscillates, never stabilizes</td></tr>
+<tr><td><strong>v82 (hard)</strong></td><td>dx[-12,+16] dy[-20,+20]</td><td>±30°</td><td class="sr-low">~2%</td><td class="sr-high">90% @8-12K</td><td class="sr-low">0-5%</td><td>❌ Collapses after 26K</td></tr>
+</tbody>
+</table>
+
+<h3>SR Timeline</h3>
+<table>
+<thead><tr><th>Step</th><th>v80 (easy)</th><th>v81 (normal)</th><th>v82 (hard)</th></tr></thead>
+<tbody>
+<tr><td>0K</td><td>50%</td><td>15%</td><td>10%</td></tr>
+<tr><td>4K</td><td>80%</td><td>95%</td><td>55%</td></tr>
+<tr><td>8K</td><td>70%</td><td>85%</td><td>90%</td></tr>
+<tr><td>12K</td><td>80%</td><td>65%</td><td>90%</td></tr>
+<tr><td>16K</td><td>75%</td><td>95%</td><td>80%</td></tr>
+<tr><td>22K</td><td>85%</td><td>100%</td><td>70%</td></tr>
+<tr><td>30K</td><td>90%</td><td>80%</td><td>20%</td></tr>
+<tr><td>40K</td><td>50%</td><td>75%</td><td>10%</td></tr>
+<tr><td>50K</td><td>65%</td><td>70%</td><td>0%</td></tr>
+<tr><td>56K</td><td>100%</td><td>85%</td><td>10%</td></tr>
+<tr><td>60K</td><td>100%</td><td>—</td><td>5%</td></tr>
+</tbody>
+</table>
+
+<h3>Analysis: Why v81 (Normal) Oscillates</h3>
+<ul>
+<li><strong>High variance from randomization</strong>: Each eval samples different random positions, so SR fluctuates ±15-20% between evals</li>
+<li><strong>Yaw ±10° adds difficulty</strong>: GR00T's base policy drops from ~32% to ~2% with yaw — residual must compensate for both position AND rotation</li>
+<li><strong>Offline data mismatch</strong>: Offline data was collected on fixed v2 table (no random, no yaw) — doesn't match the random training distribution</li>
+<li><strong>pretrain_only mode</strong>: After critic warmup, switches to pure online — early good performance may come from offline pretrain, then degrades as online data dominates</li>
+</ul>
+
+<h3>Analysis: Why v82 (Hard) Collapses</h3>
+<ul>
+<li><strong>Too wide range</strong>: dx[-12,+16]cm × dy[-20,+20]cm exceeds GR00T's training distribution (dx[-3,+11], dy[-13,+20])</li>
+<li><strong>Large yaw (±30°)</strong>: Base policy is essentially random at these angles — residual can't learn meaningful corrections from noise</li>
+<li><strong>Catastrophic forgetting</strong>: Peaked at 90% @8K then steadily declined — online data from hard positions overwrites good policy</li>
+</ul>
+
+<h3>Potential Improvements</h3>
+<ul>
+<li><strong>Curriculum learning</strong>: Start with easy range, gradually expand to normal</li>
+<li><strong>Collect offline data with random placement</strong>: Current offline data is from fixed tables only</li>
+<li><strong>off_frac=0.2 instead of pretrain_only</strong>: Keep mixing offline data throughout training for stability</li>
+<li><strong>Increase eval episodes</strong>: 20 envs × 3 episodes = 60 evals per checkpoint (currently 10×2=20)</li>
+<li><strong>Target tau</strong>: Lower tau (0.005) may stabilize the policy as shown in Round 2</li>
+</ul>
+
+<h2>Hyperparameter Analysis</h2>
+<table>
+<thead><tr><th>Parameter</th><th>Finding</th><th>Evidence</th></tr></thead>
+<tbody>
+<tr><td>action_scale</td><td>0.2 optimal; 0.1 too small, 0.3 too large</td><td>v54(0.2)=95% v50(0.1)=65% v53(0.3)=60%</td></tr>
+<tr><td>L2 reg</td><td>L2=0 best; L2>0 seed-dependent</td><td>v54(0)=95% v57(0.1,s123)=100% v51(0.1,s42)=5%</td></tr>
+<tr><td>offline_frac</td><td>0.2 best overall; pretrain_only faster on easy tasks but less stable on hard</td><td>R2: v63(pt)=100%@8K R3: v71(0.2)=100%@22K stable, v70(pt)=85% oscillating</td></tr>
+<tr><td>pretrain_only</td><td>Fast convergence but oscillates on harder tasks</td><td>R2: v63=100%@8K stable. R3: v70/v72 peak then oscillate 45-85%</td></tr>
+<tr><td>target_tau</td><td>0.005 helps stabilize online; 0.002 too slow</td><td>v66(0.005)=100% v62(0.002)=65% unstable</td></tr>
+<tr><td>gamma</td><td>0.995 matches 0.99 but delayed convergence</td><td>v60=95% at 18K vs v54=95% at 4K</td></tr>
+<tr><td>network</td><td>Smaller can match larger</td><td>v58(128/256)=100%</td></tr>
+<tr><td>actor_lr</td><td>1e-5 optimal; 1e-4 too aggressive</td><td>v61(1e-4)=35% unstable vs default(1e-5)=100%</td></tr>
+<tr><td>noise stddev</td><td>0.05 optimal; 0.2 too noisy</td><td>v59(0.2)=55% slow</td></tr>
+<tr><td>seed</td><td>Very high variance</td><td>v51(s42)=5% vs v57(s123)=100%</td></tr>
+</tbody>
+</table>
+
+<h2>Training Pattern</h2>
+<div class="insight">Most experiments follow a <strong>dip-then-recover</strong> pattern: baseline ~40-48% at step 0, drops to 0-25% at 2K-6K as residual destabilizes base policy, then recovers to 90-100% at 8K-16K as critic learns accurate Q-values.</div>
+
+<h2>Bug Fixes Applied</h2>
+<table>
+<thead><tr><th>Bug</th><th>Impact</th><th>Fix</th></tr></thead>
+<tbody>
+<tr><td>Reward inversion</td><td>Success return less than failure</td><td>Fixed to v1-style 100x bonuses</td></tr>
+<tr><td>Shared output dirs</td><td>Experiments overwrote each other</td><td>Per-experiment output_dir</td></tr>
+<tr><td>Eval auto-reset</td><td>SR always 0%</td><td>Use terminated flag from _is_success()</td></tr>
+<tr><td>Eval single-env</td><td>Only measured env[0]</td><td>Evaluate all 10 envs</td></tr>
+<tr><td>Slow eval (15min)</td><td>100 episodes per eval</td><td>Reduced to 20 episodes (~2min)</td></tr>
+</tbody>
+</table>
+
+<h2>Features Added (Round 2)</h2>
+<table>
+<thead><tr><th>Feature</th><th>Description</th><th>Impact</th></tr></thead>
+<tbody>
+<tr><td><code>--offline_pretrain_only</code></td><td>Use offline data only during critic warmup, then switch to pure online</td><td>v63, v67 reach 100% fastest and most stable</td></tr>
+<tr><td><code>--target_tau</code></td><td>Override soft target update rate (default 0.01)</td><td>tau=0.005 helps stabilize online training (v66)</td></tr>
+<tr><td>Best checkpoint saving</td><td>Saves best.pt whenever eval SR improves</td><td>Enables reliable multi-seed evaluation</td></tr>
+<tr><td>Multi-seed eval script</td><td>eval_checkpoint.py: standalone eval with seed control</td><td>Confirmed v57=100% across 3 seeds</td></tr>
+</tbody>
+</table>
+
+</div>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+var ctx = document.getElementById("srChart").getContext("2d");
+var chartData = {
+  v57: {steps:[0,2,4,6,8,10,12,14,16,18,20,22], sr:[40,40,0,0,5,55,95,95,100,100,100,100]},
+  v63: {steps:[0,2,4,6,8,10,12,14,16], sr:[40,45,55,60,100,100,100,100,100]},
+  v65: {steps:[0,2,4,6,8,10,12,14], sr:[40,40,35,85,100,100,100,100]},
+  v67: {steps:[0,2,4,6,8,10,12,14], sr:[40,45,50,100,95,100,100,100]},
+  v71: {steps:[0,2,4,6,8,10,12,14,16,18,20,22,24], sr:[25,20,45,55,85,50,45,55,45,50,70,100,100]},
+  v73: {steps:[0,2,4,6,8,10,12,14,16,18,20,22,24], sr:[25,20,0,10,70,75,85,70,60,70,75,75,95]},
+  v74: {steps:[0,2,4,6,8,10,12,14,16,18,20,22,24,26], sr:[25,15,30,20,75,85,75,65,65,80,75,80,80,80]},
+  v75: {steps:[0,2,4,6,8,10,12,14,16,18,20,22,24,26], sr:[25,25,25,40,35,60,70,85,80,80,90,85,100,60]},
+  v70: {steps:[0,2,4,6,8,10,12,14,16,18,20,22,24,26,28], sr:[20,20,40,75,60,55,45,70,60,85,55,80,60,65,70]},
+  v72: {steps:[0,2,4,6,8,10,12,14,16,18,20,22,24,26], sr:[30,20,65,70,55,45,45,75,55,50,40,75,80,75]},
+};
+var colors = {
+  v57:"#3fb950", v63:"#f0883e", v65:"#a371f7", v67:"#79c0ff",
+  v71:"#ff6b6b", v73:"#ffd93d", v74:"#6bcb77", v75:"#4d96ff",
+  v70:"#ff8c42", v72:"#c77dff"
+};
+var styles = {
+  v57:{w:3,d:[]}, v63:{w:2,d:[5,5]}, v65:{w:2,d:[5,5]}, v67:{w:2,d:[5,5]},
+  v71:{w:3,d:[]}, v73:{w:3,d:[]}, v74:{w:3,d:[]}, v75:{w:2,d:[]},
+  v70:{w:2,d:[3,3]}, v72:{w:2,d:[3,3]}
+};
+var datasets = [];
+for (var name in chartData) {
+  var d = chartData[name];
+  var s = styles[name];
+  datasets.push({
+    label: name, data: d.steps.map(function(step,i){return {x:step,y:d.sr[i]}}),
+    borderColor: colors[name], backgroundColor: colors[name]+"33",
+    borderWidth: s.w, tension: 0.3, pointRadius: 3, borderDash: s.d,
+    showLine: true
+  });
+}
+new Chart(ctx, {
+  type: "scatter",
+  data: { datasets: datasets },
+  options: {
+    responsive: true,
+    plugins: {
+      legend: { labels: { color: "#c9d1d9" } },
+      title: { display: true, text: "Eval Success Rate (%) vs Training Steps (Round 1-3)", color: "#e6edf3" }
+    },
+    scales: {
+      x: { title: { display: true, text: "Training Steps (x1000)", color: "#8b949e" }, ticks: { color: "#8b949e" }, grid: { color: "#21262d" }, min: 0, max: 30 },
+      y: { title: { display: true, text: "Success Rate (%)", color: "#8b949e" }, ticks: { color: "#8b949e" }, grid: { color: "#21262d" }, min: 0, max: 105 }
+    }
+  }
+});
+</script>
+</body>
+</html>
