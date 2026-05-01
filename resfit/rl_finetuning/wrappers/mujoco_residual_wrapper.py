@@ -203,7 +203,7 @@ class MuJoCoResidualWrapper:
         _dt_groot = time.time() - _t0
 
         # Combine base + residual → absolute target
-        combined = self._combine_actions(base_action, residual_np)  # (N, 8)
+        combined, combined_naction_7d = self._combine_actions(base_action, residual_np)
 
         # Step MuJoCo env with combined absolute actions
         combined_t = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
@@ -222,10 +222,17 @@ class MuJoCoResidualWrapper:
             print(f"[wrapper-timing] groot_query={sum(gq)/len(gq)*1000:.1f}ms "
                   f"mujoco_step={sum(ms)/len(ms)*1000:.1f}ms", flush=True)
 
-        # Store combined action for replay buffer
-        info["scaled_action"] = torch.as_tensor(
-            combined, device=self.device, dtype=torch.float32,
-        )
+        # Store action for replay buffer
+        if combined_naction_7d is not None:
+            # ActionScaler mode: 7D normalized combined for consistent critic training
+            info["scaled_action"] = torch.as_tensor(
+                combined_naction_7d, device=self.device, dtype=torch.float32,
+            )
+        else:
+            # Legacy mode: 8D physical combined (backward compat)
+            info["scaled_action"] = torch.as_tensor(
+                combined, device=self.device, dtype=torch.float32,
+            )
 
         # Advance chunk indices
         for i in range(self.num_envs):
@@ -397,21 +404,24 @@ class MuJoCoResidualWrapper:
         self,
         base_action: np.ndarray,   # (N, 8) [pos3, quat4, grip1]
         residual: np.ndarray,       # (N, 7) [dpos3, deuler3, dgrip1]
-    ) -> np.ndarray:
+    ) -> tuple[np.ndarray, np.ndarray | None]:
         """Combine base absolute action with residual delta.
 
-        Returns (N, 8) combined absolute action.
-
-        If ``self.action_scaler`` is set, pos and grip dimensions are combined
-        in normalized [-1, 1] space (data-driven).  Rotation always uses delta
-        composition with ``residual_rot_scale``.
+        Returns
+        -------
+        combined : (N, 8) combined absolute action for env execution.
+        combined_naction_7d : (N, 7) normalized combined action for replay
+            buffer (only when ActionScaler is active, else None).
+            Layout: [pos_norm(3), euler_delta(3), grip_norm(1)]
         """
         combined = np.zeros_like(base_action)
+        combined_naction_7d = None
 
         if self.action_scaler is not None:
             # ── ActionScaler mode: pos+grip in normalized space ──
             import torch as _torch
             scaler = self.action_scaler
+            combined_naction_7d = np.zeros((self.num_envs, 7), dtype=np.float32)
 
             for i in range(self.num_envs):
                 base_pos = base_action[i, :3]       # (3,)
@@ -441,6 +451,13 @@ class MuJoCoResidualWrapper:
                 delta_rot = Rotation.from_euler("xyz", res_euler)
                 combined_rot = base_rot * delta_rot
                 combined[i, 3:7] = combined_rot.as_quat()
+
+                # Build 7D normalized combined for replay:
+                # [pos_norm(3), euler_delta(3), grip_norm(1)]
+                combined_pg_norm_np = combined_pg_norm.squeeze(0).numpy()
+                combined_naction_7d[i, :3] = combined_pg_norm_np[:3]  # pos normalized combined
+                combined_naction_7d[i, 3:6] = residual[i, 3:6]       # euler: raw residual delta
+                combined_naction_7d[i, 6] = combined_pg_norm_np[3]    # grip normalized combined
         else:
             # ── Legacy physical scale mode ──
             for i in range(self.num_envs):
@@ -464,7 +481,7 @@ class MuJoCoResidualWrapper:
                 # Gripper: additive, clamped
                 combined[i, 7] = np.clip(base_grip + res_grip, 0.0, 1.0)
 
-        return combined
+        return combined, combined_naction_7d
 
     # ------------------------------------------------------------------
     # Observation augmentation
@@ -501,7 +518,9 @@ class MuJoCoResidualWrapper:
             pg_norm = self.action_scaler.scale(pg_t).numpy()
             ba_7d[:, :3] = pg_norm[:, :3]
             ba_7d[:, 6] = pg_norm[:, 3]
-            # euler dims stay unnormalized (rotation is handled separately)
+            # euler dims: set to zero so actor loss combined = 0 + pred = pred
+            # (rotation is handled via SO(3) composition in wrapper, not additive)
+            ba_7d[:, 3:6] = 0.0
 
         out["observation.base_action"] = torch.as_tensor(
             ba_7d, device=self.device, dtype=torch.float32,

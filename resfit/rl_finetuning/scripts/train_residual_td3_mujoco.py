@@ -166,6 +166,8 @@ def _load_offline_data(
             ba_t = ba_t.clone()
             ba_t[:, :3] = pg_norm[:, :3]
             ba_t[:, 6] = pg_norm[:, 3]
+            # euler=0: rotation handled via SO(3) composition, not additive
+            ba_t[:, 3:6] = 0.0
 
         obs_td = {
             "observation.state": torch.from_numpy(data["obs_state"].astype(np.float32)),
@@ -196,7 +198,16 @@ def _load_offline_data(
             next_obs_td[k] = torch.where(boundary, v, shifted)
 
         reward_t = torch.from_numpy(data["reward"].astype(np.float32))
-        action_t = torch.from_numpy(data["action"].astype(np.float32))
+
+        # Action for replay: when ActionScaler is active, use normalized combined
+        # (= normalized base + zero residual = normalized base action)
+        # When no scaler, use raw action from data (zeros = residual, legacy mode)
+        if action_scaler is not None:
+            # ba_t already has pos+grip normalized, set euler=0 (matches online replay format)
+            action_t = ba_t.clone()
+            action_t[:, 3:6] = 0.0  # euler=0: no residual rotation in offline demos
+        else:
+            action_t = torch.from_numpy(data["action"].astype(np.float32))
         # Add one-by-one but with pre-converted tensors (much faster than np indexing)
         for i in range(n):
             td = TensorDict({
@@ -859,9 +870,10 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(noise)
         done = terminated | truncated
 
-        # Store transitions — use noise (7D residual), not combined (8D absolute)
+        # Store transitions — use normalized combined from wrapper when ActionScaler active
+        _replay_action = info["scaled_action"] if _action_scaler is not None else noise
         _add_transitions(
-            obs=obs, next_obs=next_obs, actions=noise,
+            obs=obs, next_obs=next_obs, actions=_replay_action,
             reward=reward, done=done, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,
@@ -956,10 +968,11 @@ def main():
             ep_cum_reward[done_mask] = 0.0
             ep_step_counter[done_mask] = 0
 
-        # Store transition — use residual_action (7D), not combined (8D absolute)
+        # Store transition — use normalized combined from wrapper for consistent critic training
         _t0 = time.perf_counter()
+        _replay_action = info["scaled_action"] if _action_scaler is not None else residual_action
         _add_transitions(
-            obs=obs, next_obs=next_obs, actions=residual_action,
+            obs=obs, next_obs=next_obs, actions=_replay_action,
             reward=reward, done=done, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,
