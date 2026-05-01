@@ -2,7 +2,7 @@
 #SBATCH --partition=sub
 #SBATCH --qos=core-on-sub
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --job-name=mj_lowL2bs_hard
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_lowL2bs_hard_%j.out

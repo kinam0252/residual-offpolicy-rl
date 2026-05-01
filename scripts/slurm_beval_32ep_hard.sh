@@ -3,7 +3,7 @@
 #SBATCH --partition=core
 #SBATCH --qos=core-own
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --output=/home/nas_main/kinamkim/slurms/beval_32ep_h_%j.out
 #SBATCH --error=/home/nas_main/kinamkim/slurms/beval_32ep_h_%j.err

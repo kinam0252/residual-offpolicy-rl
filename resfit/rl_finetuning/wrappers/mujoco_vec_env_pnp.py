@@ -231,6 +231,7 @@ class MuJoCoVecEnvPnP:
         cube_yaw_deg: float = 0.0,
         cube_yaw_degs: list[float] | None = None,
         random_cube_range: dict | None = None,
+        random_bowl_range: dict | None = None,
         hover_offset: dict | None = None,
         cube_size: tuple[float, float, float] = PNP_CUBE_HALF_SIZE,
         scene_xml: str | None = None,
@@ -302,10 +303,12 @@ class MuJoCoVecEnvPnP:
         q_xyzw = Rotation.from_euler("z", yaw).as_quat()
         self._cube_quat_wxyz = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
 
-        # Random cube placement config (if set, overrides fixed positions on reset)
+        # Random cube/bowl placement config (if set, overrides fixed positions on reset)
         self._random_cube_range = random_cube_range
+        self._random_bowl_range = random_bowl_range
         self._hover_offset = hover_offset
         self._cube_base_pos = np.array([0.42, -0.03, 0.02])
+        self._bowl_base_pos = np.array(DEFAULT_BOWL_POS, dtype=np.float64)
 
         # ── Create N environments ──
         self._envs: list[dict[str, Any]] = []
@@ -825,11 +828,27 @@ class MuJoCoVecEnvPnP:
                 if bowl_body_id >= 0:
                     model.body_pos[bowl_body_id] = env["bowl_pos_init"]
             else:
-                dx = np.random.uniform(rng["dx"][0], rng["dx"][1])
-                dy = np.random.uniform(rng["dy"][0], rng["dy"][1])
-                cube_pos = self._cube_base_pos.copy()
-                cube_pos[0] += dx
-                cube_pos[1] += dy
+                # Rejection sampling: ensure cube-bowl XY distance > success threshold
+                for _attempt in range(50):
+                    dx = np.random.uniform(rng["dx"][0], rng["dx"][1])
+                    dy = np.random.uniform(rng["dy"][0], rng["dy"][1])
+                    cube_pos = self._cube_base_pos.copy()
+                    cube_pos[0] += dx
+                    cube_pos[1] += dy
+
+                    # Tentative bowl position
+                    bowl_pos = self._bowl_base_pos.copy()
+                    if self._random_bowl_range is not None:
+                        _brng = self._random_bowl_range
+                        if isinstance(_brng, list):
+                            _brng = _brng[np.random.randint(len(_brng))]
+                        if _brng is not None:
+                            bowl_pos[0] += np.random.uniform(_brng["dx"][0], _brng["dx"][1])
+                            bowl_pos[1] += np.random.uniform(_brng["dy"][0], _brng["dy"][1])
+
+                    if np.linalg.norm(cube_pos[:2] - bowl_pos[:2]) > self.success_threshold:
+                        break
+
                 env["cube_pos_init"] = cube_pos
                 if cube_qposadr is not None:
                     data.qpos[cube_qposadr:cube_qposadr + 3] = cube_pos
@@ -839,6 +858,11 @@ class MuJoCoVecEnvPnP:
                     data.qpos[cube_qposadr + 3:cube_qposadr + 7] = [
                         q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]
                     ]
+
+                # Apply bowl position (already computed above)
+                env["bowl_pos_init"] = bowl_pos
+                if bowl_body_id >= 0:
+                    model.body_pos[bowl_body_id] = bowl_pos
         else:
             # Fixed positions
             if cube_qposadr is not None:
@@ -956,6 +980,60 @@ class MuJoCoVecEnvPnP:
                 success_reward = 1.0 if self._is_success(env_idx) else 0.0
 
             total = distance_reward + contact_reward + transport_reward + success_reward
+            return float(np.clip(total, 0.0, 1.0))
+
+        elif self.reward_type == "dense_v3":
+            # 7-stage reward with gripper-cube alignment and continuous place (0~1.0)
+            # Designed for random env perturbation training
+            tcp_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+
+            # Get gripper rotation matrix (already available from get_tcp_pose)
+            _, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
+
+            # Cube yaw quaternion → rotation matrix
+            cube_quat_wxyz = data.qpos[cube_qposadr + 3:cube_qposadr + 7]
+            cube_R = Rotation.from_quat([
+                cube_quat_wxyz[1], cube_quat_wxyz[2],
+                cube_quat_wxyz[3], cube_quat_wxyz[0]
+            ]).as_matrix()
+
+            # Gripper-cube yaw alignment: compare gripper y-axis (finger opening
+            # direction) with cube y-axis (short 4cm side) in XY plane.
+            # Cube is 8×4×4cm so x=long, y=short. Gripper must align fingers
+            # along the short side to grasp. |cos| handles 180° symmetry.
+            grip_dir = tcp_R[:2, 1]  # gripper y-axis (finger opening dir) in XY
+            cube_dir = cube_R[:2, 1]  # cube y-axis (short 4cm side) in XY
+            grip_dir_n = grip_dir / (np.linalg.norm(grip_dir) + 1e-8)
+            cube_dir_n = cube_dir / (np.linalg.norm(cube_dir) + 1e-8)
+            cos_align = abs(float(np.dot(grip_dir_n, cube_dir_n)))  # 0~1, 1=aligned
+
+            # Stage 1: Approach cube (max 0.15)
+            approach_reward = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.15
+
+            # Stage 2: Gripper-cube alignment (max 0.10, only when close to cube)
+            proximity = max(0.0, 1.0 - tcp_cube_dist / 0.15)  # ramp: 1 at cube, 0 at 15cm
+            alignment_reward = cos_align * proximity * 0.10
+
+            # Stage 3: Grasp (0.10 bonus)
+            grasp_reward = 0.10 if grasped else 0.0
+
+            # Stage 4: Lift (max 0.10, only if grasped)
+            lift_delta = cube_pos[2] - self._initial_cube_z[env_idx]
+            lift_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                lift_reward = np.tanh(lift_delta / 0.1) * 0.10
+
+            # Stage 5: Transport to bowl (max 0.30, only if grasped + lifted)
+            transport_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                transport_reward = (1.0 - np.tanh(cube_bowl_xy / 0.1)) * 0.30
+
+            # Stage 6: Success (0.25 bonus)
+            success_reward = 0.25 if self._is_success(env_idx) else 0.0
+
+            total = (approach_reward + alignment_reward + grasp_reward +
+                     lift_reward + transport_reward + success_reward)
             return float(np.clip(total, 0.0, 1.0))
 
         elif self.reward_type == "dense":

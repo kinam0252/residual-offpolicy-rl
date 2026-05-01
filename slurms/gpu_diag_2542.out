@@ -1,0 +1,12 @@
+. ~/.venvs/groot/bin/activate && export LD_LIBRARY_PATH=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cublas/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cudnn/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cufft/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusolver/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusparse/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nvjitlink/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nccl/lib:$HOME/lib-compat:~/.local/lib/gl:${LD_LIBRARY_PATH:-} && echo CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES && echo SLURM_JOB_GPUS=$SLURM_JOB_GPUS && echo GPU_DEVICE_ORDINAL=$GPU_DEVICE_ORDINAL && nvidia-smi -L && python -c ' import os, torch cvd = os.environ.get("CUDA_VISIBLE_DEVICES", "NOT SET") print(f"CUDA_VISIBLE_DEVICES={cvd}") print(f"torch.cuda.is_available={torch.cuda.is_available()}") print(f"torch.cuda.device_count={torch.cuda.device_count()}") if torch.cuda.is_available(): print(f"device_name={torch.cuda.get_device_name(0)}") else: print("Trying to init CUDA manually...") try: torch.cuda.init() except Exception as e: print(f"init error: {e}") # Check if libcuda.so is findable import ctypes try: ctypes.CDLL("libcuda.so.1") print("libcuda.so.1: OK") except: print("libcuda.so.1: NOT FOUND") try: ctypes.CDLL("libcudart.so") print("libcudart.so: OK") except: print("libcudart.so: NOT FOUND") '
+CUDA_VISIBLE_DEVICES=7
+SLURM_JOB_GPUS=7
+GPU_DEVICE_ORDINAL=7
+GPU 0: NVIDIA B200 (UUID: GPU-8204589b-428b-4804-fa6e-9de1be68e8e3)
+CUDA_VISIBLE_DEVICES=7
+torch.cuda.is_available=False
+torch.cuda.device_count=0
+Trying to init CUDA manually...
+init error: No CUDA GPUs are available
+libcuda.so.1: OK
+libcudart.so: NOT FOUND

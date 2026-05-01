@@ -1,0 +1,10 @@
+set +e; . ~/.venvs/groot/bin/activate; echo '=== cuda-13.0 dir ==='; ls /usr/local/cuda-13.0/lib64/ 2>&1 | head -10; echo '=== libcudart ==='; find / -name 'libcudart*' 2>/dev/null | head -5; echo '=== torch cuda init error ==='; python -c ' import torch import os print("CVD:", os.environ.get("CUDA_VISIBLE_DEVICES")) print("torch cuda compiled:", torch.version.cuda) try: torch.cuda._lazy_init() except Exception as e: print("INIT ERROR:", type(e).__name__, str(e)) # Try direct ctypes import ctypes try: cudart = ctypes.CDLL("libcudart.so") print("libcudart loaded OK") except Exception as e2: print("libcudart FAIL:", e2) try: nvcuda = ctypes.CDLL("libcuda.so.1") ret = ctypes.c_int() r = nvcuda.cuInit(0) print("cuInit returned:", r) count = ctypes.c_int() r2 = nvcuda.cuDeviceGetCount(ctypes.byref(count)) print("cuDeviceGetCount:", r2, "count=", count.value) except Exception as e3: print("libcuda FAIL:", e3) ' 2>&1; echo '=== DONE ==='
+=== cuda-13.0 dir ===
+ls: cannot access '/usr/local/cuda-13.0/lib64/': No such file or directory
+=== libcudart ===
+/home/nas_main/hojuncho/Project/knowledge-injection/.venv/lib/python3.12/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12
+/home/nas_main/hojuncho/Project/knowledge-injection/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart.so.13
+/home/nas_main/hojuncho/Project/knowledge-injection/.venv/lib/python3.12/site-packages/nvidia/cu13/lib/libcudart_static.a
+/home/nas_main/hojuncho/Project/knowledge-injection/.venv/lib/python3.12/site-packages/torchvision.libs/libcudart.e8e8b82a.so.12
+/home/nas_main/hoiyeongjin/MAIN/Env/cosmos-policy/lib/python3.10/site-packages/nvidia/cuda_runtime/lib/libcudart.so.12
+[2026-04-30T04:35:39.676] error: *** JOB 2389 ON worker-2 CANCELLED AT 2026-04-30T04:35:39 DUE TO TIME LIMIT ***

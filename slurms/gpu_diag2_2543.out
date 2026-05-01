@@ -1,0 +1,10 @@
+. ~/.venvs/groot/bin/activate && export LD_LIBRARY_PATH=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cublas/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cudnn/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cufft/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusolver/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusparse/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nvjitlink/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nccl/lib:$HOME/lib-compat:~/.local/lib/gl:${LD_LIBRARY_PATH:-} && echo 'Test1: nvidia-smi visible GPUs' && nvidia-smi --query-gpu=index,uuid,name --format=csv && echo '---' && echo 'Test2: Remap CVD to nvidia-smi indices' && export CUDA_VISIBLE_DEVICES=$(nvidia-smi --query-gpu=index --format=csv,noheader | paste -sd,) && echo CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES && python -c ' import os, torch print(f"CVD={os.environ.get('CUDA_VISIBLE_DEVICES','N/A')}") print(f"available={torch.cuda.is_available()}") print(f"count={torch.cuda.device_count()}") if torch.cuda.is_available(): print(f"name={torch.cuda.get_device_name(0)}") '
+Test1: nvidia-smi visible GPUs
+index, uuid, name
+0, GPU-8204589b-428b-4804-fa6e-9de1be68e8e3, NVIDIA B200
+---
+Test2: Remap CVD to nvidia-smi indices
+CUDA_VISIBLE_DEVICES=0
+Traceback (most recent call last):
+  File "<string>", line 3, in <module>
+NameError: name 'CUDA_VISIBLE_DEVICES' is not defined

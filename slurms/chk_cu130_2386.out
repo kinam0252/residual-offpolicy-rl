@@ -1,0 +1,10 @@
+set +e; . ~/.venvs/groot/bin/activate; python -c 'import torch; print("torch:", torch.__version__); print("cuda:", torch.cuda.is_available()); print("count:", torch.cuda.device_count()); t=torch.zeros(1,device="cuda"); print("GPU tensor OK:", t.device)' 2>&1; echo DONE
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/torch/cuda/__init__.py", line 410, in _lazy_init
+    torch._C._cuda_init()
+RuntimeError: No CUDA GPUs are available
+torch: 2.9.0+cu130
+cuda: False
+count: 0
+DONE

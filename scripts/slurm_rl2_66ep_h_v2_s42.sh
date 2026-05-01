@@ -2,7 +2,7 @@
 #SBATCH --partition=core
 #SBATCH --qos=core-extra
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --job-name=rl2_66ep_h_v2_s42
 #SBATCH --output=/home/nas_main/kinamkim/slurms/rl2_66ep_h_v2_s42_%j.out

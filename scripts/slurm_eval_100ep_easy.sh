@@ -2,7 +2,7 @@
 #SBATCH --partition=core
 #SBATCH --qos=core-extra
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --job-name=eval_100ep_easy
 #SBATCH --output=/home/nas_main/kinamkim/slurms/eval_100ep_easy_%j.out

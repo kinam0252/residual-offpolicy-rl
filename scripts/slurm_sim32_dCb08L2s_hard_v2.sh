@@ -3,7 +3,7 @@
 #SBATCH --qos=core-extra
 #SBATCH --gres=gpu:1
 #SBATCH --exclude=worker-8
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --job-name=mj_dC08Ls_hd
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_dC08Ls_hd_%j.out

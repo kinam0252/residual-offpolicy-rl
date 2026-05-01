@@ -1,0 +1,257 @@
+[
+  {
+    "episode": 0,
+    "cube_pos": [
+      0.412288699128699,
+      0.10192539598259859,
+      0.02
+    ],
+    "bowl_pos": [
+      0.40688650479099786,
+      -0.17396685840791834,
+      0.0
+    ],
+    "cube_yaw_deg": 2.2,
+    "distance": 0.276,
+    "source": "perturb_0.5cm_5deg",
+    "difficulty": "easy"
+  },
+  {
+    "episode": 1,
+    "cube_pos": [
+      0.3793399633937919,
+      0.12089791606666574,
+      0.02
+    ],
+    "bowl_pos": [
+      0.3835905098977481,
+      -0.14394748555776998,
+      0.0
+    ],
+    "cube_yaw_deg": 0.4,
+    "distance": 0.265,
+    "source": "perturb_0.5cm_5deg",
+    "difficulty": "easy"
+  },
+  {
+    "episode": 2,
+    "cube_pos": [
+      0.36751205114848945,
+      0.18658200815528497,
+      0.02
+    ],
+    "bowl_pos": [
+      0.3661636231224169,
+      -0.07503914623304589,
+      0.0
+    ],
+    "cube_yaw_deg": 18.2,
+    "distance": 0.262,
+    "source": "perturb_0.5cm_5deg",
+    "difficulty": "easy"
+  },
+  {
+    "episode": 3,
+    "cube_pos": [
+      0.3945025418779946,
+      0.19946034979041605,
+      0.02
+    ],
+    "bowl_pos": [
+      0.4328626045013097,
+      -0.10159914579712892,
+      0.0
+    ],
+    "cube_yaw_deg": 1.1,
+    "distance": 0.303,
+    "source": "perturb_0.5cm_5deg",
+    "difficulty": "easy"
+  },
+  {
+    "episode": 4,
+    "cube_pos": [
+      0.41816715235026786,
+      -0.1739956282945683,
+      0.02
+    ],
+    "bowl_pos": [
+      0.3949270445309963,
+      0.15153388437107668,
+      0.0
+    ],
+    "cube_yaw_deg": 2.5,
+    "distance": 0.326,
+    "source": "perturb_0.5cm_5deg",
+    "difficulty": "easy"
+  },
+  {
+    "episode": 5,
+    "cube_pos": [
+      0.4002742436470044,
+      0.09058667396054905,
+      0.02
+    ],
+    "bowl_pos": [
+      0.42096372048100494,
+      -0.1621390705450881,
+      0.0
+    ],
+    "cube_yaw_deg": 3.8,
+    "distance": 0.254,
+    "source": "perturb_2cm_15deg",
+    "difficulty": "normal"
+  },
+  {
+    "episode": 6,
+    "cube_pos": [
+      0.3757121695389207,
+      0.12687296466876932,
+      0.02
+    ],
+    "bowl_pos": [
+      0.39266403292846735,
+      -0.13532937353273436,
+      0.0
+    ],
+    "cube_yaw_deg": 5.5,
+    "distance": 0.263,
+    "source": "perturb_2cm_15deg",
+    "difficulty": "normal"
+  },
+  {
+    "episode": 7,
+    "cube_pos": [
+      0.3601347441749855,
+      0.2061712225822082,
+      0.02
+    ],
+    "bowl_pos": [
+      0.38118818696601753,
+      -0.0736245843331636,
+      0.0
+    ],
+    "cube_yaw_deg": 17.0,
+    "distance": 0.281,
+    "source": "perturb_2cm_15deg",
+    "difficulty": "normal"
+  },
+  {
+    "episode": 8,
+    "cube_pos": [
+      0.40076848893913697,
+      0.18133519225863173,
+      0.02
+    ],
+    "bowl_pos": [
+      0.43414262854079216,
+      -0.10712521497269184,
+      0.0
+    ],
+    "cube_yaw_deg": 8.9,
+    "distance": 0.29,
+    "source": "perturb_2cm_15deg",
+    "difficulty": "normal"
+  },
+  {
+    "episode": 9,
+    "cube_pos": [
+      0.4174690007560967,
+      -0.1901372788689287,
+      0.02
+    ],
+    "bowl_pos": [
+      0.38695006505590274,
+      0.1406836512050127,
+      0.0
+    ],
+    "cube_yaw_deg": 10.2,
+    "distance": 0.332,
+    "source": "perturb_2cm_15deg",
+    "difficulty": "normal"
+  },
+  {
+    "episode": 10,
+    "cube_pos": [
+      0.3926574894282257,
+      0.07708871366151801,
+      0.02
+    ],
+    "bowl_pos": [
+      0.4389958772325787,
+      -0.16203803802755254,
+      0.0
+    ],
+    "cube_yaw_deg": 28.5,
+    "distance": 0.244,
+    "source": "perturb_5cm_30deg",
+    "difficulty": "hard"
+  },
+  {
+    "episode": 11,
+    "cube_pos": [
+      0.3910125774352184,
+      0.0961339694543775,
+      0.02
+    ],
+    "bowl_pos": [
+      0.34954768077039683,
+      -0.16151568191978022,
+      0.0
+    ],
+    "cube_yaw_deg": -5.0,
+    "distance": 0.261,
+    "source": "perturb_5cm_30deg",
+    "difficulty": "hard"
+  },
+  {
+    "episode": 12,
+    "cube_pos": [
+      0.40373215890680314,
+      0.15870300620183977,
+      0.02
+    ],
+    "bowl_pos": [
+      0.3361963669299559,
+      -0.11151831060088516,
+      0.0
+    ],
+    "cube_yaw_deg": 37.0,
+    "distance": 0.279,
+    "source": "perturb_5cm_30deg",
+    "difficulty": "hard"
+  },
+  {
+    "episode": 13,
+    "cube_pos": [
+      0.4041495506689677,
+      0.17281642901268002,
+      0.02
+    ],
+    "bowl_pos": [
+      0.4570091251131657,
+      -0.0962287178959766,
+      0.0
+    ],
+    "cube_yaw_deg": -6.2,
+    "distance": 0.274,
+    "source": "perturb_5cm_30deg",
+    "difficulty": "hard"
+  },
+  {
+    "episode": 14,
+    "cube_pos": [
+      0.4448817028739868,
+      -0.17204278129071243,
+      0.02
+    ],
+    "bowl_pos": [
+      0.3646538180243862,
+      0.16813745491702664,
+      0.0
+    ],
+    "cube_yaw_deg": 23.2,
+    "distance": 0.35,
+    "source": "perturb_5cm_30deg",
+    "difficulty": "hard"
+  }
+]

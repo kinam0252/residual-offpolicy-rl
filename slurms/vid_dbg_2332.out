@@ -1,0 +1,10 @@
+. ~/.venvs/groot/bin/activate && export LD_LIBRARY_PATH=~/.local/lib/gl:${LD_LIBRARY_PATH:-} && export MUJOCO_GL=egl DS_BUILD_OPS=0 HF_HUB_OFFLINE=1 CUDA_HOME=~/fake_cuda && export PYTHONPATH=/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl:${PYTHONPATH:-} && cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl && python -c 'import os; import torch; print("CUDA avail:", torch.cuda.is_available()); print("device count:", torch.cuda.device_count()); print("CVD:", os.environ.get("CUDA_VISIBLE_DEVICES", "NOT SET")); print("SLURM_GPUS:", os.environ.get("SLURM_GPUS_ON_NODE", "NOT SET")); t=torch.zeros(1,device="cuda"); print("cuda tensor OK"); import flash_attn; print("flash_attn version:", flash_attn.__version__)'
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+  File "/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/torch/cuda/__init__.py", line 372, in _lazy_init
+    torch._C._cuda_init()
+RuntimeError: No CUDA GPUs are available
+CUDA avail: False
+device count: 0
+CVD: 4
+SLURM_GPUS: 1

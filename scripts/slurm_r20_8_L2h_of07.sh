@@ -2,7 +2,7 @@
 #SBATCH --partition=free
 #SBATCH --qos=core-on-free
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --job-name=mj_r20_of07
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_r20_of07_%j.out

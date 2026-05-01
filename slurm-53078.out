@@ -1,0 +1,1047 @@
+Mode: base
+Seeds: [0, 1, 2, 3, 4]
+Positions: configs/pnp_eval_hard.json (15 envs)
+Output: outputs/eval_multiseed/base_policy
+
+
+==================================================
+Seed 0...
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/transformers/utils/hub.py:105: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[MuJoCoResidualWrapper] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000...
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:205: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:236: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+`use_fast` is set to `True` but the image processor class does not have a fast version.  Falling back to the slow version.
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 23.07it/s]
+[MuJoCoResidualWrapper] GR00T loaded in 21.9s
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00880086 -0.00477632  0.10474679], rel_quat=[-0.02480569  0.98538772 -0.16669048  0.02469806]
+  [WELD] ACTIVATED at step, rel_pos=[0.02498398 0.00035764 0.10412062], rel_quat=[ 0.01486246  0.99918783 -0.03682472  0.00683528]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.02685328 0.00167477 0.1033927 ], rel_quat=[ 0.02912887  0.99886741 -0.03716935  0.00581809]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 2.79297429e-02 -9.14607958e-05  1.02232671e-01], rel_quat=[ 0.03901993  0.99850459 -0.03797349  0.00490427]
+  [WELD] ACTIVATED at step, rel_pos=[0.00494596 0.00053784 0.10293118], rel_quat=[0.02073433 0.99881287 0.01416118 0.04174204]
+  [WELD] ACTIVATED at step, rel_pos=[0.02508267 0.00528302 0.10535541], rel_quat=[0.02379665 0.99578796 0.08696266 0.01666003]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0033454  -0.00092496  0.10783733], rel_quat=[-0.00142724  0.99914904  0.02596335  0.03201672]
+  [WELD] ACTIVATED at step, rel_pos=[0.02609119 0.00613584 0.10423137], rel_quat=[0.014238   0.995327   0.09362765 0.01884978]
+  [WELD] DEACTIVATED
+[groot-infer] batch=15 envs, time=780ms, avg=863ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01793269 -0.0062331   0.10007092], rel_quat=[ 0.00936952  0.981117   -0.19312793 -0.00482141]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0213878  -0.00954034  0.10480838], rel_quat=[-0.02331138  0.97428249 -0.22301549 -0.02223308]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01857287 -0.00594085  0.098932  ], rel_quat=[ 0.01240017  0.98075685 -0.1947263  -0.0066257 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01771518 -0.00753969  0.10698679], rel_quat=[-0.02127629  0.98592847 -0.16408204  0.02386308]
+  [WELD] ACTIVATED at step, rel_pos=[0.00073815 0.0002256  0.10458517], rel_quat=[-0.00264939  0.9959675   0.08661932  0.02321217]
+  [WELD] ACTIVATED at step, rel_pos=[0.01003304 0.0038846  0.10559191], rel_quat=[0.06377099 0.99290038 0.09515784 0.03204818]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01981215 -0.00990681  0.10350689], rel_quat=[-0.03341513  0.97322979 -0.22604867 -0.024682  ]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01845873 -0.00600432  0.10004347], rel_quat=[ 0.01358922  0.9841104  -0.17692245 -0.00636348]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01583137 -0.00984463  0.10751857], rel_quat=[-0.04606161  0.97273337 -0.22663387 -0.01747001]
+  [WELD] ACTIVATED at step, rel_pos=[-0.02291471  0.00457481  0.10355006], rel_quat=[-0.07067406  0.9836583  -0.16518924  0.01157726]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01710587 -0.00424696  0.1118975 ], rel_quat=[-0.04619939  0.99476758 -0.08538849  0.03181009]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01525046 -0.01121026  0.10800551], rel_quat=[-0.05192076  0.97248313 -0.22656024 -0.01585119]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01657372 -0.00456989  0.11901085], rel_quat=[-0.05134948  0.99512057 -0.07593213  0.03650473]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=109ms, avg=439ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01791998 -0.00838569  0.09997673], rel_quat=[-0.0378849   0.9769751  -0.20827502 -0.02656901]
+[groot-infer] batch=1 envs, time=111ms, avg=214ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01077831 -0.00547798  0.10204155], rel_quat=[-0.02479675  0.98399987 -0.17500109  0.0224497 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01403435 -0.00951028  0.09981048], rel_quat=[-0.06103526  0.96789561 -0.24382146 -0.00197207]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.004771   0.00234022 0.10602799], rel_quat=[0.02178867 0.99881325 0.00474067 0.04329983]
+  [WELD] ACTIVATED at step, rel_pos=[0.00463609 0.00555918 0.10726037], rel_quat=[0.0612456  0.99130242 0.11071786 0.03619462]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01303512 -0.00985474  0.10440366], rel_quat=[-0.07249516  0.97494346 -0.21030427 -0.00134621]
+[groot-infer] batch=1 envs, time=118ms, avg=248ms
+  [WELD] ACTIVATED at step, rel_pos=[0.02772107 0.00331151 0.10593061], rel_quat=[ 0.05959436  0.99805454 -0.01721172  0.00627787]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02274607 -0.00652407  0.10690986], rel_quat=[ 0.05785498  0.90490288 -0.42115482  0.02078954]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.02684328 0.00271567 0.11110004], rel_quat=[ 0.07751843  0.99685955 -0.01228975  0.01053071]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02950784 -0.00078494  0.10253657], rel_quat=[ 2.41757684e-02  9.98606195e-01 -4.69087599e-02  8.76435665e-04]
+[groot-infer] batch=1 envs, time=124ms, avg=219ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01746908 -0.0034698   0.10278009], rel_quat=[-0.00261715  0.99828926 -0.05774869  0.00876338]
+[groot-infer] batch=1 envs, time=117ms, avg=221ms
+[groot-infer] batch=1 envs, time=113ms, avg=206ms
+[groot-infer] batch=1 envs, time=109ms, avg=219ms
+[groot-infer] batch=7 envs, time=398ms, avg=205ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00902883 -0.00420991  0.10270313], rel_quat=[-0.02945983  0.98677608 -0.15709847  0.02692873]
+[groot-infer] batch=1 envs, time=128ms, avg=165ms
+[groot-infer] batch=2 envs, time=154ms, avg=164ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02299225 -0.01007991  0.10456972], rel_quat=[-3.05434655e-04  9.62832651e-01 -2.69808140e-01 -1.25204307e-02]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02310102 -0.00884077  0.10275632], rel_quat=[-0.00683744  0.96244313 -0.27120846 -0.01012174]
+[vecenv-timing] ik+reward=67.9ms build_obs(render)=65.9ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=133.9ms
+  Seed 0: SR=66.7% (10/15) [181s]
+
+==================================================
+Seed 1...
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[MuJoCoResidualWrapper] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 25.33it/s]
+[MuJoCoResidualWrapper] GR00T loaded in 10.2s
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01105603 -0.00530196  0.10399524], rel_quat=[-0.03576961  0.98407033 -0.1725226   0.02370815]
+  [WELD] ACTIVATED at step, rel_pos=[ 2.80265711e-02 -8.02137335e-05  1.03857000e-01], rel_quat=[ 0.01784292  0.99937291 -0.0304336   0.0030352 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00578047 0.00304943 0.10263195], rel_quat=[ 0.04362648  0.99815491 -0.00411123  0.04203088]
+  [WELD] ACTIVATED at step, rel_pos=[0.00369012 0.00076454 0.108764  ], rel_quat=[0.00964194 0.99927198 0.01336094 0.03440981]
+  [WELD] ACTIVATED at step, rel_pos=[0.02863687 0.00315685 0.10244947], rel_quat=[ 0.02689926  0.99922876 -0.02846549  0.00283291]
+  [WELD] ACTIVATED at step, rel_pos=[0.02239368 0.00900286 0.10345102], rel_quat=[0.05719857 0.99252537 0.10563691 0.0215072 ]
+  [WELD] ACTIVATED at step, rel_pos=[0.00088961 0.00221046 0.10657709], rel_quat=[0.02776567 0.99817331 0.04482206 0.02949736]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.02200711 0.00762797 0.10553744], rel_quat=[0.06694787 0.99218458 0.10300091 0.02187576]
+[groot-infer] batch=15 envs, time=727ms, avg=815ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02464496 -0.00620977  0.10495681], rel_quat=[ 0.02236211  0.98737491 -0.15678037 -0.00326284]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02126186 -0.00932737  0.10560084], rel_quat=[-0.03299074  0.97734711 -0.20828304 -0.01795571]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02669966 -0.00423386  0.10342287], rel_quat=[ 0.03316448  0.98821696 -0.14931432 -0.00570801]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.04092631 -0.00533798  0.10289262], rel_quat=[-0.02098038  0.99110941 -0.12971616  0.02087294]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0198059  -0.00765431  0.10500099], rel_quat=[-0.01513885  0.9891408  -0.144524    0.02200237]
+  [WELD] ACTIVATED at step, rel_pos=[0.00700661 0.0054101  0.10707576], rel_quat=[0.0750569  0.99247313 0.09004226 0.03543929]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02045449 -0.00890979  0.10445971], rel_quat=[-0.0138302   0.98422271 -0.17637     0.00282879]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00036126 -0.00044724  0.11407869], rel_quat=[0.0053164  0.99882233 0.03866478 0.02882242]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02318594 -0.01070612  0.10159339], rel_quat=[-3.10124076e-02  9.71776959e-01 -2.33854026e-01 -2.57865173e-04]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01961178 -0.00460071  0.10921705], rel_quat=[-0.03831918  0.99547664 -0.08037834  0.03312442]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02023261 -0.00305129  0.11263555], rel_quat=[-0.01880211  0.99797494 -0.05258504  0.0304519 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02032988 -0.00729286  0.10565367], rel_quat=[-0.02547251  0.98803399 -0.15195108  0.00713115]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02013861 -0.01130792  0.14228419], rel_quat=[-0.0821346   0.99118014 -0.10273474  0.01616806]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[-0.01429436  0.00084759  0.10131517], rel_quat=[-0.07345317  0.98157489 -0.17603543  0.01126458]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=105ms, avg=413ms
+  [WELD] ACTIVATED at step, rel_pos=[-0.0169496   0.00297034  0.10742356], rel_quat=[-0.06323823  0.98428249 -0.16461346  0.00955573]
+[groot-infer] batch=1 envs, time=135ms, avg=254ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01687291 -0.00501259  0.10026758], rel_quat=[-0.02268193  0.9877818  -0.15417638  0.0015154 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02318429 -0.01305965  0.10491329], rel_quat=[-0.06531291  0.95383202 -0.29304467  0.0079699 ]
+[groot-infer] batch=1 envs, time=130ms, avg=154ms
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01519893 -0.00576392  0.10285655], rel_quat=[-0.02420735  0.98891987 -0.14638911  0.00466044]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03744734 -0.01080106  0.10554283], rel_quat=[-0.11199261  0.92647902 -0.35425622  0.0599734 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01625711 -0.00549389  0.1137842 ], rel_quat=[-0.04245642  0.99232024 -0.11585228  0.00873112]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0128714  -0.00604015  0.10629871], rel_quat=[-0.02538787  0.98513664 -0.16770068  0.02716122]
+[groot-infer] batch=7 envs, time=499ms, avg=209ms
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01866683 -0.00330205  0.12359851], rel_quat=[ 0.02297234  0.99555909 -0.09122446  0.00353079]
+  [WELD] ACTIVATED at step, rel_pos=[0.00630662 0.00318644 0.10591317], rel_quat=[0.04207521 0.99812156 0.01712942 0.0411049 ]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=106ms, avg=167ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02676855 -0.00022121  0.1045681 ], rel_quat=[ 0.01689503  0.99905811 -0.03815327  0.01190674]
+  [WELD] ACTIVATED at step, rel_pos=[0.02804313 0.00397332 0.10336848], rel_quat=[ 0.06339382  0.99786889 -0.01214863  0.00955548]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.0304113  0.0025169  0.10423691], rel_quat=[ 0.04889462  0.99868866 -0.00678497  0.0135735 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02785366 -0.00116203  0.10452212], rel_quat=[-3.96088202e-04  9.99594029e-01 -2.63960007e-02  1.07178371e-02]
+[groot-infer] batch=1 envs, time=133ms, avg=167ms
+  [WELD] ACTIVATED at step, rel_pos=[-0.00010829  0.00234114  0.10373978], rel_quat=[0.04380374 0.99611229 0.06811576 0.03466685]
+[groot-infer] batch=1 envs, time=106ms, avg=173ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0143359  -0.00674834  0.10453367], rel_quat=[ 0.02102416  0.88424487 -0.4665375  -0.00342938]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01936399 -0.00582161  0.1088729 ], rel_quat=[ 0.01695279  0.98330321 -0.17885113 -0.02897729]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0165069  -0.00698161  0.10288936], rel_quat=[ 0.02007398  0.88571262 -0.46377964  0.00431796]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[-0.00139079 -0.00014487  0.11091974], rel_quat=[0.04424542 0.99680878 0.05622211 0.03540717]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[-0.0009315   0.00292038  0.12009652], rel_quat=[0.03085515 0.99798641 0.04447388 0.03306283]
+[groot-infer] batch=5 envs, time=290ms, avg=175ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[-0.00087411  0.00068125  0.12885936], rel_quat=[0.04047029 0.99795031 0.037425   0.03250714]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01310967 -0.0090844   0.10424163], rel_quat=[-0.05517305  0.97606561 -0.20748982  0.03463863]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=119ms, avg=181ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02148991 -0.0094048   0.10578941], rel_quat=[ 0.01275192  0.96207376 -0.27176976 -0.01981573]
+  [WELD] ACTIVATED at step, rel_pos=[0.00947192 0.00542005 0.10431246], rel_quat=[0.0644605  0.9854552  0.15145696 0.04223366]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02421302 -0.01130095  0.10415167], rel_quat=[-0.0350998   0.97726387 -0.20831881 -0.01807203]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02303814 -0.01190306  0.10623422], rel_quat=[-2.82596162e-02  9.59853436e-01 -2.79074235e-01  5.88536350e-04]
+  [WELD] DEACTIVATED
+[groot-infer] batch=2 envs, time=170ms, avg=216ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02116155 -0.00408752  0.10839504], rel_quat=[-0.07922581  0.99620747 -0.03578195 -0.0036878 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00370072 -0.00842971  0.13145191], rel_quat=[ 0.03491445  0.97695941 -0.20956597  0.02033227]
+  [WELD] DEACTIVATED
+[groot-infer] batch=2 envs, time=152ms, avg=213ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00406283 0.00308516 0.10984148], rel_quat=[0.04903315 0.99786656 0.01870295 0.03883668]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01088769 -0.00519996  0.1110853 ], rel_quat=[-0.00097842  0.97832675 -0.20462083  0.03171952]
+[groot-infer] batch=2 envs, time=151ms, avg=232ms
+  [WELD] ACTIVATED at step, rel_pos=[-0.00268039 -0.00049106  0.10792262], rel_quat=[-0.00914119  0.99925431  0.00347722  0.03735203]
+  [WELD] ACTIVATED at step, rel_pos=[0.02817965 0.00438139 0.10507571], rel_quat=[ 0.06617142  0.99749072 -0.02186894  0.01246401]
+[vecenv-timing] ik+reward=64.7ms build_obs(render)=60.1ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=124.9ms
+  Seed 1: SR=73.3% (11/15) [134s]
+
+==================================================
+Seed 2...
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[MuJoCoResidualWrapper] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 25.05it/s]
+[MuJoCoResidualWrapper] GR00T loaded in 10.4s
+  [WELD] ACTIVATED at step, rel_pos=[0.0020435  0.00159608 0.10993757], rel_quat=[ 0.02414763  0.99868835 -0.00242961  0.04508409]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02623779 -0.00107024  0.10331743], rel_quat=[ 0.01236878  0.99859288 -0.05060221  0.00993436]
+  [WELD] ACTIVATED at step, rel_pos=[-0.00214963 -0.00096501  0.10733447], rel_quat=[-0.00572077  0.99863248  0.04216838  0.03036903]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02353613 -0.00585178  0.10130634], rel_quat=[ 0.03591029  0.98751933 -0.15028909 -0.03048283]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02057271 -0.00784244  0.10452884], rel_quat=[-0.01699486  0.98949355 -0.14247442  0.01774055]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0245687  -0.00624676  0.0996416 ], rel_quat=[ 0.02516887  0.98752662 -0.15175088 -0.03360609]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02151805 -0.0078594   0.10279394], rel_quat=[-0.00591922  0.98866095 -0.1490143   0.01758495]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+[groot-infer] batch=15 envs, time=746ms, avg=782ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02536265 -0.00692043  0.10395137], rel_quat=[ 0.02108814  0.98180526 -0.18834433  0.01183753]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02477521 -0.00822312  0.10155539], rel_quat=[-0.00998741  0.98506765 -0.17068724 -0.02019507]
+  [WELD] ACTIVATED at step, rel_pos=[0.02467129 0.00750009 0.10325212], rel_quat=[0.04052708 0.99411526 0.09810958 0.02160804]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.02515407 0.00758147 0.10253607], rel_quat=[0.0454811  0.9935557  0.10199833 0.01936202]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02692486 -0.00807673  0.10265504], rel_quat=[ 0.01742942  0.98213296 -0.187266    0.00651954]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02501725 -0.00857897  0.10537703], rel_quat=[-0.01729412  0.9782461  -0.2066097   0.0069222 ]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0269962  -0.00771455  0.10027905], rel_quat=[ 0.01696102  0.98184797 -0.18864697  0.00996072]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.023158   -0.01120071  0.10803315], rel_quat=[-0.03318136  0.97401947 -0.22392098  0.00666784]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00195562 -0.00212195  0.10789578], rel_quat=[-0.02249191  0.97911632 -0.20018122  0.02743767]
+  [WELD] ACTIVATED at step, rel_pos=[-0.02127962  0.00432251  0.10319948], rel_quat=[-0.06388835  0.98346516 -0.16931324  0.00689836]
+[groot-infer] batch=1 envs, time=123ms, avg=376ms
+[groot-infer] batch=1 envs, time=111ms, avg=217ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00573734 0.0005474  0.10806639], rel_quat=[0.00728477 0.99933492 0.01774652 0.03101134]
+[groot-infer] batch=1 envs, time=117ms, avg=208ms
+  [WELD] ACTIVATED at step, rel_pos=[0.02085192 0.00397739 0.10262196], rel_quat=[9.05493096e-04 9.92307556e-01 1.22839602e-01 1.53403300e-02]
+  [WELD] ACTIVATED at step, rel_pos=[0.00507117 0.00310386 0.10486722], rel_quat=[0.02951908 0.998661   0.00816374 0.04169149]
+[groot-infer] batch=1 envs, time=110ms, avg=159ms
+  [WELD] ACTIVATED at step, rel_pos=[-7.31315406e-05  2.10191199e-03  1.04991791e-01], rel_quat=[0.03402923 0.99716982 0.05662291 0.03589154]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.01762041 0.0017222  0.17117971], rel_quat=[0.03459798 0.9968956  0.06241163 0.03327044]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02750299 -0.00015754  0.10543063], rel_quat=[ 0.00562716  0.99921451 -0.03723822  0.0123293 ]
+[groot-infer] batch=1 envs, time=131ms, avg=196ms
+[groot-infer] batch=1 envs, time=150ms, avg=165ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00885396 0.00497721 0.10926311], rel_quat=[0.0615502  0.99387362 0.08576449 0.03272985]
+[groot-infer] batch=2 envs, time=154ms, avg=196ms
+[groot-infer] batch=2 envs, time=152ms, avg=160ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00987364 -0.00500524  0.10610425], rel_quat=[-0.02104936  0.98465878 -0.17168419  0.02299005]
+  [WELD] ACTIVATED at step, rel_pos=[0.0110146  0.00273275 0.09906135], rel_quat=[0.02802449 0.99647466 0.07637477 0.02048838]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02203152 -0.00549793  0.10273962], rel_quat=[ 1.25562527e-02  9.89014716e-01 -1.47281594e-01 -6.03634558e-04]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=132ms, avg=179ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02982674 -0.00805752  0.10768504], rel_quat=[-0.00415073  0.97454996 -0.22330613  0.01922287]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02108599 -0.00719073  0.10287699], rel_quat=[-0.01352911  0.98837911 -0.15098945  0.01122024]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03646327 -0.01331333  0.10682038], rel_quat=[-0.01966766  0.97589107 -0.21586464  0.0255394 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01837465 -0.01136617  0.1060383 ], rel_quat=[-0.0294209   0.95428077 -0.29686713 -0.0187756 ]
+[groot-infer] batch=2 envs, time=157ms, avg=177ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02054991 -0.00607647  0.10390345], rel_quat=[ 0.01873536  0.98796484 -0.15337604  0.00708822]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=134ms, avg=146ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00398139 0.00215085 0.10868915], rel_quat=[0.0281809  0.99886544 0.00722328 0.03770283]
+[groot-infer] batch=1 envs, time=115ms, avg=155ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00347854 0.00141728 0.10852528], rel_quat=[0.02787965 0.99275564 0.11149271 0.0350476 ]
+[groot-infer] batch=1 envs, time=127ms, avg=171ms
+  [WELD] ACTIVATED at step, rel_pos=[0.01632128 0.00055105 0.09841757], rel_quat=[ 0.01369268  0.99777706 -0.05854496  0.0287391 ]
+  [WELD] ACTIVATED at step, rel_pos=[0.02649879 0.00016766 0.1074653 ], rel_quat=[ 0.0072313   0.99936754 -0.03421946  0.00642369]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02764285 -0.00024008  0.10354345], rel_quat=[ 0.03371386  0.99882958 -0.03427646  0.00528919]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00300745 0.00248417 0.11451698], rel_quat=[0.03399839 0.99480648 0.08844133 0.03717936]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0142837  -0.00064914  0.10031204], rel_quat=[ 0.02734943  0.99765525 -0.05653265  0.02720428]
+[groot-infer] batch=3 envs, time=213ms, avg=196ms
+[vecenv-timing] ik+reward=66.5ms build_obs(render)=58.1ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=124.7ms
+  Seed 2: SR=73.3% (11/15) [130s]
+
+==================================================
+Seed 3...
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[MuJoCoResidualWrapper] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 25.06it/s]
+[MuJoCoResidualWrapper] GR00T loaded in 10.2s
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01100739 -0.00424726  0.10530343], rel_quat=[-0.01045614  0.98497233 -0.17071271  0.02402831]
+  [WELD] ACTIVATED at step, rel_pos=[0.00143557 0.00021166 0.10705198], rel_quat=[ 0.01007077  0.99946865 -0.00691207  0.03021961]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02553437 -0.00138769  0.10088168], rel_quat=[ 0.00257609  0.99955071 -0.02899809  0.00713165]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02675517 -0.00142888  0.10319315], rel_quat=[ 0.00600024  0.99962029 -0.02598855  0.00691878]
+  [WELD] ACTIVATED at step, rel_pos=[0.02322279 0.0073805  0.10581322], rel_quat=[0.03925599 0.99255026 0.11300895 0.02306349]
+  [WELD] DEACTIVATED
+[groot-infer] batch=15 envs, time=634ms, avg=688ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02405581 -0.00615998  0.10124548], rel_quat=[ 0.01009772  0.98536042 -0.16810538 -0.02652293]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0208817  -0.00891272  0.10473572], rel_quat=[-0.00408403  0.98709447 -0.15859325  0.02181746]
+  [WELD] ACTIVATED at step, rel_pos=[0.00526199 0.00310378 0.10319731], rel_quat=[0.03968164 0.99794528 0.01663334 0.04747539]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02288825 -0.00412008  0.0990432 ], rel_quat=[ 0.0489336   0.98859132 -0.14242494 -0.00279877]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02366557 -0.00450544  0.09719311], rel_quat=[ 0.05742883  0.98862486 -0.13890218 -0.00538504]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01945272 -0.01142183  0.13902884], rel_quat=[-0.07835947  0.98784918 -0.1258582   0.0466208 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02013733 -0.00616018  0.10704439], rel_quat=[-0.00375121  0.99040561 -0.13810445  0.00313468]
+  [WELD] ACTIVATED at step, rel_pos=[0.01000312 0.00516874 0.10913475], rel_quat=[0.05364018 0.99381629 0.09108679 0.03398699]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.01033736 0.00429114 0.10834401], rel_quat=[0.0505611  0.99353201 0.09639153 0.03234796]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00920434 0.00398493 0.10755369], rel_quat=[0.04551463 0.99379967 0.09572294 0.03358189]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00976828 0.00353012 0.10806185], rel_quat=[0.03770917 0.99435693 0.09407864 0.03132941]
+  [WELD] ACTIVATED at step, rel_pos=[0.00421011 0.00019623 0.10938439], rel_quat=[0.00909182 0.9991786  0.02414561 0.0312484 ]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=132ms, avg=499ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00736943 -0.00392434  0.10044378], rel_quat=[-0.04565935  0.98824518 -0.14446931  0.0203789 ]
+[groot-infer] batch=1 envs, time=113ms, avg=247ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02176597 -0.00835957  0.10394059], rel_quat=[ 0.04031913  0.92914901 -0.36735699  0.01026271]
+[groot-infer] batch=2 envs, time=191ms, avg=197ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00975537 -0.0060096   0.1047634 ], rel_quat=[-0.04176106  0.98213443 -0.1810552   0.0297825 ]
+  [WELD] ACTIVATED at step, rel_pos=[-0.01962647  0.00464983  0.10353371], rel_quat=[-0.0671948   0.98185887 -0.17730197  0.0014265 ]
+  [WELD] ACTIVATED at step, rel_pos=[0.00984965 0.00379451 0.11109244], rel_quat=[0.02988463 0.99269371 0.11288392 0.0303864 ]
+  [WELD] ACTIVATED at step, rel_pos=[0.01816314 0.00347641 0.10313066], rel_quat=[-9.77620163e-04  9.93144273e-01  1.15977772e-01  1.45826363e-02]
+[groot-infer] batch=1 envs, time=145ms, avg=206ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02769894 -0.00204447  0.10272421], rel_quat=[ 6.88472612e-04  9.99365369e-01 -3.54871568e-02  3.00797510e-03]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00278047 0.00066411 0.10616194], rel_quat=[ 0.01467864  0.99894673 -0.00536948  0.04314091]
+  [WELD] ACTIVATED at step, rel_pos=[-0.00043021  0.0011502   0.10161259], rel_quat=[0.01322398 0.99736771 0.06342101 0.03256604]
+[groot-infer] batch=1 envs, time=135ms, avg=217ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03171863 -0.00242722  0.09963384], rel_quat=[ 2.26462990e-04  9.99117551e-01 -4.19840938e-02  1.18496833e-03]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=108ms, avg=156ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03282904 -0.00285606  0.10333534], rel_quat=[-0.00610625  0.99927969 -0.03741839  0.0016352 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02037822 -0.00862032  0.10746797], rel_quat=[ 0.02978346  0.96892556 -0.24480181 -0.01919086]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01899499 -0.0076417   0.10621322], rel_quat=[ 0.00493813  0.97014004 -0.24137242 -0.02330824]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=111ms, avg=165ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.01636326 0.00699474 0.10492043], rel_quat=[0.06393037 0.99051633 0.11813779 0.02887509]
+[groot-infer] batch=7 envs, time=437ms, avg=178ms
+[groot-infer] batch=1 envs, time=121ms, avg=167ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02151859 -0.0058042   0.1015217 ], rel_quat=[ 0.02824417  0.98281961 -0.18233977 -0.00448233]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03035386 -0.0147914   0.10629404], rel_quat=[-0.04581756  0.95458115 -0.29437005  0.00467538]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=127ms, avg=161ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03105046 -0.01524276  0.10554547], rel_quat=[-0.05410015  0.95143103 -0.30289116  0.01044571]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02200597 -0.00716585  0.10042653], rel_quat=[ 0.00779147  0.98095509 -0.19396439  0.00665033]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=134ms, avg=158ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00375522 0.00188895 0.11159298], rel_quat=[0.01765209 0.98688699 0.15762022 0.02997212]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02077092 -0.00833516  0.09991276], rel_quat=[-0.02083499  0.98234826 -0.18579432  0.0061859 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02090345 -0.00406212  0.10428311], rel_quat=[-0.08473586  0.9960478  -0.01810733  0.0195126 ]
+  [WELD] ACTIVATED at step, rel_pos=[-0.02714889 -0.00284792  0.12309066], rel_quat=[-0.0030096   0.99799928  0.06270863  0.00748368]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=106ms, avg=154ms
+  [WELD] ACTIVATED at step, rel_pos=[0.0092907  0.00364085 0.10704816], rel_quat=[0.03506348 0.99376315 0.10166749 0.0294802 ]
+[groot-infer] batch=1 envs, time=108ms, avg=160ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00908434 -0.00311172  0.11368946], rel_quat=[-0.00914657  0.98313825 -0.17992482  0.03134611]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01026441 -0.00432623  0.11716451], rel_quat=[ 0.01290341  0.98266383 -0.18232629  0.03102311]
+[vecenv-timing] ik+reward=66.0ms build_obs(render)=53.3ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=119.3ms
+[groot-infer] batch=4 envs, time=342ms, avg=182ms
+  Seed 3: SR=73.3% (11/15) [123s]
+
+==================================================
+Seed 4...
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[MuJoCoResidualWrapper] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 24.78it/s]
+[MuJoCoResidualWrapper] GR00T loaded in 9.2s
+  [WELD] ACTIVATED at step, rel_pos=[0.0033589  0.00041658 0.1113482 ], rel_quat=[ 0.02193605  0.99888975 -0.00361366  0.04153338]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00932032 -0.00594644  0.10641559], rel_quat=[-0.03730979  0.98330577 -0.17539773  0.03087688]
+  [WELD] ACTIVATED at step, rel_pos=[0.00471715 0.00278643 0.10353292], rel_quat=[0.02180719 0.99891822 0.00291844 0.0409674 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02385208 -0.00543778  0.10510356], rel_quat=[ 0.00649459  0.98602636 -0.16309442 -0.03331728]
+  [WELD] ACTIVATED at step, rel_pos=[-0.02497057  0.0040451   0.10541153], rel_quat=[-0.07361685  0.9823118  -0.17182003  0.01104411]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[-0.0251423   0.00537893  0.10554685], rel_quat=[-0.06922562  0.98298059 -0.16988484  0.00980331]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02658299 -0.00062342  0.09919709], rel_quat=[ 0.01861258  0.99930528 -0.03080913  0.00966109]
+[groot-infer] batch=15 envs, time=674ms, avg=719ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02318007 -0.00746169  0.1022651 ], rel_quat=[-0.0085684   0.98505672 -0.17008306 -0.02572134]
+  [WELD] ACTIVATED at step, rel_pos=[-0.03023531  0.00616765  0.11996896], rel_quat=[-0.0738292   0.9838334  -0.16315442 -0.00131489]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02392183 -0.00443404  0.09987092], rel_quat=[ 0.05565608  0.98372986 -0.17080759  0.00165272]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02604345 -0.00654441  0.0964849 ], rel_quat=[ 0.06589391  0.9832312  -0.16952014  0.0133165 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02706791 -0.00697129  0.09523422], rel_quat=[ 0.05603537  0.9833142  -0.17070618  0.0285064 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02715128 -0.00572981  0.09596222], rel_quat=[ 0.05252547  0.9845279  -0.15859932  0.05284079]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03488667 -0.01080857  0.10007198], rel_quat=[-0.01737566  0.97955403 -0.19993741  0.01403636]
+  [WELD] ACTIVATED at step, rel_pos=[-0.00073495 -0.00018694  0.10742056], rel_quat=[0.0017182  0.99613451 0.08455722 0.02373096]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00963296 0.00629397 0.11144112], rel_quat=[0.06391906 0.99389838 0.08257438 0.03552245]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00950196 0.00590132 0.10873689], rel_quat=[0.07312528 0.99348294 0.08093952 0.0330627 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02758382 -0.0107751   0.10284554], rel_quat=[ 0.04612988  0.95382951 -0.29675997  0.00384903]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=104ms, avg=365ms
+  [WELD] ACTIVATED at step, rel_pos=[0.01789269 0.00677754 0.10392501], rel_quat=[0.03604017 0.99165263 0.1221768  0.01997499]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01956094 -0.00909978  0.10899058], rel_quat=[-0.037274    0.98632783 -0.1586707   0.02432434]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02028537 -0.00542853  0.11419788], rel_quat=[-0.01459381  0.98833125 -0.15047634  0.01858061]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=121ms, avg=184ms
+[groot-infer] batch=1 envs, time=159ms, avg=171ms
+  [WELD] ACTIVATED at step, rel_pos=[-0.00159114 -0.00160317  0.10990282], rel_quat=[-0.0139955   0.99295201  0.11480741  0.02587853]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02181712 -0.00785151  0.10636602], rel_quat=[ 0.0358593   0.96747969 -0.25027488 -0.00772272]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00356723 0.00424078 0.10848551], rel_quat=[0.05401353 0.99766813 0.01103411 0.04023782]
+[groot-infer] batch=7 envs, time=502ms, avg=260ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0124394  -0.00442409  0.10261475], rel_quat=[ 0.01034222  0.98635587 -0.16228478  0.02566699]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01037802 -0.00529313  0.10891439], rel_quat=[-0.01784096  0.98790863 -0.15048005  0.0327718 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01242511 -0.00346505  0.10193212], rel_quat=[ 0.01403099  0.98714277 -0.15719082  0.02536388]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=140ms, avg=163ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01249528 -0.00343003  0.10293842], rel_quat=[ 0.01560906  0.99082551 -0.13158489  0.02658171]
+  [WELD] ACTIVATED at step, rel_pos=[0.0047247  0.00284124 0.10861364], rel_quat=[0.02664114 0.984842   0.16859552 0.03085509]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=112ms, avg=154ms
+  [WELD] ACTIVATED at step, rel_pos=[0.02712045 0.00101163 0.10301642], rel_quat=[ 0.0110521   0.99951117 -0.02874233  0.00539941]
+  [WELD] ACTIVATED at step, rel_pos=[-5.29418385e-05  1.29258721e-03  1.05242289e-01], rel_quat=[0.02348745 0.99181605 0.12326236 0.02357225]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.031837   -0.00931538  0.10787732], rel_quat=[ 0.01053163  0.97003622 -0.24257947  0.00860313]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02694629 -0.00095487  0.10194034], rel_quat=[ 0.01699369  0.99957217 -0.02322102  0.00524248]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=117ms, avg=156ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02518391 -0.00197046  0.10585809], rel_quat=[-0.01768714  0.99957434 -0.02148442  0.00875882]
+  [WELD] ACTIVATED at step, rel_pos=[-0.00339902  0.00072388  0.11372265], rel_quat=[0.02009702 0.99560807 0.08911048 0.02049405]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=110ms, avg=143ms
+[groot-infer] batch=1 envs, time=150ms, avg=160ms
+[groot-infer] batch=3 envs, time=264ms, avg=178ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02881353 -0.00736701  0.10741797], rel_quat=[ 0.0656644   0.9769306  -0.20317678  0.00374074]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=141ms, avg=174ms
+  [WELD] ACTIVATED at step, rel_pos=[0.01008163 0.00684486 0.1076897 ], rel_quat=[0.04271979 0.98770882 0.14499392 0.03978779]
+[groot-infer] batch=1 envs, time=111ms, avg=161ms
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=128ms, avg=156ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01243923 -0.0053244   0.11128392], rel_quat=[-0.01106069  0.9889101  -0.14603834  0.02464321]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03014426 -0.01287032  0.10261184], rel_quat=[-0.01580085  0.9464726  -0.32227903 -0.00872791]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=116ms, avg=151ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00500315 0.00379935 0.10622622], rel_quat=[0.06955761 0.9965417  0.01704287 0.04214163]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00897529 -0.00561217  0.10243838], rel_quat=[-0.0510008   0.98514462 -0.1616733   0.02739969]
+[groot-infer] batch=1 envs, time=120ms, avg=163ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00905496 -0.0046566   0.10527336], rel_quat=[-0.0585086   0.99121309 -0.1147242   0.03019441]
+[groot-infer] batch=1 envs, time=115ms, avg=153ms
+[groot-infer] batch=1 envs, time=113ms, avg=161ms
+[vecenv-timing] ik+reward=67.7ms build_obs(render)=57.6ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=125.4ms
+  Seed 4: SR=73.3% (11/15) [128s]
+
+==================================================
+SUMMARY (base)
+  Seeds: [0, 1, 2, 3, 4]
+  Seed 0: SR=66.7%
+  Seed 1: SR=73.3%
+  Seed 2: SR=73.3%
+  Seed 3: SR=73.3%
+  Seed 4: SR=73.3%
+  Mean SR: 72.0% ± 2.7%
+==================================================
+
+Per-env SR (averaged over seeds):
+  env 0: 100%
+  env 1: 100%
+  env 2: 80%
+  env 3: 100%
+  env 4: 80%
+  env 5: 100%
+  env 6: 60%
+  env 7: 80%
+  env 8: 60%
+  env 9: 100%
+  env10: 80%
+  env11: 100%
+  env12: 0%
+  env13: 0%
+  env14: 40%
+
+Saved: outputs/eval_multiseed/base_policy/results.json

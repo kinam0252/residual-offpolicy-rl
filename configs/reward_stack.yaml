@@ -1,0 +1,33 @@
+# Reward configuration for Stack Cube task
+# Matches the dense reward in mujoco_vec_env_stack.py _compute_reward()
+#
+# reward[t] = approach + grasp + proximity + success
+# Features come from post-step state (shifted internally by compute_reward_from_features)
+
+stages:
+  approach:
+    weight: 0.15
+    type: tanh_decay
+    feature: tcp_white_dist
+    scale: 0.10
+    condition: null  # always active
+
+  grasp:
+    weight: 0.10
+    type: flat
+    condition: grasped  # flat bonus when grasped
+
+  proximity:
+    weight: 0.40
+    type: tanh_decay
+    feature: white_to_green_top_3d
+    scale: 0.08
+    condition: grasped  # only when holding cube
+
+  success:
+    weight: 0.35
+    type: flat
+    condition: success  # white_z > green_z AND contact
+
+clip_min: 0.0
+clip_max: 1.0

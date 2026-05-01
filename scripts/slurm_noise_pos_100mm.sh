@@ -2,7 +2,7 @@
 #SBATCH --partition=core
 #SBATCH --qos=core-own
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --time=2:00:00
 #SBATCH --job-name=noise_pos_100mm

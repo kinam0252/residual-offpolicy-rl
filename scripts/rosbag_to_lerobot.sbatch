@@ -2,7 +2,7 @@
 #SBATCH --job-name=rosbag2lerobot
 #SBATCH --partition=core
 #SBATCH --qos=core-extra
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --time=02:00:00
 #SBATCH --output=/home/nas_main/kinamkim/Repos/Intern/scripts/slurm_rosbag2lerobot_%j.out

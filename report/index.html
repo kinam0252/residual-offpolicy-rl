@@ -27,7 +27,7 @@
 <div class="container">
 
 <h1>MuJoCo Residual RL — Reports</h1>
-<p class="subtitle">GR00T VLA + Residual TD3 fine-tuning on Franka FR3 | Updated 2026-04-20</p>
+<p class="subtitle">GR00T VLA + Residual TD3 fine-tuning on Franka FR3 | Updated 2026-04-29</p>
 
 <h2>📦 Common — Shared Infrastructure</h2>
 
@@ -41,33 +41,67 @@
   <div class="desc">Multi-env 병렬 평가: 고정 위치 configs, 배치 eval, SR 측정 방법론</div>
 </div>
 
-<h2>🟦 Cube Lift</h2>
+<h2>🟦 Cube Lift <span class="badge badge-green">100% SR</span></h2>
 
 <div class="card">
-  <div class="title"><a href="lift/training_experiments.html">Training Experiments</a> <span class="badge badge-green">100% SR</span></div>
-  <div class="desc">Cube Lift 학습 실험 전체: R1-R3 라운드, v57/v71 100% SR 달성, multi-seed 검증, 난이도별 분석</div>
+  <div class="title"><a href="lift/environment.html">Environment & Physics</a></div>
+  <div class="desc">물리 세팅, MuJoCo 파라미터, 큐브/그리퍼 설정, obs/action space, 카메라 구성</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="lift/training.html">Training Experiments</a></div>
+  <div class="desc">Residual TD3 학습: R1-R3 라운드, v57/v71 100% SR 달성, multi-seed 검증, 난이도별 분석</div>
 </div>
 
 <div class="card">
   <div class="title"><a href="lift/act_residual_plan.html">ACT Base Policy + Residual RL Plan</a></div>
-  <div class="desc">ACT(Action Chunking Transformer) base policy + residual RL 통합 계획: LeRobot 데이터셋, wrapper 설계</div>
+  <div class="desc">ACT base policy + residual RL 통합 계획: LeRobot 데이터셋, wrapper 설계</div>
 </div>
 
-<h2>🟥 Pick-and-Place</h2>
+<h2>🟥 Pick-and-Place <span class="badge badge-yellow">86.7% SR</span></h2>
 
 <div class="card">
-  <div class="title"><a href="pnp/residual_td3_experiments.html">Residual TD3 Experiments</a> <span class="badge badge-yellow">73.3% → ongoing</span></div>
-  <div class="desc">PnP 학습 실험: 3 라운드 (gamma sweep → sparse+L2 → dense+moderate L2), E3 best config (L2=5.0, 80% SR), lift 대비 분석, reward/speed 비교, 실패 원인 진단</div>
-</div>
-
-<div class="card">
-  <div class="title"><a href="pnp/physics_grasping.html">Physics-Based Grasping</a></div>
-  <div class="desc">Kinematic → physics sim 전환: weld constraint, 마찰/질량 파라미터 튜닝, grasp 안정성</div>
+  <div class="title"><a href="pnp/environment.html">Environment & Physics</a></div>
+  <div class="desc">물리 세팅, 큐브/보울/그리퍼 파라미터, contact-based grasp, reward design, obs/action space</div>
 </div>
 
 <div class="card">
-  <div class="title"><a href="pnp/data_pipeline.html">Data Collection & Training Pipeline</a></div>
+  <div class="title"><a href="pnp/training.html">Training Experiments</a></div>
+  <div class="desc">Residual TD3 학습: Round 1-4 (gamma sweep → sparse+L2 → dense+moderate L2 → dense_v3), best 86.7% SR</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="pnp/data_pipeline.html">Data Pipeline</a></div>
   <div class="desc">Offline 데이터 수집 파이프라인: GR00T rollout, npz 포맷, sparse relabeling, 난이도별 수집</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="pnp/physics_grasping.html">Physics Grasping (Legacy)</a></div>
+  <div class="desc">Kinematic → physics sim 전환 기록: weld constraint, 마찰/질량 파라미터 튜닝 히스토리</div>
+</div>
+
+<h2>🟩 Stack Cube <span class="badge badge-green">~64% SR</span></h2>
+
+<div class="card">
+  <div class="title"><a href="stack_cube/environment.html">Environment & Physics</a></div>
+  <div class="desc">물리 세팅, 두 큐브(white/green) 설정, gripper raw meter 이슈, PnP/Lift 비교, TODO</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="stack_cube/training.html">Training Experiments</a></div>
+  <div class="desc">RL 학습 (완료): L2=5 γ=0.95 best, 57%→64% avg (+7%p), 82% peak. 18+ experiments, all killed at plateau</div>
+</div>
+
+<div class="card">
+  <div class="title"><a href="stack_cube/data_pipeline.html">Data Pipeline</a></div>
+  <div class="desc">CSV → MuJoCo 3-phase replay → LeRobot v2.1 (66ep, 19,941 frames), gripper normalization 분석</div>
+</div>
+
+<h2>📊 Cross-Task Analysis <span class="badge badge-blue">New</span></h2>
+
+<div class="card">
+  <div class="title"><a href="trajectory_analysis.html">Trajectory Analysis: Base vs Residual</a></div>
+  <div class="desc">Per-position SR 비교, episode length 효율성(−21%), smoothness(jerk) 분석, residual temporal profile. PnP + Stack 고정 위치 eval</div>
 </div>
 
 </div>

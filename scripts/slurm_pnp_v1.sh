@@ -2,7 +2,7 @@
 #SBATCH --partition=core
 #SBATCH --qos=core-extra
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --job-name=mj_pnp_v1
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_pnp_v1_%j.out

@@ -3,7 +3,7 @@
 #SBATCH --partition=core
 #SBATCH --qos=core-extra
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --time=72:00:00
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_v35_nol2_off80_%j.out

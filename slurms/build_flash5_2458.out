@@ -1,0 +1,43 @@
+. ~/.venvs/groot/bin/activate && export CUDA_HOME=$HOME/miniconda3 && export PATH=$HOME/cuda-tools/bin:$PATH && export LD_LIBRARY_PATH=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cublas/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cudnn/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cufft/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusolver/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusparse/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nvjitlink/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nccl/lib:$HOME/miniconda3/lib:~/.local/lib/gl:${LD_LIBRARY_PATH:-} && export CC=$HOME/cuda-tools/bin/gcc CXX=$HOME/cuda-tools/bin/g++ && cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl && echo '=== verify ===' && which pip && which python && which nvcc && which gcc && nvcc --version | tail -1 && python -c 'import torch; print(torch.__version__)' && echo '=== build ===' && pip uninstall flash-attn -y 2>/dev/null; MAX_JOBS=14 pip install flash-attn --no-build-isolation --no-cache-dir 2>&1
+=== verify ===
+/home/nas_main/kinamkim/.venvs/groot/bin/pip
+/home/nas_main/kinamkim/.venvs/groot/bin/python
+/home/nas_main/kinamkim/cuda-tools/bin/nvcc
+/home/nas_main/kinamkim/cuda-tools/bin/gcc
+Build cuda_13.0.r13.0/compiler.36424714_0
+2.9.0+cu130
+=== build ===
+Collecting flash-attn
+  Downloading flash_attn-2.8.3.tar.gz (8.4 MB)
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.4/8.4 MB 51.1 MB/s  0:00:00
+  Preparing metadata (pyproject.toml): started
+  Preparing metadata (pyproject.toml): finished with status 'done'
+Requirement already satisfied: torch in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from flash-attn) (2.9.0+cu130)
+Requirement already satisfied: einops in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from flash-attn) (0.8.1)
+Requirement already satisfied: filelock in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (3.25.2)
+Requirement already satisfied: typing-extensions>=4.10.0 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (4.15.0)
+Requirement already satisfied: sympy>=1.13.3 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (1.14.0)
+Requirement already satisfied: networkx>=2.5.1 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (3.4.2)
+Requirement already satisfied: jinja2 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (3.1.6)
+Requirement already satisfied: fsspec>=0.8.5 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (2025.3.0)
+Requirement already satisfied: nvidia-cuda-nvrtc==13.0.48 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (13.0.48)
+Requirement already satisfied: nvidia-cuda-runtime==13.0.48 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (13.0.48)
+Requirement already satisfied: nvidia-cuda-cupti==13.0.48 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (13.0.48)
+Requirement already satisfied: nvidia-cudnn-cu13==9.13.0.50 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (9.13.0.50)
+Requirement already satisfied: nvidia-cublas==13.0.0.19 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (13.0.0.19)
+Requirement already satisfied: nvidia-cufft==12.0.0.15 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (12.0.0.15)
+Requirement already satisfied: nvidia-curand==10.4.0.35 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (10.4.0.35)
+Requirement already satisfied: nvidia-cusolver==12.0.3.29 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (12.0.3.29)
+Requirement already satisfied: nvidia-cusparse==12.6.2.49 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (12.6.2.49)
+Requirement already satisfied: nvidia-cusparselt-cu13==0.8.0 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (0.8.0)
+Requirement already satisfied: nvidia-nccl-cu13==2.27.7 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (2.27.7)
+Requirement already satisfied: nvidia-nvshmem-cu13==3.3.24 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (3.3.24)
+Requirement already satisfied: nvidia-nvtx==13.0.39 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (13.0.39)
+Requirement already satisfied: nvidia-nvjitlink==13.0.39 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (13.0.39)
+Requirement already satisfied: nvidia-cufile==1.15.0.42 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (1.15.0.42)
+Requirement already satisfied: triton==3.5.0 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from torch->flash-attn) (3.5.0)
+Requirement already satisfied: mpmath<1.4,>=1.1.0 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from sympy>=1.13.3->torch->flash-attn) (1.3.0)
+Requirement already satisfied: MarkupSafe>=2.0 in /home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages (from jinja2->torch->flash-attn) (3.0.3)
+Building wheels for collected packages: flash-attn
+  Building wheel for flash-attn (pyproject.toml): started
+[2026-04-30T07:11:35.989] error: *** JOB 2458 ON worker-2 CANCELLED AT 2026-04-30T07:11:35 DUE to SIGNAL Terminated ***

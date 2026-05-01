@@ -3,7 +3,7 @@
 #SBATCH --partition=sub
 #SBATCH --qos=core-on-sub
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --exclude=worker-8
 #SBATCH --output=/home/nas_main/kinamkim/slurms/col100k_p12_%j.out

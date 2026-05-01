@@ -2,7 +2,7 @@
 #SBATCH --job-name=mj_memtest
 #SBATCH --partition=core
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --time=0-00:30:00
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_memtest_%j.out

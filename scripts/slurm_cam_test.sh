@@ -4,7 +4,7 @@
 #SBATCH --qos=core-own
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --gres=gpu:1
 #SBATCH --output=/home/nas_main/kinamkim/slurms/cam_test_%j.out

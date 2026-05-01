@@ -1,0 +1,9 @@
+. ~/.venvs/groot/bin/activate && export LD_LIBRARY_PATH=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cublas/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cudnn/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cufft/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusolver/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusparse/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nvjitlink/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nccl/lib:~/.local/lib/gl:${LD_LIBRARY_PATH:-} && export CUDA_HOME=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13 && export PATH=$CUDA_HOME/bin:$PATH && cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl && echo '=== which ===' && which gcc 2>&1; which g++ 2>&1; which cc 2>&1; echo '=== ls gcc ===' && ls /usr/bin/gcc* 2>&1; ls /usr/bin/g++* 2>&1; echo '=== PATH ===' && echo $PATH && echo '=== find gcc ===' && find /usr -name 'gcc' -o -name 'g++' 2>/dev/null | head -10
+=== which ===
+=== ls gcc ===
+ls: cannot access '/usr/bin/gcc*': No such file or directory
+ls: cannot access '/usr/bin/g++*': No such file or directory
+=== PATH ===
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/bin:/home/nas_main/kinamkim/.venvs/groot/bin:/home/nas_main/kinamkim/.local/bin:/home/nas_main/kinamkim/bin:/home/nas_main/kinamkim/.local/state/fnm_multishells/1854602_1777531915307/bin:/home/nas_main/kinamkim/.local/share/fnm:/home/nas_main/kinamkim/bin:/home/nas_main/kinamkim/.local/bin:/usr/local/cuda-13.0/bin:/opt/conda/bin:/mnt/system/.slurm-install/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+=== find gcc ===
+/usr/share/gcc

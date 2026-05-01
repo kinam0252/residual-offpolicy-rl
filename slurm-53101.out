@@ -1,0 +1,411 @@
+Running: python3 scripts/eval_pnp_video.py --output-dir outputs/eval_video_v2/E3_L2_5.0 --seed 0 --positions-file configs/pnp_eval_hard.json --checkpoint outputs/pnp_train_fixed_env/as0.1_of0.0_cw5000_ns3_l25.0_g0.9_s42/checkpoints/best.pt --label E3_L2=5.0
+=== PnP Video Eval: E3_L2=5.0 ===
+Positions: 15 envs
+Seed: 0
+Checkpoint: outputs/pnp_train_fixed_env/as0.1_of0.0_cw5000_ns3_l25.0_g0.9_s42/checkpoints/best.pt
+
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/transformers/utils/hub.py:105: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[PnP] Found 2 finger collision geom(s)
+[MuJoCoResidualWrapper] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000...
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:205: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:236: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+`use_fast` is set to `True` but the image processor class does not have a fast version.  Falling back to the slow version.
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:00<00:00, 25.34it/s]
+[MuJoCoResidualWrapper] GR00T loaded in 10.6s
+[QAgent] Building DEPTH encoder for 'observation.depth.front': shape=(1, 84, 84)
+[VitEncoder] Non-standard in_channels=1 (obs_shape=(1, 84, 84))
+[QAgent] Building DEPTH encoder for 'observation.depth.wrist': shape=(1, 84, 84)
+[VitEncoder] Non-standard in_channels=1 (obs_shape=(1, 84, 84))
+[QAgent] Total encoders: 2, rl_cameras: ['observation.depth.front', 'observation.depth.wrist']
+encoder output dim:  20736
+patch output dim:  128
+[QAgent] ASYMMETRIC mode: critic uses 2 cameras (repr_dim=20736), actor is state-only
+Object state: 10D will be concatenated to prop
+[QAgent] total_prop_dim=20 (prop=10 + vlm_proj=0 + obj_state=10)
+[QAgent] repr_dim=20736, patch_repr_dim=128
+[QAgent] Asymmetric: actor repr_dim=0 (state-only), critic repr_dim=20736
+[Actor] State-only: policy_in_dim=27 (prop_dim=27)
+============encoder weights=============
+ModuleList(
+  (0-1): 2 x VitEncoder(
+    (vit): MinVit(
+      (patch_embed): PatchEmbed2(
+        (embed): Sequential(
+          (0): Conv2d(1, 128, kernel_size=(8, 8), stride=(4, 4))
+          (1): Identity()
+          (2): ReLU()
+          (3): Conv2d(128, 128, kernel_size=(3, 3), stride=(2, 2))
+        )
+      )
+      (net): Sequential(
+        (0): TransformerLayer(
+          (layer_norm1): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (mha): MultiHeadAttention(
+            (qkv_proj): Linear(in_features=128, out_features=384, bias=True)
+            (out_proj): Linear(in_features=128, out_features=128, bias=True)
+          )
+          (layer_norm2): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+          (linear1): Linear(in_features=128, out_features=512, bias=True)
+          (linear2): Linear(in_features=512, out_features=128, bias=True)
+          (dropout): Dropout(p=0, inplace=False)
+        )
+      )
+      (norm): LayerNorm((128,), eps=1e-05, elementwise_affine=True)
+    )
+  )
+)
+| Module                           |   #Params |      % |
+|----------------------------------+-----------+--------|
+| 0.vit.pos_embed                  |    10,368 |   1.42 |
+| 0.vit.patch_embed.embed.0.weight |     8,192 |   1.12 |
+| 0.vit.patch_embed.embed.0.bias   |       128 |   0.02 |
+| 0.vit.patch_embed.embed.3.weight |   147,456 |  20.21 |
+| 0.vit.patch_embed.embed.3.bias   |       128 |   0.02 |
+| 0.vit.net.0.layer_norm1.weight   |       128 |   0.02 |
+| 0.vit.net.0.layer_norm1.bias     |       128 |   0.02 |
+| 0.vit.net.0.mha.qkv_proj.weight  |    49,152 |   6.74 |
+| 0.vit.net.0.mha.qkv_proj.bias    |       384 |   0.05 |
+| 0.vit.net.0.mha.out_proj.weight  |    16,384 |   2.25 |
+| 0.vit.net.0.mha.out_proj.bias    |       128 |   0.02 |
+| 0.vit.net.0.layer_norm2.weight   |       128 |   0.02 |
+| 0.vit.net.0.layer_norm2.bias     |       128 |   0.02 |
+| 0.vit.net.0.linear1.weight       |    65,536 |   8.98 |
+| 0.vit.net.0.linear1.bias         |       512 |   0.07 |
+| 0.vit.net.0.linear2.weight       |    65,536 |   8.98 |
+| 0.vit.net.0.linear2.bias         |       128 |   0.02 |
+| 0.vit.norm.weight                |       128 |   0.02 |
+| 0.vit.norm.bias                  |       128 |   0.02 |
+| 1.vit.pos_embed                  |    10,368 |   1.42 |
+| 1.vit.patch_embed.embed.0.weight |     8,192 |   1.12 |
+| 1.vit.patch_embed.embed.0.bias   |       128 |   0.02 |
+| 1.vit.patch_embed.embed.3.weight |   147,456 |  20.21 |
+| 1.vit.patch_embed.embed.3.bias   |       128 |   0.02 |
+| 1.vit.net.0.layer_norm1.weight   |       128 |   0.02 |
+| 1.vit.net.0.layer_norm1.bias     |       128 |   0.02 |
+| 1.vit.net.0.mha.qkv_proj.weight  |    49,152 |   6.74 |
+| 1.vit.net.0.mha.qkv_proj.bias    |       384 |   0.05 |
+| 1.vit.net.0.mha.out_proj.weight  |    16,384 |   2.25 |
+| 1.vit.net.0.mha.out_proj.bias    |       128 |   0.02 |
+| 1.vit.net.0.layer_norm2.weight   |       128 |   0.02 |
+| 1.vit.net.0.layer_norm2.bias     |       128 |   0.02 |
+| 1.vit.net.0.linear1.weight       |    65,536 |   8.98 |
+| 1.vit.net.0.linear1.bias         |       512 |   0.07 |
+| 1.vit.net.0.linear2.weight       |    65,536 |   8.98 |
+| 1.vit.net.0.linear2.bias         |       128 |   0.02 |
+| 1.vit.norm.weight                |       128 |   0.02 |
+| 1.vit.norm.bias                  |       128 |   0.02 |
+| Total                            |   729,600 | 100.00 |
+=============critic weights=============
+Critic(
+  (q_ensemble): SpatialEmbQEnsemble(
+    heads: 10, weight: nn.Parameter (torch.Size([1, 128, 1024]))
+    (input_proj): Sequential(
+      (0): Linear(in_features=189, out_features=1024, bias=True)
+      (1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+      (2): ReLU(inplace=True)
+    )
+    (_head_template): HeadMLP(
+      (net): Sequential(
+        (0): Linear(in_features=1051, out_features=256, bias=True)
+        (1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (2): ReLU()
+        (3): Linear(in_features=256, out_features=256, bias=True)
+        (4): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (5): ReLU()
+        (6): Linear(in_features=256, out_features=1, bias=True)
+      )
+    )
+  )
+)
+| Module                                 |   #Params |      % |
+|----------------------------------------+-----------+--------|
+| q_ensemble.weight                      |   131,072 |   3.25 |
+| q_ensemble._vmap_param_net_0_weight    | 2,690,560 |  66.80 |
+| q_ensemble._vmap_param_net_0_bias      |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_1_weight    |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_1_bias      |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_3_weight    |   655,360 |  16.27 |
+| q_ensemble._vmap_param_net_3_bias      |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_4_weight    |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_4_bias      |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_6_weight    |     2,560 |   0.06 |
+| q_ensemble._vmap_param_net_6_bias      |        10 |   0.00 |
+| q_ensemble.input_proj.0.weight         |   193,536 |   4.80 |
+| q_ensemble.input_proj.0.bias           |     1,024 |   0.03 |
+| q_ensemble.input_proj.1.weight         |     1,024 |   0.03 |
+| q_ensemble.input_proj.1.bias           |     1,024 |   0.03 |
+| q_ensemble._head_template.net.0.weight |   269,056 |   6.68 |
+| q_ensemble._head_template.net.0.bias   |       256 |   0.01 |
+| q_ensemble._head_template.net.1.weight |       256 |   0.01 |
+| q_ensemble._head_template.net.1.bias   |       256 |   0.01 |
+| q_ensemble._head_template.net.3.weight |    65,536 |   1.63 |
+| q_ensemble._head_template.net.3.bias   |       256 |   0.01 |
+| q_ensemble._head_template.net.4.weight |       256 |   0.01 |
+| q_ensemble._head_template.net.4.bias   |       256 |   0.01 |
+| q_ensemble._head_template.net.6.weight |       256 |   0.01 |
+| q_ensemble._head_template.net.6.bias   |         1 |   0.00 |
+| Total                                  | 4,027,915 | 100.00 |
+=============actor weights==============
+Actor(
+  (policy): Sequential(
+    (0): Linear(in_features=27, out_features=256, bias=True)
+    (1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+    (2): Dropout(p=0, inplace=False)
+    (3): ReLU()
+    (4): Linear(in_features=256, out_features=256, bias=True)
+    (5): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+    (6): Dropout(p=0, inplace=False)
+    (7): ReLU()
+    (8): Linear(in_features=256, out_features=7, bias=True)
+    (9): Tanh()
+  )
+)
+| Module          |   #Params |      % |
+|-----------------+-----------+--------|
+| policy.0.weight |     6,912 |   9.12 |
+| policy.0.bias   |       256 |   0.34 |
+| policy.1.weight |       256 |   0.34 |
+| policy.1.bias   |       256 |   0.34 |
+| policy.4.weight |    65,536 |  86.48 |
+| policy.4.bias   |       256 |   0.34 |
+| policy.5.weight |       256 |   0.34 |
+| policy.5.bias   |       256 |   0.34 |
+| policy.8.weight |     1,792 |   2.36 |
+| policy.8.bias   |         7 |   0.01 |
+| Total           |    75,783 | 100.00 |
+[QAgent] Asymmetric: encoder trains for critic only (729600 params)
+[QAgent._prepare_prop] Object state concat: 10D + 10D = 20D
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0095127  -0.00469579  0.10364225], rel_quat=[-0.02806037  0.98607983 -0.1609468   0.0309082 ]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02773189 -0.00122073  0.10665787], rel_quat=[ 0.00682089  0.9991281  -0.04074263  0.00604655]
+  [WELD] ACTIVATED at step, rel_pos=[0.02398717 0.0064656  0.10447443], rel_quat=[0.02465288 0.99525049 0.09241146 0.01813315]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.02442562 0.00707835 0.10343614], rel_quat=[0.03410642 0.99483445 0.09410028 0.0169208 ]
+  [WELD] ACTIVATED at step, rel_pos=[0.00563989 0.00259102 0.10386337], rel_quat=[0.03197947 0.99849976 0.00634647 0.04399158]
+  [WELD] DEACTIVATED
+[groot-infer] batch=15 envs, time=631ms, avg=701ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00468307 0.00025816 0.1085406 ], rel_quat=[0.00933529 0.99927069 0.01742633 0.03266897]
+  [WELD] ACTIVATED at step, rel_pos=[0.0221237  0.00701192 0.10805608], rel_quat=[0.04570044 0.99419956 0.09522285 0.02028095]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02478843 -0.00800131  0.10879998], rel_quat=[ 0.00919087  0.98390646 -0.17671699 -0.02479329]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02734588 -0.00682962  0.1111683 ], rel_quat=[ 0.0094179   0.98568719 -0.16729571 -0.01855307]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02678861 -0.00500262  0.10640438], rel_quat=[ 0.01496158  0.9810522  -0.19307357  0.00594421]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02790037 -0.00860047  0.10265602], rel_quat=[ 0.02543256  0.98175688 -0.18786013  0.01466928]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.0013524  0.00048834 0.10678514], rel_quat=[0.00776014 0.99800951 0.05567652 0.02858199]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03947836 -0.0049899   0.099291  ], rel_quat=[ 0.00136958  0.98649971 -0.16205475  0.02355238]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02521873 -0.01151449  0.10572135], rel_quat=[-0.02919779  0.9745285  -0.22209231  0.01080286]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02724197 -0.00884655  0.1054007 ], rel_quat=[-0.01862081  0.98161928 -0.18963549 -0.01073466]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02635387 -0.01151109  0.10427088], rel_quat=[-0.02581251  0.97375344 -0.22521093  0.0204448 ]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.027422   -0.01028587  0.10433899], rel_quat=[-0.01898876  0.98153058 -0.19014403 -0.00907747]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0151874  -0.00659569  0.10789892], rel_quat=[-0.03443708  0.98643284 -0.1585141   0.02525134]
+  [WELD] ACTIVATED at step, rel_pos=[0.01004579 0.00511227 0.10643401], rel_quat=[0.06019406 0.99320422 0.09357929 0.03413153]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02371607 -0.00911962  0.1040855 ], rel_quat=[-0.03226653  0.98123687 -0.18880413 -0.02204718]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01508881 -0.00466018  0.11238758], rel_quat=[-0.06393646  0.99435309 -0.07728274  0.03466183]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=112ms, avg=389ms
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=117ms, avg=197ms
+  [WELD] ACTIVATED at step, rel_pos=[-0.0201276   0.00366977  0.10621573], rel_quat=[-0.04914892  0.98831199 -0.1442468  -0.00408042]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.0065668  -0.00025098  0.10188167], rel_quat=[-0.00158056  0.99888207 -0.0462523   0.00963472]
+[groot-infer] batch=1 envs, time=103ms, avg=186ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01002677 -0.00445535  0.10300049], rel_quat=[-0.01724482  0.9853706  -0.16681917  0.03031114]
+[groot-infer] batch=1 envs, time=102ms, avg=145ms
+  [WELD] ACTIVATED at step, rel_pos=[0.00255106 0.00246715 0.11378668], rel_quat=[0.05546886 0.99765423 0.0030335  0.04000051]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.00999514 -0.00446007  0.10443619], rel_quat=[-0.02016414  0.98730608 -0.15440095  0.03131225]
+  [WELD] ACTIVATED at step, rel_pos=[0.02844892 0.00143269 0.10663621], rel_quat=[ 0.04502981  0.99855941 -0.02399625  0.01660135]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=110ms, avg=138ms
+  [WELD] ACTIVATED at step, rel_pos=[0.0087046  0.00623715 0.15547683], rel_quat=[-0.18865507  0.96833371 -0.16083521 -0.02951479]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=114ms, avg=150ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.03036837 -0.00136036  0.10146048], rel_quat=[ 0.00811539  0.999338   -0.03510388  0.00504244]
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=107ms, avg=135ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02899593 -0.00053539  0.10793842], rel_quat=[ 0.03379894  0.99897886 -0.02918272  0.00687226]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02448379 -0.01032245  0.10597167], rel_quat=[ 0.03032421  0.90198483 -0.42861664  0.04232715]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02469175 -0.00942181  0.10471787], rel_quat=[ 0.0298992   0.90287645 -0.42636927  0.04614534]
+[groot-infer] batch=1 envs, time=111ms, avg=139ms
+[groot-infer] batch=1 envs, time=119ms, avg=154ms
+[groot-infer] batch=4 envs, time=241ms, avg=155ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02023454 -0.00855442  0.10398387], rel_quat=[ 0.01458284  0.97250427 -0.23041709 -0.03050828]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02091512 -0.00736471  0.10188249], rel_quat=[ 0.00811499  0.97289397 -0.22817225 -0.03672721]
+  [WELD] ACTIVATED at step, rel_pos=[0.00930738 0.00611116 0.10662457], rel_quat=[0.07025797 0.98770323 0.13430922 0.03830378]
+[groot-infer] batch=1 envs, time=109ms, avg=134ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01971837 -0.00933129  0.10642849], rel_quat=[ 0.01446814  0.97041576 -0.2400493  -0.02145375]
+  [WELD] ACTIVATED at step, rel_pos=[0.00393218 0.00438166 0.10722436], rel_quat=[0.05223559 0.97958025 0.19235669 0.02632261]
+  [WELD] ACTIVATED at step, rel_pos=[ 0.02385126 -0.00826782  0.10021719], rel_quat=[ 0.00280749  0.98027321 -0.19717262  0.01339841]
+  [WELD] DEACTIVATED
+  [WELD] DEACTIVATED
+[groot-infer] batch=1 envs, time=111ms, avg=141ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01907587 -0.00910415  0.10246098], rel_quat=[-1.32962724e-02  9.76055542e-01 -2.17114345e-01  3.86877341e-04]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01832077 -0.00897976  0.0986527 ], rel_quat=[-0.01488174  0.97688921 -0.21322468 -0.00111174]
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01724917 -0.00988128  0.09871302], rel_quat=[-0.02056022  0.97688444 -0.21276132  0.00258795]
+[groot-infer] batch=2 envs, time=159ms, avg=147ms
+  [WELD] DEACTIVATED
+  [WELD] ACTIVATED at step, rel_pos=[0.00343472 0.00472474 0.10841838], rel_quat=[0.06438655 0.98306555 0.16895979 0.02981754]
+  [WELD] ACTIVATED at step, rel_pos=[0.00051739 0.00028146 0.10945918], rel_quat=[0.00747008 0.99909756 0.00388694 0.04163121]
+[groot-infer] batch=2 envs, time=139ms, avg=141ms
+[groot-infer] batch=1 envs, time=106ms, avg=138ms
+  [WELD] ACTIVATED at step, rel_pos=[ 0.01389345 -0.00740452  0.11060846], rel_quat=[-0.02792965  0.97871198 -0.2013015   0.0286445 ]
+[groot-infer] batch=2 envs, time=162ms, avg=157ms
+[vecenv-timing] ik+reward=65.2ms build_obs(render)=30.2ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=95.4ms
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 0: succ | steps=190 | cum_R=27.99 | max_r=0.892 → outputs/eval_video_v2/E3_L2_5.0/env00_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 1: succ | steps=189 | cum_R=26.87 | max_r=0.911 → outputs/eval_video_v2/E3_L2_5.0/env01_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 2: succ | steps=249 | cum_R=42.51 | max_r=0.911 → outputs/eval_video_v2/E3_L2_5.0/env02_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 3: succ | steps=187 | cum_R=28.58 | max_r=0.904 → outputs/eval_video_v2/E3_L2_5.0/env03_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 4: succ | steps=263 | cum_R=28.79 | max_r=0.896 → outputs/eval_video_v2/E3_L2_5.0/env04_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 5: succ | steps=211 | cum_R=28.99 | max_r=0.638 → outputs/eval_video_v2/E3_L2_5.0/env05_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 6: fail | steps=500 | cum_R=13.68 | max_r=0.234 → outputs/eval_video_v2/E3_L2_5.0/env06_fail.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 7: succ | steps=284 | cum_R=39.53 | max_r=0.904 → outputs/eval_video_v2/E3_L2_5.0/env07_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 8: succ | steps=360 | cum_R=37.31 | max_r=0.909 → outputs/eval_video_v2/E3_L2_5.0/env08_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env 9: succ | steps=263 | cum_R=27.13 | max_r=0.900 → outputs/eval_video_v2/E3_L2_5.0/env09_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env10: succ | steps=479 | cum_R=42.10 | max_r=0.899 → outputs/eval_video_v2/E3_L2_5.0/env10_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env11: succ | steps=330 | cum_R=29.43 | max_r=0.863 → outputs/eval_video_v2/E3_L2_5.0/env11_succ.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env12: fail | steps=500 | cum_R=15.21 | max_r=0.034 → outputs/eval_video_v2/E3_L2_5.0/env12_fail.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env13: fail | steps=500 | cum_R=5.08 | max_r=0.027 → outputs/eval_video_v2/E3_L2_5.0/env13_fail.mp4
+IMAGEIO FFMPEG_WRITER WARNING: input image is not divisible by macro_block_size=16, resizing from (1280, 360) to (1280, 368) to ensure video compatibility with most codecs and players. To prevent resizing, make your input image divisible by the macro_block_size or set the macro_block_size to 1 (risking incompatibility).
+  env14: succ | steps=256 | cum_R=27.21 | max_r=0.883 → outputs/eval_video_v2/E3_L2_5.0/env14_succ.mp4
+
+  E3_L2=5.0: SR=80.0% (12/15) | avg_cum_R=28.03 in 143s

@@ -3,7 +3,7 @@
 #SBATCH --partition=sub
 #SBATCH --qos=core-on-sub
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_v102_70k_normal_%j.out
 #SBATCH --error=/home/nas_main/kinamkim/slurms/mj_v102_70k_normal_%j.err

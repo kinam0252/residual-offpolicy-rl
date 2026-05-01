@@ -2,7 +2,7 @@
 #SBATCH --job-name=mj_v6_sub
 #SBATCH --partition=sub
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=24
+#SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
 #SBATCH --time=24:00:00
 #SBATCH --output=/home/nas_main/kinamkim/slurms/mj_train_%j.out

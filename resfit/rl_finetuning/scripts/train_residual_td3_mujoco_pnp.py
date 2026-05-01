@@ -305,6 +305,8 @@ class AsyncEvaluator:
             cmd += ["--use_calibrated_wrist"]
         if not a.eval_perturb_table and not (hasattr(a, "eval_positions_file") and a.eval_positions_file) and a.random_cube_range:
             cmd += ["--random_cube_range", a.random_cube_range]
+        if not a.eval_perturb_table and not (hasattr(a, "eval_positions_file") and a.eval_positions_file) and a.random_bowl_range:
+            cmd += ["--random_bowl_range", a.random_bowl_range]
         # Only forward episode_positions_file when no fixed eval mode is active
         _has_fixed_eval = (hasattr(a, "eval_positions_file") and a.eval_positions_file) or a.eval_perturb_table
         if not _has_fixed_eval and hasattr(a, "episode_positions_file") and a.episode_positions_file:
@@ -453,6 +455,8 @@ def parse_args():
                    help="Path to JSON cube perturbation table (overrides --cube_pos and --num_envs)")
     p.add_argument("--random_cube_range", type=str, default=None,
                    help="JSON string: {dx: [lo,hi], dy: [lo,hi], yaw: [lo,hi]} in cm/degrees")
+    p.add_argument("--random_bowl_range", type=str, default=None,
+                   help="JSON string: {dx: [lo,hi], dy: [lo,hi]} in cm — independent bowl perturbation")
     p.add_argument("--eval_perturb_table", type=str, default=None,
                    help="Fixed perturb table for eval (overrides random_cube_range in eval only)")
     p.add_argument("--eval_positions_file", type=str, default=None,
@@ -467,7 +471,7 @@ def parse_args():
                    help="Use calibrated wrist cam from yaml (66ep/100ep). Default: hardcoded 15deg tilt (32ep).")
     p.add_argument("--max_episode_steps", type=int, default=300)
     p.add_argument("--success_threshold", type=float, default=0.03)
-    p.add_argument("--reward_type", type=str, default="dense_clipped", choices=["sparse", "dense", "dense_clipped", "dense_v2"])
+    p.add_argument("--reward_type", type=str, default="dense_clipped", choices=["sparse", "dense", "dense_clipped", "dense_v2", "dense_v3"])
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")
@@ -504,8 +508,8 @@ def parse_args():
     p.add_argument("--offline_data_dir", type=str, default=None)
     p.add_argument("--offline_fraction", type=float, default=0.5)
     p.add_argument("--offline_reward_relabel", type=str, default="none",
-                   choices=["none", "sparse"],
-                   help="Relabel offline rewards: 'sparse' uses success field")
+                   choices=["none", "sparse", "dense_v3"],
+                   help="Relabel offline rewards: 'sparse' uses success field, 'dense_v3' recomputes dense_v3 reward")
     p.add_argument("--offline_pretrain_only", action="store_true",
                    help="Use offline data only for critic warmup, then switch to pure online")
     p.add_argument("--target_tau", type=float, default=None,
@@ -596,6 +600,21 @@ def main():
             random_cube_range = _cvt_one(_parsed_rcr)
             _log(f"Random cube range: dx={_parsed_rcr['dx']}cm dy={_parsed_rcr['dy']}cm yaw={_parsed_rcr.get('yaw', [0,0])}°")
 
+    # Parse random bowl range if provided
+    random_bowl_range = None
+    if args.random_bowl_range:
+        import json as _json_bowl
+        _parsed_rbr = _json_bowl.loads(args.random_bowl_range)
+        def _cvt_bowl(r):
+            if r is None: return None
+            return {"dx": (r["dx"][0]/100.0, r["dx"][1]/100.0), "dy": (r["dy"][0]/100.0, r["dy"][1]/100.0)}
+        if isinstance(_parsed_rbr, list):
+            random_bowl_range = [_cvt_bowl(item) for item in _parsed_rbr]
+            _log(f"Random bowl range (list, {len(random_bowl_range)} levels): {args.random_bowl_range}")
+        else:
+            random_bowl_range = _cvt_bowl(_parsed_rbr)
+            _log(f"Random bowl range: dx={_parsed_rbr['dx']}cm dy={_parsed_rbr['dy']}cm")
+
 
     # Parse curriculum stages if provided
     _curriculum_stages = None
@@ -634,6 +653,7 @@ def main():
         cube_positions=cube_positions,
         cube_yaw_deg=args.cube_yaw,
         random_cube_range=random_cube_range,
+        random_bowl_range=random_bowl_range,
         scene_xml=args.scene_xml,
         calib_path=_calib_path,
         use_calibrated_wrist=_use_calibrated_wrist,

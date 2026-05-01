@@ -1,0 +1,17 @@
+set +e; . ~/.venvs/groot/bin/activate; echo 'SLURM vars:'; env | grep -i 'SLURM.*GPU\|CUDA\|VISIBLE' | sort; echo '---DEV---'; ls -la /dev/nvidia* 2>&1; echo '---PROC---'; cat /proc/driver/nvidia/gpus/*/information 2>&1 | head -20; echo '---PYTHON---'; python -c 'import os; print("CVD:", os.environ.get("CUDA_VISIBLE_DEVICES","NONE")); import torch; print("avail:",torch.cuda.is_available())' 2>&1; echo DONE
+SLURM vars:
+CUDA_HOME=/usr/local/cuda-13.0
+CUDA_VISIBLE_DEVICES=6
+LD_LIBRARY_PATH=/usr/local/cuda-13.0/lib64:/mnt/system/.slurm-install/lib:
+PATH=/home/nas_main/kinamkim/.venvs/groot/bin:/home/nas_main/kinamkim/.local/bin:/home/nas_main/kinamkim/bin:/home/nas_main/kinamkim/.local/state/fnm_multishells/920701_1777517276074/bin:/home/nas_main/kinamkim/.local/share/fnm:/home/nas_main/kinamkim/bin:/home/nas_main/kinamkim/.local/bin:/usr/local/cuda-13.0/bin:/opt/conda/bin:/mnt/system/.slurm-install/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin
+ROCR_VISIBLE_DEVICES=6
+SLURM_GPUS_ON_NODE=1
+SLURM_JOB_GPUS=6
+---DEV---
+ls: cannot access '/dev/nvidia*': No such file or directory
+---PROC---
+cat: '/proc/driver/nvidia/gpus/*/information': No such file or directory
+---PYTHON---
+CVD: 6
+avail: False
+DONE
