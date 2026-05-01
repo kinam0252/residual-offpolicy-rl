@@ -254,10 +254,11 @@ class AsyncEvaluator:
       5. shutdown(): kills subprocess
     """
 
-    def __init__(self, args, checkpoint_dir: Path, results_dir: Path):
+    def __init__(self, args, checkpoint_dir: Path, results_dir: Path, action_scaler=None):
         self._args = args
         self._checkpoint_dir = checkpoint_dir
         self._results_dir = results_dir
+        self._action_scaler = action_scaler
         self._proc = None
         self._best_success = 0.0
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -311,6 +312,11 @@ class AsyncEvaluator:
             cmd += ["--use_calibrated_wrist"]
         if not a.eval_perturb_table and a.random_cube_range:
             cmd += ["--random_cube_range", a.random_cube_range]
+        # ActionScaler: pass scaler config to eval subprocess
+        if a.use_action_scaler and self._action_scaler is not None:
+            cmd += ["--use_action_scaler"]
+            cmd += ["--action_scaler_min"] + [str(x) for x in self._action_scaler.action_min]
+            cmd += ["--action_scaler_max"] + [str(x) for x in self._action_scaler.action_max]
         # W&B: log to same run as training
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [
@@ -831,7 +837,7 @@ def main():
     _async_eval = None
     if args.async_eval:
         _async_eval_dir = outputs_dir / "async_eval_results"
-        _async_eval = AsyncEvaluator(args, checkpoint_dir, _async_eval_dir)
+        _async_eval = AsyncEvaluator(args, checkpoint_dir, _async_eval_dir, action_scaler=_action_scaler)
         _wandb_run_id = _wb.run.id if (_wb is not None and _wb.run is not None) else None
         _async_eval.start(wandb_run_id=_wandb_run_id)
         _log("Async eval subprocess started")

@@ -73,6 +73,7 @@ from resfit.rl_finetuning.config.residual_td3_mujoco import ResidualTD3MuJoCoCon
 from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
 from resfit.rl_finetuning.wrappers.mujoco_residual_wrapper import MuJoCoResidualWrapper
 from resfit.rl_finetuning.wrappers.mujoco_vec_env import MuJoCoVecEnv
+from resfit.rl_finetuning.utils.normalization import ActionScaler
 
 try:
     import wandb
@@ -212,6 +213,13 @@ def parse_args():
     p.add_argument("--residual_grip_scale", type=float, default=0.5)
     p.add_argument("--ema_alpha", type=float, default=0.0)
     p.add_argument("--action_scale", type=float, default=0.1)
+    # ActionScaler
+    p.add_argument("--use_action_scaler", action="store_true",
+                   help="Use data-driven ActionScaler for pos+grip")
+    p.add_argument("--action_scaler_min", type=float, nargs="+", default=None,
+                   help="ActionScaler min values (pos_x, pos_y, pos_z, grip)")
+    p.add_argument("--action_scaler_max", type=float, nargs="+", default=None,
+                   help="ActionScaler max values (pos_x, pos_y, pos_z, grip)")
     # Agent
     p.add_argument("--actor_hidden_dim", type=int, default=256)
     p.add_argument("--critic_hidden_dim", type=int, default=256)
@@ -294,6 +302,18 @@ def main():
     )
 
     policy_device = args.groot_policy_device or args.device
+
+    # Build ActionScaler if requested (must match training)
+    _action_scaler = None
+    if args.use_action_scaler and args.action_scaler_min and args.action_scaler_max:
+        import numpy as np
+        _action_scaler = ActionScaler(
+            action_min=np.array(args.action_scaler_min, dtype=np.float32),
+            action_max=np.array(args.action_scaler_max, dtype=np.float32),
+            action_scale=args.action_scale,
+        )
+        _log(f"ActionScaler created for eval (action_scale={args.action_scale})")
+
     env = MuJoCoResidualWrapper(
         vec_env=mujoco_env,
         groot_checkpoint=args.groot_checkpoint,
@@ -305,6 +325,7 @@ def main():
         residual_rot_scale=args.residual_rot_scale,
         residual_grip_scale=args.residual_grip_scale,
         ema_alpha=args.ema_alpha,
+        action_scaler=_action_scaler,
     )
     _log("Eval environment ready.")
 
