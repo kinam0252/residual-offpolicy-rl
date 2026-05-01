@@ -315,8 +315,8 @@ class AsyncEvaluator:
         # ActionScaler: pass scaler config to eval subprocess
         if a.use_action_scaler and self._action_scaler is not None:
             cmd += ["--use_action_scaler"]
-            cmd += ["--action_scaler_min"] + [str(x) for x in self._action_scaler.action_min]
-            cmd += ["--action_scaler_max"] + [str(x) for x in self._action_scaler.action_max]
+            cmd += ["--action_scaler_min"] + [str(x) for x in self._action_scaler.action_min.tolist()]
+            cmd += ["--action_scaler_max"] + [str(x) for x in self._action_scaler.action_max.tolist()]
         # W&B: log to same run as training
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [

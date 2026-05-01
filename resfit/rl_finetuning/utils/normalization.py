@@ -55,9 +55,11 @@ class ActionScaler:
         self.action_scale = action_scale
         self.min_range_per_dim = min_range_per_dim
 
-        # Move inputs to device
+        # Move inputs to device and store originals for serialization
         action_min = action_min.to(self.device)
         action_max = action_max.to(self.device)
+        self.action_min = action_min
+        self.action_max = action_max
 
         # Compute action center and half-range
         action_mid = (action_min + action_max) / 2

@@ -306,10 +306,9 @@ def main():
     # Build ActionScaler if requested (must match training)
     _action_scaler = None
     if args.use_action_scaler and args.action_scaler_min and args.action_scaler_max:
-        import numpy as np
         _action_scaler = ActionScaler(
-            action_min=np.array(args.action_scaler_min, dtype=np.float32),
-            action_max=np.array(args.action_scaler_max, dtype=np.float32),
+            action_min=torch.tensor(args.action_scaler_min, dtype=torch.float32),
+            action_max=torch.tensor(args.action_scaler_max, dtype=torch.float32),
             action_scale=args.action_scale,
         )
         _log(f"ActionScaler created for eval (action_scale={args.action_scale})")

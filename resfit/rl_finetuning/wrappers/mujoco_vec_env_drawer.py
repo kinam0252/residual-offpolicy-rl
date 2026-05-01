@@ -86,11 +86,11 @@ FLOOR_TO_DRAWER = {3: 2, 4: 3, 5: 4}
 ACTIVE_DRAWERS = [2, 3, 4]
 
 # Demo mean contact positions (normalised Y/Z on drawer face)
-# Measured from policy eval with ckpt-100k base policy
+# Measured from demo parquet replay (33 episodes, debug_demo_replay_full.py)
 DEMO_CONTACT_MEAN = {
-    2: {"y_norm": -0.015, "z_norm": 0.275},
-    3: {"y_norm": -0.045, "z_norm": 0.268},
-    4: {"y_norm": -0.069, "z_norm": -0.262},
+    2: {"y_norm": -0.0795, "z_norm": 0.9794},
+    3: {"y_norm": -0.1100, "z_norm": 0.9844},
+    4: {"y_norm": -0.1518, "z_norm": 0.9713},
 }
 
 # Physics substeps computed at runtime
