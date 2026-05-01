@@ -330,7 +330,7 @@ def main():
 
     # ── Create agent (same architecture) ──
     _asymmetric = args.asymmetric_critic
-    object_state_dim = 10 if _asymmetric else 0
+    object_state_dim = 7 if _asymmetric else 0
     if _asymmetric:
         image_keys = ["observation.depth.front", "observation.depth.wrist"]
         img_c, img_h, img_w = 1, 84, 84
