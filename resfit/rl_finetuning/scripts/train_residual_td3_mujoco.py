@@ -78,6 +78,7 @@ from resfit.rl_finetuning.config.residual_td3_mujoco import ResidualTD3MuJoCoCon
 from resfit.rl_finetuning.off_policy.common_utils import utils
 from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
 from resfit.rl_finetuning.utils.dtype import to_uint8
+from resfit.rl_finetuning.utils.normalization import ActionScaler
 from resfit.rl_finetuning.utils.rb_transforms import MultiStepTransform
 from resfit.rl_finetuning.wrappers.mujoco_residual_wrapper import MuJoCoResidualWrapper
 from resfit.rl_finetuning.wrappers.mujoco_vec_env import MuJoCoVecEnv
@@ -97,15 +98,51 @@ def _log(msg: str) -> None:
     print(f"[mujoco-td3] {msg}", flush=True)
 
 
+def _compute_action_stats_from_offline(data_dir: str) -> dict:
+    """Scan offline .npz files and compute per-dim min/max for 4D pos+grip actions.
 
+    Returns dict with 'min' and 'max' keys, each a list of 4 floats
+    [pos_x, pos_y, pos_z, grip].
+    Base actions in the npz are stored as ``obs_base_action`` in 7D
+    (pos3 + euler3 + grip1).  We extract pos(0:3) and grip(6).
+    """
+    from pathlib import Path as _P
+    from scipy.spatial.transform import Rotation as _Rot
+
+    npz_files = sorted(_P(data_dir).rglob("*.npz"))
+    if not npz_files:
+        raise FileNotFoundError(f"No .npz files found in {data_dir}")
+
+    all_pg = []  # collect pos+grip arrays
+    for npz_path in npz_files:
+        data = np.load(str(npz_path), allow_pickle=True)
+        ba = data["obs_base_action"].astype(np.float32)  # (N, 7)
+        pg = np.concatenate([ba[:, :3], ba[:, 6:7]], axis=-1)  # (N, 4)
+        all_pg.append(pg)
+
+    all_pg = np.concatenate(all_pg, axis=0)  # (total, 4)
+    stats = {
+        "min": all_pg.min(axis=0).tolist(),
+        "max": all_pg.max(axis=0).tolist(),
+    }
+    _log(f"Action stats (pos+grip, {len(all_pg)} samples):")
+    labels = ["pos_x", "pos_y", "pos_z", "grip"]
+    for i, lb in enumerate(labels):
+        _log(f"  {lb}: [{stats['min'][i]:.4f}, {stats['max'][i]:.4f}]")
+    return stats
 def _load_offline_data(
     offline_rb,
     data_dir: str,
     image_keys: list,
     lowdim_keys: list,
     device: str = "cpu",
+    action_scaler=None,
 ) -> None:
-    """Load offline .npz files into the replay buffer (vectorised)."""
+    """Load offline .npz files into the replay buffer (vectorised).
+
+    If ``action_scaler`` is provided, normalizes pos+grip dims of
+    ``observation.base_action`` to [-1, 1] for consistency with online data.
+    """
     from pathlib import Path as _P
     npz_files = sorted(_P(data_dir).rglob("*.npz"))
     if not npz_files:
@@ -120,9 +157,19 @@ def _load_offline_data(
         has_depth = "obs_depth_front" in data
 
         # Build obs tensors (all at once)
+        ba_t = torch.from_numpy(data["obs_base_action"].astype(np.float32))  # (N, 7)
+
+        # Normalize pos+grip dims if ActionScaler is provided
+        if action_scaler is not None:
+            pg = torch.cat([ba_t[:, :3], ba_t[:, 6:7]], dim=-1)  # (N, 4)
+            pg_norm = action_scaler.scale(pg)
+            ba_t = ba_t.clone()
+            ba_t[:, :3] = pg_norm[:, :3]
+            ba_t[:, 6] = pg_norm[:, 3]
+
         obs_td = {
             "observation.state": torch.from_numpy(data["obs_state"].astype(np.float32)),
-            "observation.base_action": torch.from_numpy(data["obs_base_action"].astype(np.float32)),
+            "observation.base_action": ba_t,
         }
         if "observation.object_state" in lowdim_keys:
             obs_td["observation.object_state"] = torch.from_numpy(
@@ -426,6 +473,9 @@ def parse_args():
     p.add_argument("--residual_pos_scale", type=float, default=0.02)
     p.add_argument("--residual_rot_scale", type=float, default=0.05)
     p.add_argument("--residual_grip_scale", type=float, default=0.1)
+    p.add_argument("--use_action_scaler", action="store_true",
+                   help="Use data-driven ActionScaler for pos+grip instead of physical scales. "
+                        "Requires --offline_data_dir for computing action stats.")
     p.add_argument("--ema_alpha", type=float, default=0.0, help="EMA smoothing for GR00T base action (0=off, 0.9=heavy)")
     # Algorithm
     p.add_argument("--total_timesteps", type=int, default=50_000)
@@ -581,6 +631,21 @@ def main():
     )
     _log(f"MuJoCo env: {args.num_envs} envs, cube_pos={args.cube_pos}")
 
+    # ── Build ActionScaler if requested ──
+    _action_scaler = None
+    if args.use_action_scaler:
+        if not args.offline_data_dir:
+            raise ValueError("--use_action_scaler requires --offline_data_dir to compute action stats")
+        _log("Computing action stats from offline data for ActionScaler...")
+        _action_stats = _compute_action_stats_from_offline(args.offline_data_dir)
+        _action_scaler = ActionScaler(
+            action_min=torch.tensor(_action_stats["min"], dtype=torch.float32),
+            action_max=torch.tensor(_action_stats["max"], dtype=torch.float32),
+            action_scale=args.action_scale,  # expands range by (1 + action_scale)
+            device="cpu",
+        )
+        _log(f"ActionScaler created (action_scale={args.action_scale})")
+
     # ── Wrap with residual + GR00T ──
     _log("Creating residual wrapper with GR00T policy...")
     policy_device = args.groot_policy_device or args.device
@@ -595,6 +660,7 @@ def main():
         residual_rot_scale=args.residual_rot_scale,
         residual_grip_scale=args.residual_grip_scale,
         ema_alpha=args.ema_alpha,
+        action_scaler=_action_scaler,
     )
     _log("Environment ready.")
 
@@ -684,6 +750,8 @@ def main():
             "buffer_size": args.buffer_size,
             "image_keys": sorted(image_keys),
             "lowdim_keys": sorted(lowdim_keys),
+            "use_action_scaler": args.use_action_scaler,
+            "action_scale": args.action_scale if args.use_action_scaler else None,
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key_dict, sort_keys=True).encode()).hexdigest()[:16]
         _cache_root = Path(__file__).resolve().parents[3] / "buffer_cache"
@@ -709,6 +777,7 @@ def main():
                 image_keys=image_keys,
                 lowdim_keys=lowdim_keys,
                 device="cpu",
+                action_scaler=_action_scaler,
             )
             _log(f"Offline buffer populated: {len(offline_rb)} transitions")
             # Save cache for next run

@@ -6,10 +6,21 @@ agent.  The wrapper:
 
 1. Queries GR00T for a 16-token action chunk (absolute pos + quat + grip).
 2. The RL agent outputs a 7-D residual delta (pos3 + euler3 + grip1).
-3. Residual is applied on top of the base absolute action:
-   - ``combined_pos = base_pos + residual_pos × scale``
-   - ``combined_quat = base_quat ⊗ euler2quat(residual_euler × scale)``
-   - ``combined_grip = clamp(base_grip + residual_grip × scale, 0, 1)``
+3. Residual is applied on top of the base absolute action.
+
+Two modes for combining residual with base action:
+
+**ActionScaler mode** (``action_scaler is not None``):
+   - Base pos+grip are normalized to [-1, 1] via data-driven min-max.
+   - Residual pos+grip are added in normalized space, then unscaled.
+   - Rotation uses delta composition: ``base_quat ⊗ euler2quat(residual_euler × rot_scale)``
+   - ``action_scale`` controls what fraction of the action range the residual can cover.
+
+**Physical scale mode** (legacy, ``action_scaler is None``):
+   - ``combined_pos = base_pos + residual_pos × pos_scale``
+   - ``combined_quat = base_quat ⊗ euler2quat(residual_euler × rot_scale)``
+   - ``combined_grip = clamp(base_grip + residual_grip × grip_scale, 0, 1)``
+
 4. The combined absolute target is passed to ``MuJoCoVecEnv.step()``.
 
 Exposes the same interface as ``IsaacLabResidualWrapper`` so the training
@@ -72,11 +83,12 @@ class MuJoCoResidualWrapper:
         task_description: str = "lift the cube",
         action_horizon: int = 16,
         open_loop_horizon: int = 16,
-        residual_pos_scale: float = 0.02,   # metres
-        residual_rot_scale: float = 0.05,   # radians
-        residual_grip_scale: float = 0.1,
+        residual_pos_scale: float = 0.02,   # metres (legacy mode only)
+        residual_rot_scale: float = 0.05,   # radians (always used for rotation)
+        residual_grip_scale: float = 0.1,   # (legacy mode only)
         action_clip: float = 1.0,
         ema_alpha: float = 0.0,
+        action_scaler=None,  # ActionScaler for data-driven pos+grip normalization
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -89,6 +101,14 @@ class MuJoCoResidualWrapper:
         self.residual_grip_scale = residual_grip_scale
         self.action_clip = action_clip
         self.task_description = task_description
+        self.action_scaler = action_scaler
+
+        if action_scaler is not None:
+            print("[MuJoCoResidualWrapper] Using ActionScaler mode (data-driven pos+grip normalization)")
+            print(f"  rot_scale={residual_rot_scale:.4f} rad (always physical)")
+        else:
+            print(f"[MuJoCoResidualWrapper] Using legacy physical scale mode "
+                  f"(pos={residual_pos_scale}, rot={residual_rot_scale}, grip={residual_grip_scale})")
 
         # ── Load GR00T policy ──
         self._skip_groot = str(
@@ -381,29 +401,68 @@ class MuJoCoResidualWrapper:
         """Combine base absolute action with residual delta.
 
         Returns (N, 8) combined absolute action.
+
+        If ``self.action_scaler`` is set, pos and grip dimensions are combined
+        in normalized [-1, 1] space (data-driven).  Rotation always uses delta
+        composition with ``residual_rot_scale``.
         """
         combined = np.zeros_like(base_action)
 
-        for i in range(self.num_envs):
-            base_pos = base_action[i, :3]
-            base_quat_xyzw = base_action[i, 3:7]
-            base_grip = base_action[i, 7]
+        if self.action_scaler is not None:
+            # ── ActionScaler mode: pos+grip in normalized space ──
+            import torch as _torch
+            scaler = self.action_scaler
 
-            res_pos = residual[i, :3] * self.residual_pos_scale
-            res_euler = residual[i, 3:6] * self.residual_rot_scale
-            res_grip = residual[i, 6] * self.residual_grip_scale
+            for i in range(self.num_envs):
+                base_pos = base_action[i, :3]       # (3,)
+                base_quat_xyzw = base_action[i, 3:7]
+                base_grip = base_action[i, 7:8]     # (1,)
 
-            # Position: additive
-            combined[i, :3] = base_pos + res_pos
+                # Build 4D vector [pos3, grip1] for scaling
+                base_pg = np.concatenate([base_pos, base_grip])  # (4,)
+                base_pg_t = _torch.from_numpy(base_pg).float().unsqueeze(0)
+                base_pg_norm = scaler.scale(base_pg_t)  # → [-1, 1]
 
-            # Orientation: compose base quat with residual rotation
-            base_rot = Rotation.from_quat(base_quat_xyzw)
-            delta_rot = Rotation.from_euler("xyz", res_euler)
-            combined_rot = base_rot * delta_rot
-            combined[i, 3:7] = combined_rot.as_quat()  # xyzw
+                # Residual pos+grip (already in [-action_scale, action_scale])
+                res_pg = np.concatenate([residual[i, :3], residual[i, 6:7]])  # (4,)
+                res_pg_t = _torch.from_numpy(res_pg).float().unsqueeze(0)
 
-            # Gripper: additive, clamped
-            combined[i, 7] = np.clip(base_grip + res_grip, 0.0, 1.0)
+                # Combine in normalized space
+                combined_pg_norm = base_pg_norm + res_pg_t
+                combined_pg = scaler.unscale(combined_pg_norm)  # → physical
+                combined_pg_np = combined_pg.squeeze(0).numpy()
+
+                combined[i, :3] = combined_pg_np[:3]
+                combined[i, 7] = np.clip(combined_pg_np[3], 0.0, 1.0)
+
+                # Rotation: always delta composition with physical scale
+                res_euler = residual[i, 3:6] * self.residual_rot_scale
+                base_rot = Rotation.from_quat(base_quat_xyzw)
+                delta_rot = Rotation.from_euler("xyz", res_euler)
+                combined_rot = base_rot * delta_rot
+                combined[i, 3:7] = combined_rot.as_quat()
+        else:
+            # ── Legacy physical scale mode ──
+            for i in range(self.num_envs):
+                base_pos = base_action[i, :3]
+                base_quat_xyzw = base_action[i, 3:7]
+                base_grip = base_action[i, 7]
+
+                res_pos = residual[i, :3] * self.residual_pos_scale
+                res_euler = residual[i, 3:6] * self.residual_rot_scale
+                res_grip = residual[i, 6] * self.residual_grip_scale
+
+                # Position: additive
+                combined[i, :3] = base_pos + res_pos
+
+                # Orientation: compose base quat with residual rotation
+                base_rot = Rotation.from_quat(base_quat_xyzw)
+                delta_rot = Rotation.from_euler("xyz", res_euler)
+                combined_rot = base_rot * delta_rot
+                combined[i, 3:7] = combined_rot.as_quat()  # xyzw
+
+                # Gripper: additive, clamped
+                combined[i, 7] = np.clip(base_grip + res_grip, 0.0, 1.0)
 
         return combined
 
@@ -420,6 +479,9 @@ class MuJoCoResidualWrapper:
 
         Converts 8D absolute (pos3+quat4+grip1) to 7D (pos3+euler3+grip1)
         for QAgent compatibility.
+
+        If ``self.action_scaler`` is set, pos and grip dims are normalized to
+        [-1, 1] so the actor sees base_action in the same space as its output.
         """
         out = dict(raw_obs)
         ba_7d = np.zeros((base_action.shape[0], 7), dtype=np.float32)
@@ -431,6 +493,16 @@ class MuJoCoResidualWrapper:
                 ba_7d[i, 3:6] = Rotation.from_quat(quat_xyzw / qn).as_euler("xyz")
             # else: leave euler as zeros
             ba_7d[i, 6] = base_action[i, 7]  # grip
+
+        if self.action_scaler is not None:
+            # Normalize pos(3D) + grip(1D) via ActionScaler
+            pg = np.concatenate([ba_7d[:, :3], ba_7d[:, 6:7]], axis=-1)  # (N, 4)
+            pg_t = torch.from_numpy(pg).float()
+            pg_norm = self.action_scaler.scale(pg_t).numpy()
+            ba_7d[:, :3] = pg_norm[:, :3]
+            ba_7d[:, 6] = pg_norm[:, 3]
+            # euler dims stay unnormalized (rotation is handled separately)
+
         out["observation.base_action"] = torch.as_tensor(
             ba_7d, device=self.device, dtype=torch.float32,
         )
