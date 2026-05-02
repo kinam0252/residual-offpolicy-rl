@@ -5,10 +5,12 @@ Independent environment — does NOT modify Lift or PnP code.
 Uses make_model_with_two_cubes() from utils_stack.py.
 
 Key differences from PnP env:
-- Two cubes (white=pick, green=target) instead of cube+bowl
+- Two cubes (white=pick, green=target) both with freejoint
 - Gripper in RAW METERS (0.02–0.04), NOT normalised 0–1
 - FPS = 15 (matches GR00T training data)
 - Success = white cube stacked on green cube
+- Physics: DT=0.0002, high friction (20.0), finger squeeze, noslip
+- Grasp: physics-based (bilateral contact), weld constraint as backup
 """
 
 from __future__ import annotations
@@ -77,8 +79,20 @@ GRIPPER_MAX_WIDTH = 0.04   # fully open in meters
 GRIPPER_MIN_WIDTH = 0.0    # fully closed
 GRIPPER_CLOSE_THRESHOLD = 0.028  # from batch_replay_stack.py
 
-# Physics
-PHYSICS_SUBSTEPS = None  # Computed at runtime: round(1 / (FPS * model.opt.timestep))
+# Physics (matching batch_replay_stack.py 2026-05-01)
+DT = 0.0002
+FRANKA_GAINS = [4500, 4500, 3500, 3500, 2000, 2000, 2000]
+FRANKA_DAMPING = [450, 450, 350, 350, 200, 200, 200]
+FRANKA_TORQUE = [87, 87, 87, 87, 12, 12, 12]
+FINGER_GAIN = 10000.0
+FINGER_BIAS = -10000.0
+FINGER_SQUEEZE = 0.008  # extra squeeze when grasping
+FINGER_MARGIN = 0.003   # collision margin on finger geoms
+CUBE_FRICTION = (20.0, 10.0, 3.0)
+FINGER_FRICTION = (20.0, 10.0, 3.0)
+CONTACT_STIFFNESS = -500000
+CONTACT_DAMPING = -3000
+
 GRASP_CONTACT_THRESHOLD = 1
 
 # Stacking success criteria (from batch_replay_stack.py)
@@ -91,7 +105,8 @@ CUBE_SETTLED_VEL = 0.05  # m/s
 class MuJoCoVecEnvStack:
     """Vectorised MuJoCo environment for Franka FR3 cube stacking.
 
-    White cube (freejoint) must be picked and placed on top of green cube (static).
+    White cube (freejoint) must be picked and placed on top of green cube (freejoint).
+    Both cubes have physics-based dynamics. Grasp via high friction + finger squeeze.
     Gripper uses raw meter values matching GR00T training data.
     """
 
@@ -272,9 +287,6 @@ class MuJoCoVecEnvStack:
         white_qposadr = model.jnt_qposadr[white_jnt_id] if white_jnt_id >= 0 else None
         white_geom_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "white_cube_geom")
 
-        # Green cube (static — no joint)
-        green_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "green_cube")
-
         # Finger geom ids for contact detection
         finger_geom_ids = []
         for body_name in ("left_finger", "right_finger"):
@@ -298,42 +310,24 @@ class MuJoCoVecEnvStack:
             aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, jname)
             arm_actuator_ids.append(aid)
 
-        # Set finger friction for stable grasping (tuned from PnP experience)
-        for gid in finger_geom_ids:
-            model.geom_friction[gid] = [5.0, 0.5, 0.1]
-            model.geom_condim[gid] = 6
+        # ── Physics setup (matching batch_replay_stack.py) ──
+        model.opt.timestep = DT
+        self._setup_physics(model, ids, finger_geom_ids)
 
-        # Increase cube friction for physics-based grasping
-        # (batch_replay uses kinematic grasp so low friction was fine there)
-        for cname in ("white_cube_geom", "green_cube_geom"):
-            cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, cname)
-            if cid >= 0:
-                model.geom_friction[cid] = [5.0, 0.5, 0.1]
-                model.geom_condim[cid] = 6
-
-        # Increase finger kp for grasp force (now using new finger_joint1/2 actuators)
-        finger_actuator_ids = []
-        for fname in ("finger_joint1", "finger_joint2"):
-            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, fname)
-            if aid >= 0:
-                finger_actuator_ids.append(aid)
-
-        # Disable the original 'gripper' actuator if present (ctrlrange [0,255])
-        orig_grip_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper")
-        if orig_grip_aid >= 0:
-            model.actuator_gainprm[orig_grip_aid, 0] = 0.0
-            model.actuator_biasprm[orig_grip_aid, :] = 0.0
-
-        # Extend finger joint range
-        for fname in ("finger_joint1", "finger_joint2"):
-            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, fname)
-            if jid >= 0:
-                model.jnt_range[jid] = [-0.01, 0.04]
+        # Green cube (freejoint — dynamic)
+        green_body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, "green_cube")
+        green_jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "green_cube_joint")
+        green_qposadr = model.jnt_qposadr[green_jnt_id] if green_jnt_id >= 0 else None
 
         # Set initial positions
         if white_qposadr is not None:
             data.qpos[white_qposadr:white_qposadr + 3] = white_pos
             data.qpos[white_qposadr + 3:white_qposadr + 7] = white_quat_wxyz
+
+        # Green cube initial position (freejoint)
+        if green_qposadr is not None:
+            data.qpos[green_qposadr:green_qposadr + 3] = green_pos
+            data.qpos[green_qposadr + 3:green_qposadr + 7] = green_quat_wxyz
 
         # Reset robot to home
         for i, jid in enumerate(ids["jnt_ids"]):
@@ -346,7 +340,14 @@ class MuJoCoVecEnvStack:
         # Compute physics substeps from model timestep (matches batch_replay_stack.py:212)
         n_substeps = int(round(1.0 / (FPS * model.opt.timestep)))
 
-        # Weld constraint for sustained grasp
+        # Finger actuator IDs
+        finger_actuator_ids = []
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                finger_actuator_ids.append(aid)
+
+        # Weld constraint (keep for backward compat but default disabled)
         weld_eq_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_EQUALITY, "cube_grasp")
         if weld_eq_id >= 0:
             model.eq_active0[weld_eq_id] = 0
@@ -368,6 +369,7 @@ class MuJoCoVecEnvStack:
             "opt_base": opt_base,
             "opt_wrist": opt_wrist,
             "white_qposadr": white_qposadr,
+            "green_qposadr": green_qposadr,
             "white_pos_init": white_pos.copy(),
             "green_pos_init": green_pos.copy(),
             "white_quat_init": list(white_quat_wxyz),
@@ -380,6 +382,98 @@ class MuJoCoVecEnvStack:
             "finger_actuator_ids": finger_actuator_ids,
             "weld_eq_id": weld_eq_id,
         }
+
+    # ------------------------------------------------------------------
+    # Physics setup (ported from batch_replay_stack.py _setup_physics)
+    # ------------------------------------------------------------------
+
+    def _setup_physics(self, model, ids: dict, finger_geom_ids: list[int]) -> None:
+        """Configure physics to match batch_replay_stack.py (2026-05-01)."""
+
+        # ── Arm actuator gains, damping, torque limits ──
+        for i, jid in enumerate(ids["jnt_ids"]):
+            jname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_JOINT, jid)
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, jname)
+            if aid >= 0:
+                model.actuator_gainprm[aid, 0] = FRANKA_GAINS[i]
+                model.actuator_biasprm[aid, 1] = -FRANKA_GAINS[i]
+                model.actuator_biasprm[aid, 2] = -FRANKA_DAMPING[i]
+                # Torque limits
+                model.actuator_forcerange[aid] = [-FRANKA_TORQUE[i], FRANKA_TORQUE[i]]
+                model.actuator_ctrllimited[aid] = 0  # position-controlled
+
+        # ── Finger actuators: gain/bias + squeeze ──
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                model.actuator_gainprm[aid, 0] = FINGER_GAIN
+                model.actuator_biasprm[aid, 1] = FINGER_BIAS
+                model.actuator_biasprm[aid, 2] = -100.0  # small damping
+
+        # Disable the original 'gripper' actuator if present
+        orig_grip_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper")
+        if orig_grip_aid >= 0:
+            model.actuator_gainprm[orig_grip_aid, 0] = 0.0
+            model.actuator_biasprm[orig_grip_aid, :] = 0.0
+
+        # Extend finger joint range (allow slight negative for squeeze)
+        for fname in ("finger_joint1", "finger_joint2"):
+            jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, fname)
+            if jid >= 0:
+                model.jnt_range[jid] = [-0.01, 0.04]
+
+        # ── Finger geom: friction, condim, margin, pad replacement ──
+        for gid in finger_geom_ids:
+            model.geom_friction[gid] = list(FINGER_FRICTION)
+            model.geom_condim[gid] = 6
+            model.geom_margin[gid] = FINGER_MARGIN
+            model.geom_solref[gid] = [CONTACT_STIFFNESS, CONTACT_DAMPING]
+            model.geom_solimp[gid] = [0.99, 0.99, 0.001, 0.5, 2.0]
+
+        # Replace finger mesh with box pad (matches batch_replay_stack.py)
+        PAD_SIZE = np.array([0.0105, 0.012, 0.027])
+        for body_name, z_sign in [("left_finger", 1), ("right_finger", -1)]:
+            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            if bid < 0:
+                continue
+            for gid in range(model.ngeom):
+                if model.geom_bodyid[gid] == bid and model.geom_group[gid] == 3:
+                    # Convert to box type (3)
+                    model.geom_type[gid] = mujoco.mjtGeom.mjGEOM_BOX
+                    model.geom_size[gid, :3] = PAD_SIZE
+                    model.geom_pos[gid] = [0.0, 0.0, 0.04]
+                    # Disable original mesh collision if present
+                    gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gid)
+                    break
+
+        # ── Cube geoms: friction, contact params ──
+        for cname in ("white_cube_geom", "green_cube_geom"):
+            cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, cname)
+            if cid >= 0:
+                model.geom_friction[cid] = list(CUBE_FRICTION)
+                model.geom_condim[cid] = 6
+                model.geom_solref[cid] = [CONTACT_STIFFNESS, CONTACT_DAMPING]
+                model.geom_solimp[cid] = [0.99, 0.99, 0.001, 0.5, 2.0]
+
+        # ── Collision filtering: contype/conaffinity ──
+        # cubes=2, gripper+table=3 (cubes collide with gripper/table but not each other? 
+        # Actually 2&3 collide since 2&3 != 0, 2&2=2!=0 too — keep MSRA original)
+        for cname in ("white_cube_geom", "green_cube_geom"):
+            cid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, cname)
+            if cid >= 0:
+                model.geom_contype[cid] = 2
+                model.geom_conaffinity[cid] = 2
+        for gid in finger_geom_ids:
+            model.geom_contype[gid] = 3
+            model.geom_conaffinity[gid] = 3
+        # Table geom
+        table_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "table_top")
+        if table_id >= 0:
+            model.geom_contype[table_id] = 3
+            model.geom_conaffinity[table_id] = 3
+
+        # ── noslip_iterations ──
+        model.opt.noslip_iterations = 3
 
     # ------------------------------------------------------------------
     # Core API
@@ -522,8 +616,10 @@ class MuJoCoVecEnvStack:
                 data.ctrl[aid] = target_q
 
         # Finger actuators: raw meter gripper → finger joint target
-        # NO offset — matches batch_replay_stack.py (line 259: fp = clip(gw, 0.0, 0.04))
+        # Apply FINGER_SQUEEZE when gripper is closing (matches batch_replay_stack.py)
         finger_target = np.clip(gripper_width_raw, 0.0, GRIPPER_MAX_WIDTH)
+        if gripper_width_raw < GRIPPER_CLOSE_THRESHOLD:
+            finger_target = max(finger_target - FINGER_SQUEEZE, -0.005)
         for aid in env["finger_actuator_ids"]:
             data.ctrl[aid] = finger_target
 
@@ -633,10 +729,16 @@ class MuJoCoVecEnvStack:
             data.qpos[qa:qa + 3] = white_pos
             data.qpos[qa + 3:qa + 7] = white_quat
 
-        # Green cube position (static body)
-        green_body_id = env["green_body_id"]
-        if green_body_id >= 0:
-            model.body_pos[green_body_id] = green_pos
+        # Green cube position (freejoint)
+        green_qa = env["green_qposadr"]
+        if green_qa is not None:
+            data.qpos[green_qa:green_qa + 3] = green_pos
+            data.qpos[green_qa + 3:green_qa + 7] = [1, 0, 0, 0]  # identity quat wxyz
+        else:
+            # Fallback: static body
+            green_body_id = env["green_body_id"]
+            if green_body_id >= 0:
+                model.body_pos[green_body_id] = green_pos
 
         data.qvel[:] = 0.0
 
@@ -666,6 +768,17 @@ class MuJoCoVecEnvStack:
     # Internal: reward
     # ------------------------------------------------------------------
 
+    def _get_green_pos(self, env_idx: int) -> np.ndarray:
+        """Get green cube position (supports both freejoint and static body)."""
+        env = self._envs[env_idx]
+        green_qa = env["green_qposadr"]
+        if green_qa is not None:
+            return env["data"].qpos[green_qa:green_qa + 3].copy()
+        green_body_id = env["green_body_id"]
+        if green_body_id >= 0:
+            return env["model"].body_pos[green_body_id].copy()
+        return np.array(env["green_pos_init"], dtype=np.float64)
+
     def _compute_reward(self, env_idx: int) -> float:
         if self.reward_type == "sparse":
             return 1.0 if self._is_success(env_idx) else 0.0
@@ -681,8 +794,7 @@ class MuJoCoVecEnvStack:
         tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
         grasped = env["grasp_state"]["grasped"]
 
-        green_body_id = env["green_body_id"]
-        green_pos = model.body_pos[green_body_id].copy() if green_body_id >= 0 else env["green_pos_init"]
+        green_pos = self._get_green_pos(env_idx)
 
         tcp_white_dist = float(np.linalg.norm(tcp_pos - white_pos))
 
@@ -720,8 +832,7 @@ class MuJoCoVecEnvStack:
             return False
 
         white_pos = data.qpos[qa:qa + 3].copy()
-        green_body_id = env["green_body_id"]
-        green_pos = model.body_pos[green_body_id].copy() if green_body_id >= 0 else env["green_pos_init"]
+        green_pos = self._get_green_pos(env_idx)
 
         # White cube must be above green cube
         if white_pos[2] <= green_pos[2]:
@@ -823,8 +934,7 @@ class MuJoCoVecEnvStack:
             if qa is not None:
                 white_state[:3] = data.qpos[qa:qa + 3]
                 white_state[3:7] = data.qpos[qa + 3:qa + 7]
-            green_body_id = env["green_body_id"]
-            green_pos = model.body_pos[green_body_id].copy().astype(np.float32) if green_body_id >= 0 else np.array(env["green_pos_init"], dtype=np.float32)
+            green_pos = self._get_green_pos(i).astype(np.float32)
             object_states.append(np.concatenate([white_state, green_pos]))
 
         out: dict[str, torch.Tensor] = {}
@@ -920,11 +1030,7 @@ class MuJoCoVecEnvStack:
         return np.zeros(3)
 
     def get_green_cube_pos(self, env_idx: int) -> np.ndarray:
-        env = self._envs[env_idx]
-        gid = env["green_body_id"]
-        if gid >= 0:
-            return env["model"].body_pos[gid].copy()
-        return np.array(env["green_pos_init"])
+        return self._get_green_pos(env_idx)
 
     def close(self) -> None:
         for env in self._envs:

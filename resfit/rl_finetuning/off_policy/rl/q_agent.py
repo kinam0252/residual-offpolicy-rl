@@ -940,12 +940,13 @@ class QAgent(nn.Module):
         assert "observation.base_action" in obs, "update: missing observation.base_action in batch obs"
         state = obs["observation.state"]
         assert state.dim() == 2 and state.shape[0] == B, f"update: state shape {state.shape} vs batch {B}"
-        expected_state_dim = 10  # base state dim (before VLM concat)
-        assert state.shape[1] == expected_state_dim, (
-            f"update: state dim {state.shape[1]} != {expected_state_dim}. "
-            f"State must be 10D (EEF3+quat4+grip2+contact_force1). "
-            f"VLM concat happens later via _prepare_prop()."
-        )
+        if not self.state_only:
+            expected_state_dim = 10  # base state dim (before VLM concat)
+            assert state.shape[1] == expected_state_dim, (
+                f"update: state dim {state.shape[1]} != {expected_state_dim}. "
+                f"State must be 10D (EEF3+quat4+grip2+contact_force1). "
+                f"VLM concat happens later via _prepare_prop()."
+            )
         ba = obs["observation.base_action"]
         assert ba.dim() == 2 and ba.shape == (B, 7), f"update: base_action shape {ba.shape} != ({B},7)"
         for cam in self.rl_cameras:

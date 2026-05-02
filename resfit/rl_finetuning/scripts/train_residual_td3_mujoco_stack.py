@@ -625,7 +625,8 @@ def parse_args():
     p.add_argument("--wandb_project", type=str, default="mujoco-franka-stack-residual-td3")
     p.add_argument("--wandb_entity", type=str, default=None)
     p.add_argument("--wandb_name", type=str, default=None)
-    return p.parse_args()
+    p.add_argument("--no_offline_cache", action="store_true",
+                   help="Skip saving/loading offline buffer cache (avoids slow NAS I/O)")
     return p.parse_args()
 
 
@@ -851,7 +852,7 @@ def main():
         _cache_dir = _cache_root / f"offline_{_cache_hash}"
         _loaded_from_cache = False
 
-        if _cache_dir.exists() and (_cache_dir / "cache_meta.json").exists():
+        if not args.no_offline_cache and _cache_dir.exists() and (_cache_dir / "cache_meta.json").exists():
             try:
                 _t0 = time.time()
                 offline_rb.loads(str(_cache_dir))
@@ -876,15 +877,16 @@ def main():
             )
             _log(f"Offline buffer populated: {len(offline_rb)} transitions")
             # Save cache for next run
-            try:
-                _cache_dir.mkdir(parents=True, exist_ok=True)
-                _t0 = time.time()
-                offline_rb.dumps(str(_cache_dir))
-                _meta = {**_cache_key_dict, "num_transitions": len(offline_rb)}
-                (_cache_dir / "cache_meta.json").write_text(_json.dumps(_meta, indent=2))
-                _log(f"Saved offline cache (hash={_cache_hash}) in {time.time()-_t0:.1f}s")
-            except Exception as e:
-                _log(f"Warning: failed to save cache: {e}")
+            if not args.no_offline_cache:
+                try:
+                    _cache_dir.mkdir(parents=True, exist_ok=True)
+                    _t0 = time.time()
+                    offline_rb.dumps(str(_cache_dir))
+                    _meta = {**_cache_key_dict, "num_transitions": len(offline_rb)}
+                    (_cache_dir / "cache_meta.json").write_text(_json.dumps(_meta, indent=2))
+                    _log(f"Saved offline cache (hash={_cache_hash}) in {time.time()-_t0:.1f}s")
+                except Exception as e:
+                    _log(f"Warning: failed to save cache: {e}")
 
     # ── Resume checkpoint ──
     _resume_step = 0

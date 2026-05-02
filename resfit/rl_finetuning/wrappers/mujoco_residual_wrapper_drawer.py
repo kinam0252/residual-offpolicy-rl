@@ -48,7 +48,11 @@ _GRIP_MAX = 0.04
 
 
 class MuJoCoResidualWrapperDrawer:
-    """Combines GR00T base policy with residual RL on top of MuJoCoVecEnvDrawer."""
+    """Combines GR00T base policy with residual RL on top of MuJoCoVecEnvDrawer.
+
+    Supports ActionScaler mode (data-driven pos+grip normalization) matching
+    the cube lift wrapper implementation.
+    """
 
     def __init__(
         self,
@@ -64,6 +68,7 @@ class MuJoCoResidualWrapperDrawer:
         residual_grip_scale: float = 0.004,
         action_clip: float = 1.0,
         ema_alpha: float = 0.0,
+        action_scaler=None,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -76,6 +81,10 @@ class MuJoCoResidualWrapperDrawer:
         self.residual_grip_scale = residual_grip_scale
         self.action_clip = action_clip
         self.task_description = task_description
+        self.action_scaler = action_scaler
+
+        if action_scaler is not None:
+            print("[MuJoCoResidualWrapperDrawer] Using ActionScaler mode (data-driven pos+grip normalization)")
 
         # ── Load GR00T policy ──
         self._skip_groot = str(
@@ -147,11 +156,16 @@ class MuJoCoResidualWrapperDrawer:
             residual_np = np.asarray(residual_action)
 
         base_action = self._get_base_actions()
-        combined = self._combine_actions(base_action, residual_np)
+        combined, combined_naction_7d = self._combine_actions(base_action, residual_np)
         combined_t = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
         raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode="rl_only")
 
-        info["scaled_action"] = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
+        # ActionScaler mode: provide normalized combined for replay buffer
+        if self.action_scaler is not None and combined_naction_7d is not None:
+            info["scaled_action"] = torch.as_tensor(
+                combined_naction_7d, device=self.device, dtype=torch.float32)
+        else:
+            info["scaled_action"] = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
 
         for i in range(self.num_envs):
             self._chunk_idx[i] += 1
@@ -258,21 +272,65 @@ class MuJoCoResidualWrapperDrawer:
 
     def _combine_actions(self, base_action, residual):
         combined = np.zeros_like(base_action)
-        for i in range(self.num_envs):
-            base_pos = base_action[i, :3]
-            base_quat_xyzw = base_action[i, 3:7]
-            base_grip = base_action[i, 7]
-            res_pos = residual[i, :3] * self.residual_pos_scale
-            res_euler = residual[i, 3:6] * self.residual_rot_scale
-            res_grip = residual[i, 6] * self.residual_grip_scale
-            combined[i, :3] = base_pos + res_pos
-            base_rot = Rotation.from_quat(base_quat_xyzw)
-            delta_rot = Rotation.from_euler("xyz", res_euler)
-            combined_rot = base_rot * delta_rot
-            combined[i, 3:7] = combined_rot.as_quat()
-            # Close Drawer: gripper always closed (push task)
-            combined[i, 7] = 0.0
-        return combined
+        combined_naction_7d = None
+
+        if self.action_scaler is not None:
+            import torch as _torch
+            scaler = self.action_scaler
+            combined_naction_7d = np.zeros((self.num_envs, 7), dtype=np.float32)
+
+            for i in range(self.num_envs):
+                base_pos = base_action[i, :3]
+                base_quat_xyzw = base_action[i, 3:7]
+                base_grip = base_action[i, 7:8]
+
+                # Build 4D vector [pos3, grip1] for scaling
+                base_pg = np.concatenate([base_pos, base_grip])
+                base_pg_t = _torch.from_numpy(base_pg).float().unsqueeze(0)
+                base_pg_norm = scaler.scale(base_pg_t)
+
+                # Residual pos+grip in [-action_scale, action_scale]
+                res_pg = np.concatenate([residual[i, :3], residual[i, 6:7]])
+                res_pg_t = _torch.from_numpy(res_pg).float().unsqueeze(0)
+
+                # Combine in normalized space
+                combined_pg_norm = base_pg_norm + res_pg_t
+                combined_pg = scaler.unscale(combined_pg_norm)
+                combined_pg_np = combined_pg.squeeze(0).numpy()
+
+                combined[i, :3] = combined_pg_np[:3]
+                # Drawer: gripper always closed (push task)
+                combined[i, 7] = 0.0
+
+                # Rotation: delta composition with physical scale
+                res_euler = residual[i, 3:6] * self.residual_rot_scale
+                base_rot = Rotation.from_quat(base_quat_xyzw)
+                delta_rot = Rotation.from_euler("xyz", res_euler)
+                combined_rot = base_rot * delta_rot
+                combined[i, 3:7] = combined_rot.as_quat()
+
+                # Build 7D normalized combined for replay
+                combined_pg_norm_np = combined_pg_norm.squeeze(0).numpy()
+                combined_naction_7d[i, :3] = combined_pg_norm_np[:3]
+                combined_naction_7d[i, 3:6] = residual[i, 3:6]
+                combined_naction_7d[i, 6] = combined_pg_norm_np[3]
+        else:
+            for i in range(self.num_envs):
+                base_pos = base_action[i, :3]
+                base_quat_xyzw = base_action[i, 3:7]
+                base_grip = base_action[i, 7]
+                res_pos = residual[i, :3] * self.residual_pos_scale
+                res_euler = residual[i, 3:6] * self.residual_rot_scale
+                res_grip = residual[i, 6] * self.residual_grip_scale
+                combined[i, :3] = base_pos + res_pos
+                base_rot = Rotation.from_quat(base_quat_xyzw)
+                delta_rot = Rotation.from_euler("xyz", res_euler)
+                combined_rot = base_rot * delta_rot
+                combined[i, 3:7] = combined_rot.as_quat()
+                # Close Drawer: gripper always closed (push task)
+                combined[i, 7] = 0.0
+
+        return combined, combined_naction_7d
 
     def _augment_obs(self, raw_obs, base_action):
         out = dict(raw_obs)
@@ -284,6 +342,16 @@ class MuJoCoResidualWrapperDrawer:
             if qn > 1e-6:
                 ba_7d[i, 3:6] = Rotation.from_quat(quat_xyzw / qn).as_euler("xyz")
             ba_7d[i, 6] = base_action[i, 7]
+
+        if self.action_scaler is not None:
+            # Normalize pos(3D) + grip(1D) via ActionScaler
+            pg = np.concatenate([ba_7d[:, :3], ba_7d[:, 6:7]], axis=-1)  # (N, 4)
+            pg_t = torch.as_tensor(pg, dtype=torch.float32)
+            pg_norm = self.action_scaler.scale(pg_t).numpy()
+            ba_7d[:, :3] = pg_norm[:, :3]
+            ba_7d[:, 6] = pg_norm[:, 3]
+            ba_7d[:, 3:6] = 0.0
+
         out["observation.base_action"] = torch.as_tensor(ba_7d, device=self.device, dtype=torch.float32)
         return out
 

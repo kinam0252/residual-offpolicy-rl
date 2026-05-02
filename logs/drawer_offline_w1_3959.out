@@ -1,0 +1,346 @@
+=== Drawer Offline Collection (contact_z_gate=True) ===
+  Worker PID: 59420
+  Model: /home/nas_main/kinamkim/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000
+  Drawers: [2, 3, 4], Episodes/drawer: 30
+  Total tasks: 90
+  Max steps: 500
+  Output: outputs/offline_drawer_zgate_100k
+
+[Worker 59420] === d2_ep000 ===
+
+  Creating env for D2...
+[load_calib_wrist] Loaded from camera_info.yaml: pos=[-0.06653175 -0.02519977  0.05951161], quat=[0.2722828  0.26626734 0.64614796 0.66140502]
+[MuJoCoResidualWrapperDrawer] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+[MuJoCoResidualWrapperDrawer] GR00T loaded in 18.7s
+  FAIL steps=500 closed=0.00 SR=0.0% (0/1) t=42s
+
+[Worker 59420] === d2_ep015 ===
+  FAIL steps=170 closed=0.00 SR=0.0% (0/2) t=48s
+
+[Worker 59420] === d2_ep018 ===
+  FAIL steps=500 closed=0.00 SR=0.0% (0/3) t=70s
+
+[Worker 59420] === d3_ep001 ===
+
+  Creating env for D3...
+[load_calib_wrist] Loaded from camera_info.yaml: pos=[-0.06653175 -0.02519977  0.05951161], quat=[0.2722828  0.26626734 0.64614796 0.66140502]
+[MuJoCoResidualWrapperDrawer] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+[MuJoCoResidualWrapperDrawer] GR00T loaded in 14.7s
+  FAIL steps=145 closed=0.00 SR=0.0% (0/4) t=90s
+
+[Worker 59420] === d3_ep011 ===
+  FAIL steps=145 closed=0.00 SR=0.0% (0/5) t=96s
+
+[Worker 59420] === d3_ep015 ===
+  FAIL steps=143 closed=0.00 SR=0.0% (0/6) t=102s
+
+[Worker 59420] === d3_ep022 ===
+  FAIL steps=143 closed=0.00 SR=0.0% (0/7) t=108s
+
+[Worker 59420] === d3_ep028 ===
+  FAIL steps=144 closed=0.00 SR=0.0% (0/8) t=112s
+
+[Worker 59420] === d4_ep005 ===
+
+  Creating env for D4...
+[load_calib_wrist] Loaded from camera_info.yaml: pos=[-0.06653175 -0.02519977  0.05951161], quat=[0.2722828  0.26626734 0.64614796 0.66140502]
+[MuJoCoResidualWrapperDrawer] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+[MuJoCoResidualWrapperDrawer] GR00T loaded in 14.4s
+  FAIL steps=136 closed=0.00 SR=0.0% (0/9) t=133s
+
+[Worker 59420] === d4_ep012 ===
+  FAIL steps=141 closed=0.00 SR=0.0% (0/10) t=139s
+
+[Worker 59420] === d4_ep021 ===
+  FAIL steps=137 closed=0.00 SR=0.0% (0/11) t=145s
+
+[Worker 59420] === d4_ep028 ===
+  FAIL steps=138 closed=0.00 SR=0.0% (0/12) t=151s
+
+[Worker 59420] No more work. Completed 12 episodes.
+  Total SR: 0/12 = 0.0%

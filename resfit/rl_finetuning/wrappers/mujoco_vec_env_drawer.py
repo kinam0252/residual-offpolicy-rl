@@ -93,6 +93,14 @@ DEMO_CONTACT_MEAN = {
     4: {"y_norm": -0.1518, "z_norm": 0.9713},
 }
 
+# Per-drawer z_norm bounds from demo replay (only steps where drawer actually moved).
+# Contact is valid only when z_norm ∈ [z_min, z_max].
+DEMO_CONTACT_Z_BOUNDS = {
+    2: {"z_min": 0.2456, "z_max": 1.1125},
+    3: {"z_min": 0.2818, "z_max": 1.9781},
+    4: {"z_min": -0.0477, "z_max": 1.1070},
+}
+
 # Physics substeps computed at runtime
 PHYSICS_SUBSTEPS = None
 
@@ -370,6 +378,7 @@ class MuJoCoVecEnvDrawer:
         rl_img_size: int = RL_IMG_SIZE,
         groot_img_size: int = 256,
         contact_threshold: float = float("inf"),
+        contact_z_gate: bool = False,
     ):
         self.num_envs = num_envs
         self.max_episode_steps = max_episode_steps
@@ -378,6 +387,7 @@ class MuJoCoVecEnvDrawer:
         self.rl_img_size = rl_img_size
         self.groot_img_size = groot_img_size
         self.contact_threshold = contact_threshold
+        self.contact_z_gate = contact_z_gate
 
         # Cabinet placement
         if cabinet_pos is None or cabinet_euler is None:
@@ -403,6 +413,16 @@ class MuJoCoVecEnvDrawer:
         self._face_x_closed = d_hx + self._face_hx
         self._face_hy = CABINET_SHORT / 2 - DRAWER_GAP
 
+        # Precompute drawer face center in world frame (when closed) for each drawer
+        cab_R = Rotation.from_euler('xyz', cabinet_euler, degrees=True).as_matrix()
+        self._drawer_face_centers: dict[int, np.ndarray] = {}
+        for d_idx in ACTIVE_DRAWERS:
+            slot_h = DRAWER_SLOT_HEIGHT
+            dz = WALL_THICK + slot_h / 2 + d_idx * (slot_h + WALL_THICK)
+            local_center = np.array([self._face_x_closed, 0.0, dz], dtype=np.float64)
+            world_center = cabinet_pos + cab_R @ local_center
+            self._drawer_face_centers[d_idx] = world_center.astype(np.float32)
+
         # ── Create N environments ──
         self._envs: list[dict[str, Any]] = []
         for i in range(num_envs):
@@ -423,10 +443,10 @@ class MuJoCoVecEnvDrawer:
                 low=0, high=255,
                 shape=(num_envs, 3, rl_img_size, rl_img_size), dtype=np.uint8,
             )
-        # Object state: drawer_slide(1) + active_drawer_idx(1) = 2D
+        # Object state: drawer_slide(1) + active_drawer_idx(1) + face_center_world(3) = 5D
         obs_spaces["observation.object_state"] = gym.spaces.Box(
             low=-np.inf, high=np.inf,
-            shape=(num_envs, 2), dtype=np.float32,
+            shape=(num_envs, 5), dtype=np.float32,
         )
         self.observation_space = gym.spaces.Dict(obs_spaces)
 
@@ -729,6 +749,16 @@ class MuJoCoVecEnvDrawer:
                     if dist > self.contact_threshold:
                         return  # Too far from demo mean — drawer doesn't move
 
+            # Z-norm gate: only push if z_norm is within demo [min, max] bounds
+            if self.contact_z_gate:
+                face_hz = DRAWER_SLOT_HEIGHT / 2 - DRAWER_GAP
+                dz = env["drawer_z_min"] + face_hz + DRAWER_GAP
+                z_norm = (tcp_local[2] - dz) / face_hz if face_hz > 0 else 0.0
+                zb = DEMO_CONTACT_Z_BOUNDS.get(active_drawer)
+                if zb is not None:
+                    if z_norm < zb["z_min"] or z_norm > zb["z_max"]:
+                        return  # Outside demo z bounds — drawer doesn't move
+
             face_x_now = self._face_x_closed + self._drawer_qpos[env_idx]
             # Kinematic contact: if TCP x is beyond the closed-face line,
             # the drawer face tracks TCP position (clamped to valid range).
@@ -878,11 +908,12 @@ class MuJoCoVecEnvDrawer:
                 for key in images:
                     images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
 
-            # Object state: drawer_slide + active_drawer_idx
-            object_states.append(np.array([
-                self._drawer_qpos[i],
-                float(env["active_drawer"]),
-            ], dtype=np.float32))
+            # Object state: drawer_slide + active_drawer_idx + face_center_world(3)
+            face_center = self._drawer_face_centers[env["active_drawer"]]
+            object_states.append(np.concatenate([
+                np.array([self._drawer_qpos[i], float(env["active_drawer"])], dtype=np.float32),
+                face_center,
+            ]))
 
         obs = {
             "observation.state": torch.as_tensor(

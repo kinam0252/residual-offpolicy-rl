@@ -1,58 +1,44 @@
 #!/bin/bash
+# Collect offline Stack Cube data using GR00T base policy (new physics)
+#SBATCH --job-name=stack_col
 #SBATCH --partition=core
-#SBATCH --qos=core-own
+#SBATCH --qos=core-extra
 #SBATCH --gres=gpu:1
-#SBATCH --cpus-per-task=18
-#SBATCH --mem=200G
-#SBATCH --job-name=stk_offln
-#SBATCH --output=/home/nas_main/kinamkim/slurms/stack_offline_%j.out
-#SBATCH --error=/home/nas_main/kinamkim/slurms/stack_offline_%j.err
-#SBATCH --time=12:00:00
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=60G
+#SBATCH --nodelist=worker-6
+#SBATCH --time=04:00:00
+#SBATCH --output=/home/nas_main/kinamkim/slurms/stack_col_%j.out
+#SBATCH --error=/home/nas_main/kinamkim/slurms/stack_col_%j.err
 
 set -e
-. /home/nas_main/kinamkim/.venvs/groot/bin/activate
+. ~/.venvs/groot/bin/activate
 export MUJOCO_GL=egl
-export LD_LIBRARY_PATH=~/.local/lib/gl:${LD_LIBRARY_PATH:-}
+NV=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia
+export LD_LIBRARY_PATH=$HOME/lib-compat:$NV/cuda_runtime/lib:$NV/cublas/lib:$NV/cudnn/lib:$NV/cufft/lib:$NV/cusolver/lib:$NV/cusparse/lib:$NV/nvjitlink/lib:$NV/cuda_nvrtc/lib:$NV/nccl/lib:$HOME/.local/lib/gl:${LD_LIBRARY_PATH:-}
+export HF_HUB_OFFLINE=1
+export TRANSFORMERS_OFFLINE=1
+export DS_BUILD_OPS=0
+export CUDA_HOME=~/fake_cuda
+export PATH=~/bin:$PATH
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export PYTHONUNBUFFERED=1
-export DS_BUILD_OPS=0
-export HF_HUB_OFFLINE=1
-export TRANSFORMERS_OFFLINE=1
 
-cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl
+cd ~/Repos/Intern/residual-offpolicy-rl
 
-DIFFICULTY="${DIFFICULTY:-easy}"
-GROOT_CKPT="/home/nas_main/kinamkim/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000"
-EPISODE_POS="configs/stack_cube_positions.json"
-OUTPUT_DIR="outputs/offline_data/stack_${DIFFICULTY}"
-RANGE_ARG=""
+NUM_EPISODES="${NUM_EPISODES:-66}"
+OUTPUT_DIR="${OUTPUT_DIR:-outputs/offline_stack_66ep}"
 
-case "$DIFFICULTY" in
-    easy)
-        ;;
-    normal)
-        RANGE_ARG='[null, {"dx":[-6,6],"dy":[-6,6],"yaw":[-30,30]}]'
-        ;;
-    hard)
-        RANGE_ARG='[null, {"dx":[-6,6],"dy":[-6,6],"yaw":[-30,30]}, {"dx":[-10,10],"dy":[-10,10],"yaw":[-60,60]}]'
-        ;;
-esac
-
-echo "[Stack Offline] Difficulty: $DIFFICULTY"
-echo "[Stack Offline] Checkpoint: $GROOT_CKPT"
+echo "[Stack Offline] Episodes: $NUM_EPISODES"
 echo "[Stack Offline] Output: $OUTPUT_DIR"
 echo "[Stack Offline] Start: $(date)"
 
-python3 resfit/rl_finetuning/scripts/collect_offline_data_stack.py \
-    --groot_checkpoint "$GROOT_CKPT" \
-    --episode_positions_file "$EPISODE_POS" \
-    --num_episodes_per_env 300 \
-    --max_episode_steps 500 \
-    --output_dir "$OUTPUT_DIR" \
-    --device cuda:0 \
-    --task_description "Pick up the white cube and stack it on the green cube." \
-    --resume \
-    ${RANGE_ARG:+--random_cube_range "$RANGE_ARG"}
+python scripts/collect_stack_offline.py \
+    --groot_checkpoint ~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000 \
+    --num_episodes $NUM_EPISODES \
+    --max_episode_steps 300 \
+    --output_dir $OUTPUT_DIR \
+    --num_envs 1
 
 echo "[Stack Offline] Done: $(date)"
