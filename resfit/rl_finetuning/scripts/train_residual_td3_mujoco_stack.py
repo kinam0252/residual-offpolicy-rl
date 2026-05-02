@@ -415,6 +415,8 @@ class AsyncEvaluator:
             cmd += ["--use_action_scaler"]
             cmd += ["--action_scaler_min"] + [str(x) for x in self._action_scaler.action_min.tolist()]
             cmd += ["--action_scaler_max"] + [str(x) for x in self._action_scaler.action_max.tolist()]
+            if a.no_action_clamp:
+                cmd += ["--no_action_clamp"]
         # W&B: log to same run as training
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [
@@ -607,6 +609,8 @@ def parse_args():
     # ActionScaler
     p.add_argument("--use_action_scaler", action="store_true",
                    help="Enable data-driven action normalization (pos+grip to [-1,1])")
+    p.add_argument("--no_action_clamp", action="store_true",
+                   help="Disable clamping in ActionScaler (preserves base policy when residual=0)")
     # Misc
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", type=str, default="cuda:0")
@@ -730,8 +734,9 @@ def main():
             action_max=torch.tensor(_action_stats["max"], dtype=torch.float32),
             action_scale=args.action_scale,
             device="cpu",
+            no_clamp=args.no_action_clamp,
         )
-        _log(f"ActionScaler created (action_scale={args.action_scale})")
+        _log(f"ActionScaler created (action_scale={args.action_scale}, no_clamp={args.no_action_clamp})")
 
     # Wrap with residual + GR00T
     _log("Creating residual wrapper with GR00T policy...")

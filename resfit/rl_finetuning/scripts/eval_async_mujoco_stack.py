@@ -178,6 +178,8 @@ def parse_args():
     p.add_argument("--use_action_scaler", action="store_true")
     p.add_argument("--action_scaler_min", type=float, nargs="+", default=None)
     p.add_argument("--action_scaler_max", type=float, nargs="+", default=None)
+    p.add_argument("--no_action_clamp", action="store_true",
+                   help="Disable clamping in ActionScaler")
     # Agent
     p.add_argument("--actor_hidden_dim", type=int, default=256)
     p.add_argument("--critic_hidden_dim", type=int, default=256)
@@ -271,8 +273,9 @@ def main():
             action_max=torch.tensor(args.action_scaler_max, dtype=torch.float32),
             action_scale=args.action_scale,
             device="cpu",
+            no_clamp=args.no_action_clamp,
         )
-        _log(f"ActionScaler created from CLI args (action_scale={args.action_scale})")
+        _log(f"ActionScaler created from CLI args (action_scale={args.action_scale}, no_clamp={args.no_action_clamp})")
 
     policy_device = args.groot_policy_device or args.device
     env = MuJoCoResidualWrapper(

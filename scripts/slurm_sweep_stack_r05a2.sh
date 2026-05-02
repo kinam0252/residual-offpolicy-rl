@@ -29,6 +29,7 @@ cd ~/Repos/Intern/residual-offpolicy-rl
 python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --groot_checkpoint ~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000 \
     --use_action_scaler \
+    --no_action_clamp \
     --offline_data_dir outputs/offline_stack_66ep \
     --offline_fraction 0.75 \
     --num_envs 30 \

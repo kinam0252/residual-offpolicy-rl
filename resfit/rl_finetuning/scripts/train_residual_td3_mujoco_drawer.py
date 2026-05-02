@@ -441,6 +441,8 @@ def parse_args():
     p.add_argument("--num_envs", type=int, default=1)
     p.add_argument("--active_drawers", type=int, nargs="+", default=[2, 3, 4])
     p.add_argument("--contact_z_gate", action="store_true", default=True)
+    p.add_argument("--reward_type", type=str, default="dense",
+                   choices=["sparse", "dense", "dense_simple", "delta"])
     p.add_argument("--max_episode_steps", type=int, default=500)
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
@@ -531,7 +533,7 @@ def main():
         active_drawers=None,  # cycles through active_drawers
         contact_z_gate=args.contact_z_gate,
         max_episode_steps=args.max_episode_steps,
-        reward_type="dense",
+        reward_type=args.reward_type,
         device=args.device,
         rl_img_size=84,
     )

@@ -459,6 +459,7 @@ class MuJoCoVecEnvDrawer:
         # Per-env state
         self._step_counts = np.zeros(num_envs, dtype=np.int64)
         self._drawer_qpos = np.full(num_envs, DRAWER_SLIDE, dtype=np.float64)
+        self._prev_drawer_qpos = np.full(num_envs, DRAWER_SLIDE, dtype=np.float64)
         self._last_actions = np.zeros((num_envs, 8), dtype=np.float32)
 
     def _init_single_env(self, scene_xml, active_drawer):
@@ -598,6 +599,7 @@ class MuJoCoVecEnvDrawer:
         for i in range(self.num_envs):
             action = actions_np[i]
             # Close Drawer: gripper always closed (push task)
+            self._prev_drawer_qpos[i] = self._drawer_qpos[i]
             self._apply_action(i, action[:3], action[3:7], 0.0)
             self._update_drawer_physics(i)
             self._step_counts[i] += 1
@@ -795,6 +797,7 @@ class MuJoCoVecEnvDrawer:
             set_drawer_pos(model, data, d, 0.0)
         set_drawer_pos(model, data, env["active_drawer"], DRAWER_SLIDE)
         self._drawer_qpos[env_idx] = DRAWER_SLIDE
+        self._prev_drawer_qpos[env_idx] = DRAWER_SLIDE
 
         data.qvel[:] = 0.0
         mujoco.mj_forward(model, data)
@@ -819,6 +822,14 @@ class MuJoCoVecEnvDrawer:
         if self.reward_type == "dense_simple":
             closed_frac = 1.0 - (self._drawer_qpos[env_idx] / DRAWER_SLIDE)
             return float(np.clip(closed_frac, 0.0, 1.0))
+
+        if self.reward_type == "delta":
+            # Delta reward: only reward actual drawer movement toward closed
+            # + success bonus for completing the task
+            delta_closed = (self._prev_drawer_qpos[env_idx] - self._drawer_qpos[env_idx]) / DRAWER_SLIDE
+            delta_reward = float(np.clip(delta_closed, 0.0, 1.0))  # only positive (closing)
+            success = 1.0 if self._is_success(env_idx) else 0.0
+            return delta_reward + success
 
         # Stage-based dense reward (approach / contact / push / success)
         # Each stage contributes up to 0.25, total max = 1.0

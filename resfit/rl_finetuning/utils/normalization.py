@@ -40,6 +40,7 @@ class ActionScaler:
         action_scale: float = 1.0,
         min_range_per_dim: float = 1e-1,
         device: torch.device | str = "cpu",
+        no_clamp: bool = False,
     ):
         """
         Initialize the action scaler.
@@ -50,10 +51,13 @@ class ActionScaler:
             action_scale: Scale factor to expand the action range (1 + action_scale)
             min_range_per_dim: Minimum range per dimension to prevent normalization blow-up
             device: Device to place tensors on
+            no_clamp: If True, skip clamping in scale() and unscale().
+                      This preserves the base policy exactly when residual=0.
         """
         self.device = torch.device(device)
         self.action_scale = action_scale
         self.min_range_per_dim = min_range_per_dim
+        self.no_clamp = no_clamp
 
         # Move inputs to device and store originals for serialization
         action_min = action_min.to(self.device)
@@ -86,6 +90,7 @@ class ActionScaler:
         print(f"  Original range: [{action_min.min():.4f}, {action_max.max():.4f}]")
         print(f"  Expanded range: [{self._limits.min.min():.4f}, {self._limits.max.max():.4f}]")
         print(f"  Action scale factor: {action_scale}")
+        print(f"  No clamp: {no_clamp}")
 
     @property
     def limits(self) -> Limits:
@@ -100,18 +105,20 @@ class ActionScaler:
             action: Action tensor to scale
 
         Returns:
-            Scaled action in [-1, 1] range
+            Scaled action in [-1, 1] range (or beyond if no_clamp=True)
         """
         # Move limits to same device as input action
         action_min = self._limits.min.to(action.device)
         action_max = self._limits.max.to(action.device)
         range_vals = self._range.to(action.device)
 
-        # Clamp input to prevent extreme values
-        action_clamped = torch.clamp(action, action_min, action_max)
-
-        # Scale to [-1, 1]
-        return 2.0 * (action_clamped - action_min) / range_vals - 1.0
+        if self.no_clamp:
+            # Pure linear transform — preserves base policy exactly
+            return 2.0 * (action - action_min) / range_vals - 1.0
+        else:
+            # Clamp input to prevent extreme values
+            action_clamped = torch.clamp(action, action_min, action_max)
+            return 2.0 * (action_clamped - action_min) / range_vals - 1.0
 
     def unscale(self, scaled_action: torch.Tensor) -> torch.Tensor:
         """
@@ -127,11 +134,13 @@ class ActionScaler:
         action_min = self._limits.min.to(scaled_action.device)
         action_max = self._limits.max.to(scaled_action.device)
 
-        # Clamp to [-1, 1] to prevent extreme unscaled values
-        scaled_clamped = torch.clamp(scaled_action, -1.0, 1.0)
-
-        # Unscale back to original range
-        return action_min + (scaled_clamped + 1.0) * (action_max - action_min) / 2.0
+        if self.no_clamp:
+            # Pure linear inverse — no bounds enforced
+            return action_min + (scaled_action + 1.0) * (action_max - action_min) / 2.0
+        else:
+            # Clamp to [-1, 1] to prevent extreme unscaled values
+            scaled_clamped = torch.clamp(scaled_action, -1.0, 1.0)
+            return action_min + (scaled_clamped + 1.0) * (action_max - action_min) / 2.0
 
     def to(self, device: torch.device | str) -> ActionScaler:
         """Move scaler to a different device."""
