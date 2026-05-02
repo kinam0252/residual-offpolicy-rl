@@ -77,6 +77,7 @@ from resfit.rl_finetuning.off_policy.common_utils import utils
 from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
 from resfit.rl_finetuning.utils.dtype import to_uint8
 from resfit.rl_finetuning.utils.rb_transforms import MultiStepTransform
+from resfit.rl_finetuning.utils.normalization import ActionScaler
 from resfit.rl_finetuning.wrappers.mujoco_residual_wrapper_stack import MuJoCoResidualWrapperStack as MuJoCoResidualWrapper
 from resfit.rl_finetuning.wrappers.mujoco_vec_env_stack import MuJoCoVecEnvStack as MuJoCoVecEnv
 
@@ -95,6 +96,35 @@ def _log(msg: str) -> None:
     print(f"[mujoco-stack-td3] {msg}", flush=True)
 
 
+# ══════════════════════════════════════════════════════════════════
+# ActionScaler stats computation (stack-specific: pos+grip from 7D base_action)
+# ══════════════════════════════════════════════════════════════════
+
+def _compute_action_stats_from_offline(data_dir: str) -> dict:
+    """Compute per-dim min/max for 4D pos+grip actions from offline npz."""
+    npz_files = sorted(Path(data_dir).rglob("*.npz"))
+    if not npz_files:
+        raise FileNotFoundError(f"No .npz files found in {data_dir}")
+
+    all_pg = []
+    for npz_path in npz_files:
+        data = np.load(str(npz_path), allow_pickle=True)
+        ba = data["obs_base_action"].astype(np.float32)  # (N, 7)
+        pg = np.concatenate([ba[:, :3], ba[:, 6:7]], axis=-1)  # (N, 4)
+        all_pg.append(pg)
+
+    all_pg = np.concatenate(all_pg, axis=0)
+    stats = {
+        "min": all_pg.min(axis=0).tolist(),
+        "max": all_pg.max(axis=0).tolist(),
+    }
+    _log(f"Action stats (pos+grip, {len(all_pg)} samples):")
+    labels = ["pos_x", "pos_y", "pos_z", "grip"]
+    for i, lb in enumerate(labels):
+        _log(f"  {lb}: [{stats['min'][i]:.4f}, {stats['max'][i]:.4f}]")
+    return stats
+
+
 
 def _load_offline_data(
     offline_rb,
@@ -104,6 +134,7 @@ def _load_offline_data(
     device: str = "cpu",
     reward_relabel: str = "none",
     reward_config_path: str | None = None,
+    action_scaler=None,
 ) -> None:
     """Load offline .npz files into the replay buffer (vectorised).
 
@@ -113,6 +144,7 @@ def _load_offline_data(
                         "computed" = always compute from features using reward_config.
         reward_config_path: Path to reward YAML config. Used when data has no "reward"
                             field or when reward_relabel="computed".
+        action_scaler: If provided, normalizes base_action pos+grip and uses as replay action.
     """
     from pathlib import Path as _P
     from resfit.rl_finetuning.rewards.stack_reward import (
@@ -153,9 +185,20 @@ def _load_offline_data(
         has_depth = "obs_depth_front" in data
 
         # Build obs tensors (all at once)
+        ba_t = torch.from_numpy(data["obs_base_action"].astype(np.float32))
+
+        # Normalize pos+grip if ActionScaler is provided
+        if action_scaler is not None:
+            pg = torch.cat([ba_t[:, :3], ba_t[:, 6:7]], dim=-1)  # (N, 4)
+            pg_norm = action_scaler.scale(pg)
+            ba_t = ba_t.clone()
+            ba_t[:, :3] = pg_norm[:, :3]
+            ba_t[:, 6] = pg_norm[:, 3]
+            ba_t[:, 3:6] = 0.0
+
         obs_td = {
             "observation.state": torch.from_numpy(data["obs_state"].astype(np.float32)),
-            "observation.base_action": torch.from_numpy(data["obs_base_action"].astype(np.float32)),
+            "observation.base_action": ba_t,
         }
         if "observation.object_state" in lowdim_keys:
             obs_td["observation.object_state"] = torch.from_numpy(
@@ -224,7 +267,12 @@ def _load_offline_data(
             # Use saved reward
             reward_t = torch.from_numpy(data["reward"].astype(np.float32)).clamp(0.0, 1.0)
 
-        action_t = torch.from_numpy(data["action"].astype(np.float32))
+        # Action for replay: normalized base_action (zero residual in offline demos)
+        if action_scaler is not None:
+            action_t = ba_t.clone()
+            action_t[:, 3:6] = 0.0  # euler = 0 (no rotation residual in demos)
+        else:
+            action_t = torch.from_numpy(data["action"].astype(np.float32))
 
         # Batch insert into replay buffer
         for i in range(n):
@@ -298,10 +346,11 @@ class AsyncEvaluator:
       5. shutdown(): kills subprocess
     """
 
-    def __init__(self, args, checkpoint_dir: Path, results_dir: Path):
+    def __init__(self, args, checkpoint_dir: Path, results_dir: Path, action_scaler=None):
         self._args = args
         self._checkpoint_dir = checkpoint_dir
         self._results_dir = results_dir
+        self._action_scaler = action_scaler
         self._proc = None
         self._best_success = 0.0
         results_dir.mkdir(parents=True, exist_ok=True)
@@ -361,6 +410,11 @@ class AsyncEvaluator:
         if not _has_fixed_eval and hasattr(a, "episode_positions_file") and a.episode_positions_file:
             cmd += ["--episode_positions_file", a.episode_positions_file]
         pass  # Stack: no bowl_pos
+        # ActionScaler forwarding
+        if a.use_action_scaler and self._action_scaler is not None:
+            cmd += ["--use_action_scaler"]
+            cmd += ["--action_scaler_min"] + [str(x) for x in self._action_scaler.action_min.tolist()]
+            cmd += ["--action_scaler_max"] + [str(x) for x in self._action_scaler.action_max.tolist()]
         # W&B: log to same run as training
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [
@@ -550,6 +604,9 @@ def parse_args():
     p.add_argument("--offline_pretrain_only", action="store_true")
     p.add_argument("--target_tau", type=float, default=0.005)
     p.add_argument("--critic_grad_clip_norm", type=float, default=None)
+    # ActionScaler
+    p.add_argument("--use_action_scaler", action="store_true",
+                   help="Enable data-driven action normalization (pos+grip to [-1,1])")
     # Misc
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--device", type=str, default="cuda:0")
@@ -660,6 +717,21 @@ def main():
     )
     _log(f"MuJoCo Stack env: {args.num_envs} envs, white={args.white_cube_pos}, green={args.green_cube_pos}")
 
+    # ── Build ActionScaler ──
+    _action_scaler = None
+    if args.use_action_scaler:
+        if not args.offline_data_dir:
+            raise ValueError("--use_action_scaler requires --offline_data_dir")
+        _log("Computing action stats from offline data for ActionScaler...")
+        _action_stats = _compute_action_stats_from_offline(args.offline_data_dir)
+        _action_scaler = ActionScaler(
+            action_min=torch.tensor(_action_stats["min"], dtype=torch.float32),
+            action_max=torch.tensor(_action_stats["max"], dtype=torch.float32),
+            action_scale=args.action_scale,
+            device="cpu",
+        )
+        _log(f"ActionScaler created (action_scale={args.action_scale})")
+
     # Wrap with residual + GR00T
     _log("Creating residual wrapper with GR00T policy...")
     policy_device = args.groot_policy_device or args.device
@@ -674,8 +746,8 @@ def main():
         residual_rot_scale=args.residual_rot_scale,
         residual_grip_scale=args.residual_grip_scale,
         ema_alpha=args.ema_alpha,
+        action_scaler=_action_scaler,
     )
-    _log("Environment ready.")
     _log("Environment ready.")
 
     # ── Dimensions ──
@@ -771,6 +843,8 @@ def main():
             "lowdim_keys": sorted(lowdim_keys),
             "reward_relabel": args.offline_reward_relabel,
             "reward_config": args.reward_config or "default",
+            "use_action_scaler": args.use_action_scaler,
+            "action_scale": args.action_scale if args.use_action_scaler else None,
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key_dict, sort_keys=True).encode()).hexdigest()[:16]
         _cache_root = Path(__file__).resolve().parents[3] / "buffer_cache"
@@ -798,6 +872,7 @@ def main():
                 device="cpu",
                 reward_relabel=args.offline_reward_relabel,
                 reward_config_path=args.reward_config,
+                action_scaler=_action_scaler,
             )
             _log(f"Offline buffer populated: {len(offline_rb)} transitions")
             # Save cache for next run
@@ -851,7 +926,7 @@ def main():
     _async_eval = None
     if args.async_eval:
         _async_eval_dir = outputs_dir / "async_eval_results"
-        _async_eval = AsyncEvaluator(args, checkpoint_dir, _async_eval_dir)
+        _async_eval = AsyncEvaluator(args, checkpoint_dir, _async_eval_dir, action_scaler=_action_scaler)
         _wandb_run_id = _wb.run.id if (_wb is not None and _wb.run is not None) else None
         _async_eval.start(wandb_run_id=_wandb_run_id)
         _log("Async eval subprocess started")
@@ -873,9 +948,10 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(noise)
         done = terminated | truncated
 
-        # Store transitions — use noise (7D residual), not combined (8D absolute)
+        # Store transitions — use scaled_action (normalized combined) when ActionScaler active
+        _replay_action = info["scaled_action"] if _action_scaler is not None else noise
         _add_transitions(
-            obs=obs, next_obs=next_obs, actions=noise,
+            obs=obs, next_obs=next_obs, actions=_replay_action,
             reward=reward, done=done, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,
@@ -960,10 +1036,11 @@ def main():
             ep_cum_reward[done_mask] = 0.0
             ep_step_counter[done_mask] = 0
 
-        # Store transition — use residual_action (7D), not combined (8D absolute)
+        # Store transition — use scaled_action (normalized combined) when ActionScaler active
+        _replay_action = info["scaled_action"] if _action_scaler is not None else residual_action
         _t0 = time.perf_counter()
         _add_transitions(
-            obs=obs, next_obs=next_obs, actions=residual_action,
+            obs=obs, next_obs=next_obs, actions=_replay_action,
             reward=reward, done=done, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,

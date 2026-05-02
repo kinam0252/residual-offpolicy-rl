@@ -61,6 +61,7 @@ except ImportError:
 
 from resfit.rl_finetuning.config.residual_td3_mujoco import ResidualTD3MuJoCoConfig
 from resfit.rl_finetuning.off_policy.rl.q_agent import QAgent
+from resfit.rl_finetuning.utils.normalization import ActionScaler
 from resfit.rl_finetuning.wrappers.mujoco_residual_wrapper_stack import MuJoCoResidualWrapperStack as MuJoCoResidualWrapper
 from resfit.rl_finetuning.wrappers.mujoco_vec_env_stack import MuJoCoVecEnvStack as MuJoCoVecEnv
 
@@ -173,6 +174,10 @@ def parse_args():
     p.add_argument("--residual_grip_scale", type=float, default=0.004)
     p.add_argument("--ema_alpha", type=float, default=0.0)
     p.add_argument("--action_scale", type=float, default=0.1)
+    # ActionScaler
+    p.add_argument("--use_action_scaler", action="store_true")
+    p.add_argument("--action_scaler_min", type=float, nargs="+", default=None)
+    p.add_argument("--action_scaler_max", type=float, nargs="+", default=None)
     # Agent
     p.add_argument("--actor_hidden_dim", type=int, default=256)
     p.add_argument("--critic_hidden_dim", type=int, default=256)
@@ -258,6 +263,17 @@ def main():
         random_cube_range=random_cube_range,
     )
 
+    # Build ActionScaler
+    _action_scaler = None
+    if args.use_action_scaler and args.action_scaler_min and args.action_scaler_max:
+        _action_scaler = ActionScaler(
+            action_min=torch.tensor(args.action_scaler_min, dtype=torch.float32),
+            action_max=torch.tensor(args.action_scaler_max, dtype=torch.float32),
+            action_scale=args.action_scale,
+            device="cpu",
+        )
+        _log(f"ActionScaler created from CLI args (action_scale={args.action_scale})")
+
     policy_device = args.groot_policy_device or args.device
     env = MuJoCoResidualWrapper(
         vec_env=mujoco_env,
@@ -270,6 +286,7 @@ def main():
         residual_rot_scale=args.residual_rot_scale,
         residual_grip_scale=args.residual_grip_scale,
         ema_alpha=args.ema_alpha,
+        action_scaler=_action_scaler,
     )
     _log("Eval environment ready.")
 
