@@ -630,7 +630,7 @@ def parse_args():
     p.add_argument("--device", type=str, default="cuda:0")
     p.add_argument("--output_dir", type=str, default="outputs/stack_rl")
     p.add_argument("--eval_interval", type=int, default=2_000)
-    p.add_argument("--eval_num_episodes", type=int, default=5)
+    p.add_argument("--eval_num_episodes", type=int, default=1)
     p.add_argument("--eval_num_envs", type=int, default=20,
                    help="Number of envs for async eval (reduce if GPU OOM)")
     p.add_argument("--debug_zero_residual", action="store_true")

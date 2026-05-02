@@ -487,7 +487,7 @@ def parse_args():
     p.add_argument("--device", type=str, default="cuda:0")
     p.add_argument("--output_dir", type=str, default="outputs/drawer_td3")
     p.add_argument("--eval_interval", type=int, default=5_000)
-    p.add_argument("--eval_num_episodes", type=int, default=10)
+    p.add_argument("--eval_num_episodes", type=int, default=1)
     p.add_argument("--eval_stddev", type=float, default=0.0)
     p.add_argument("--debug_zero_residual", action="store_true")
     # Checkpoint & Resume

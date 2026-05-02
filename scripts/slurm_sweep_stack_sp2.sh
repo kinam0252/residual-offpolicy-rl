@@ -53,7 +53,7 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --n_step 5 \
     --async_eval \
     --no_offline_cache \
-    --eval_num_episodes 5 \
+    --eval_num_episodes 1 \
     --actor_hidden_dim 256 \
     --critic_hidden_dim 256 \
     --wandb_mode offline \
