@@ -64,9 +64,12 @@ def parse_args():
     p.add_argument("--active_drawers", type=int, nargs="+", default=[2], help="Active drawer IDs")
     p.add_argument("--max_episode_steps", type=int, default=500, help="Max steps per episode")
     p.add_argument("--groot_checkpoint", type=str, default=DEFAULT_GROOT_CKPT)
+    p.add_argument("--num_envs", type=int, default=20, help="Number of parallel eval envs")
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--actor_hidden_dim", type=int, default=512)
     p.add_argument("--critic_hidden_dim", type=int, default=1024)
+    p.add_argument("--base_only", action="store_true",
+                   help="Zero out residual actions (eval GR00T base policy only)")
     return p.parse_args()
 
 
@@ -81,8 +84,8 @@ def main():
     # --- Environment ---
     print("[eval] Creating env...", flush=True)
     mujoco_env = MuJoCoVecEnvDrawer(
-        num_envs=1,
-        active_drawers=args.active_drawers,
+        num_envs=args.num_envs,
+        active_drawers=args.active_drawers * args.num_envs if len(args.active_drawers) < args.num_envs else args.active_drawers,
         max_episode_steps=args.max_episode_steps,
         device=device,
         reward_type="delta",
@@ -126,8 +129,15 @@ def main():
         asymmetric_critic=False,
     )
 
-    ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
-    agent.load_state_dict(ckpt["model"])
+    if args.base_only:
+        print("[eval] BASE-ONLY mode: residual actions forced to zero", flush=True)
+        def _zero_act(obs, eval_mode=True, stddev=0.0, cpu=False):
+            batch = obs["observation.state"].shape[0]
+            return torch.zeros(batch, 7, device=device)
+        agent.act = _zero_act
+    else:
+        ckpt = torch.load(args.checkpoint, map_location=device, weights_only=False)
+        agent.load_state_dict(ckpt["model"])
     print("[eval] Weights loaded, starting eval...", flush=True)
 
     # --- Run eval ---
