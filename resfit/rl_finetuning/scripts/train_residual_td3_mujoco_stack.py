@@ -201,8 +201,17 @@ def _load_offline_data(
             "observation.base_action": ba_t,
         }
         if "observation.object_state" in lowdim_keys:
-            obs_td["observation.object_state"] = torch.from_numpy(
-                data["obs_object_state"].astype(np.float32))
+            # Build object_state from white_pos + green_pos
+            # Format: white_cube(7: pos3+quat4) + green_cube_pos(3) = 10D
+            if "obs_object_state" in data:
+                obs_td["observation.object_state"] = torch.from_numpy(
+                    data["obs_object_state"].astype(np.float32))
+            else:
+                white_pos = torch.from_numpy(data["white_pos"].astype(np.float32))  # (N, 3)
+                green_pos = torch.from_numpy(data["green_pos"].astype(np.float32))  # (N, 3)
+                identity_quat = torch.tensor([0.0, 0.0, 0.0, 1.0], dtype=torch.float32).expand(n, -1)
+                obs_td["observation.object_state"] = torch.cat(
+                    [white_pos, identity_quat, green_pos], dim=-1)  # (N, 10)
         if has_depth:
             for cam_key, npz_key in [
                 ("observation.depth.front", "obs_depth_front"),
@@ -240,15 +249,19 @@ def _load_offline_data(
         )
 
         if reward_relabel == "sparse":
-            # Sparse: 1.0 for all steps in success episodes, 0.0 otherwise
-            if "success" in data:
-                success_val = float(data["success"].flat[0])
-                reward_t = torch.full((n,), success_val, dtype=torch.float32)
-                _relabel_success_count += int(success_val) * n
-                _relabel_total_count += n
-            else:
-                _relabel_total_count += n
-                reward_t = torch.zeros(n, dtype=torch.float32)
+            # Sparse: reward=1.0 only at the terminal step of success episodes.
+            # This matches online behavior where _is_success() triggers
+            # terminated=True, so reward=1.0 occurs exactly once per episode.
+            reward_t = torch.zeros(n, dtype=torch.float32)
+            _relabel_total_count += n
+            if "success" in data and bool(data["success"].flat[0]):
+                # Find terminated step (last step of success episode)
+                term_arr = data.get("terminated", data.get("done"))
+                term_idxs = np.where(term_arr)[0]
+                if len(term_idxs) > 0:
+                    reward_t[term_idxs[-1]] = 1.0
+                    _relabel_success_count += 1
+            elif "success" not in data:
                 _log(f"    WARNING: no 'success' field in {npz_path.name}")
         elif use_features:
             # Compute reward from raw features
@@ -296,7 +309,8 @@ def _load_offline_data(
         _log(f"  [offline] Computed reward from features: {_computed_from_features} transitions")
     if reward_relabel == "sparse":
         sr_pct = _relabel_success_count / max(_relabel_total_count, 1) * 100
-        _log(f"  [offline] SPARSE RELABEL: {_relabel_success_count}/{_relabel_total_count} ({sr_pct:.2f}%)")
+        _log(f"  [offline] SPARSE RELABEL: {_relabel_success_count} terminal-success steps "
+             f"out of {_relabel_total_count} total transitions ({sr_pct:.4f}%)")
     # Log reward stats from buffer sample
     if total_loaded > 0:
         sample_size = min(1000, len(offline_rb))
@@ -390,7 +404,7 @@ class AsyncEvaluator:
         # Eval positions priority: eval_positions_file > eval_perturb_table > perturb_table
         if hasattr(a, "eval_positions_file") and a.eval_positions_file:
             cmd += ["--eval_positions_file", a.eval_positions_file]
-            cmd += ["--num_envs", "20"]  # eval uses 20 envs from positions file
+            cmd += ["--num_envs", str(a.eval_num_envs)]  # eval uses subset of positions
         elif False:
             cmd += ["--perturb_table", False]
         elif False:
@@ -617,6 +631,8 @@ def parse_args():
     p.add_argument("--output_dir", type=str, default="outputs/stack_rl")
     p.add_argument("--eval_interval", type=int, default=2_000)
     p.add_argument("--eval_num_episodes", type=int, default=5)
+    p.add_argument("--eval_num_envs", type=int, default=20,
+                   help="Number of envs for async eval (reduce if GPU OOM)")
     p.add_argument("--debug_zero_residual", action="store_true")
     p.add_argument("--save_video", action="store_true")
     # Checkpoint & Resume
@@ -756,34 +772,20 @@ def main():
     )
     _log("Environment ready.")
 
-    # ── Dimensions ──
+    # ── Dimensions (state-only by default) ──
     num_envs = args.num_envs
-    _asymmetric = args.asymmetric_critic
-    object_state_dim = 10 if _asymmetric else 0
-
-    if _asymmetric:
-        # Asymmetric: actor=state-only, critic=depth
-        image_keys = ["observation.depth.front", "observation.depth.wrist"]
-        img_c, img_h, img_w = 1, 84, 84  # depth is 1-channel
-        _log(f"ASYMMETRIC mode: critic uses depth {image_keys}, actor is state-only")
-    else:
-        image_keys = [
-            "observation.images.front",
-            "observation.images.back",
-            "observation.images.wrist",
-        ]
-        img_c, img_h, img_w = 3, 84, 84
-
-    lowdim_keys = ["observation.state", "observation.base_action"]
-    if object_state_dim > 0:
-        lowdim_keys.append("observation.object_state")
+    # State-only: use object_state (white_cube 7D + green_cube_pos 3D = 10D)
+    image_keys = []
+    object_state_dim = env.observation_space["observation.object_state"].shape[1]  # 10
+    lowdim_keys = ["observation.state", "observation.base_action", "observation.object_state"]
 
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     action_dim = env.action_dim  # 7 (residual)
 
-    _log(f"lowdim_dim={lowdim_dim}, img=({img_c},{img_h},{img_w}), action_dim={action_dim}, object_state={object_state_dim}")
+    _log(f"State-only mode (no images for actor/critic)")
+    _log(f"lowdim_dim={lowdim_dim}, object_state_dim={object_state_dim}, action_dim={action_dim}")
 
-    # ── QAgent ──
+    # ── QAgent (state-only) ──
     cfg = ResidualTD3MuJoCoConfig()
     # Override from CLI
     cfg.agent.actor_lr = args.actor_lr
@@ -798,14 +800,14 @@ def main():
         cfg.agent.critic_grad_clip_norm = args.critic_grad_clip_norm
 
     agent = QAgent(
-        obs_shape=(img_c, img_h, img_w),
+        obs_shape=(3, 84, 84),  # dummy, not used in state-only
         prop_shape=(lowdim_dim,),
         action_dim=action_dim,
-        rl_cameras=image_keys,
+        rl_cameras=[],  # state-only: no cameras
         cfg=cfg.agent,
         residual_actor=True,
         object_state_dim=object_state_dim,
-        asymmetric_critic=_asymmetric,
+        asymmetric_critic=False,
     )
 
     # ── Replay buffer ──

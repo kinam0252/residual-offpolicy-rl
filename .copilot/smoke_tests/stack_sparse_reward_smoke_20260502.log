@@ -1,0 +1,294 @@
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/transformers/utils/hub.py:105: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+[mujoco-stack-td3] [CONFIG] reward_type=sparse, gamma=0.99, action_scale=0.1
+[mujoco-stack-td3] [CONFIG] offline_fraction=0.75, offline_reward_relabel=sparse
+[mujoco-stack-td3] [CONFIG] action_l2_reg=1.0, target_tau=0.005
+[mujoco-stack-td3] [CONFIG] actor_lr=0.0003, critic_lr=0.0003, n_step=3
+[mujoco-stack-td3] Seed: 42
+[mujoco-stack-td3] Device: cuda:0
+[mujoco-stack-td3] Output: /tmp/stk_sparse_test
+[mujoco-stack-td3] Creating MuJoCo Stack Cube environment...
+[mujoco-stack-td3] Loaded 66 positions from configs/stack_cube_positions.json
+[mujoco-stack-td3] Auto-detected 66ep checkpoint -> using /home/nas_main/kinamkim/Repos/Intern/Mujoco_Franka/config/camera_info_66ep.yaml
+[Stack] Found 26 finger collision geom(s)
+[Stack] Found 26 finger collision geom(s)
+[mujoco-stack-td3] MuJoCo Stack env: 2 envs, white=[0.45, 0.22, 0.02], green=[0.45, -0.06, 0.02]
+[mujoco-stack-td3] Computing action stats from offline data for ActionScaler...
+[mujoco-stack-td3] Action stats (pos+grip, 18807 samples):
+[mujoco-stack-td3]   pos_x: [0.4106, 0.4639]
+[mujoco-stack-td3]   pos_y: [-0.0658, 0.2246]
+[mujoco-stack-td3]   pos_z: [0.0092, 0.1185]
+[mujoco-stack-td3]   grip: [0.0196, 0.0398]
+ActionScaler initialized:
+  Original range: [-0.0658, 0.4639]
+  Expanded range: [-0.0804, 0.4922]
+  Action scale factor: 0.1
+  No clamp: True
+[mujoco-stack-td3] ActionScaler created (action_scale=0.1, no_clamp=True)
+[mujoco-stack-td3] Creating residual wrapper with GR00T policy...
+[MuJoCoResidualWrapperStack] Using ActionScaler mode (data-driven pos+grip normalization)
+[MuJoCoResidualWrapperStack] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000...
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:205: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:236: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+`use_fast` is set to `True` but the image processor class does not have a fast version.  Falling back to the slow version.
+Loading checkpoint shards:   0%|                                                                  | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████████████████████████████                             | 1/2 [00:00<00:00,  1.31it/s]Loading checkpoint shards: 100%|██████████████████████████████████████████████████████████| 2/2 [00:01<00:00,  1.23it/s]Loading checkpoint shards: 100%|██████████████████████████████████████████████████████████| 2/2 [00:01<00:00,  1.24it/s]
+[MuJoCoResidualWrapperStack] GR00T loaded in 36.4s
+[mujoco-stack-td3] Environment ready.
+[mujoco-stack-td3] State-only mode (no images for actor/critic)
+[mujoco-stack-td3] lowdim_dim=10, object_state_dim=10, action_dim=7
+[QAgent] State-only mode: no image encoders
+[QAgent]   prop_dim=10, object_state_dim=10, vlm_latent_dim=0
+Object state: 10D will be concatenated to prop
+[QAgent] total_prop_dim=20 (prop=10 + vlm_proj=0 + obj_state=10)
+[QAgent] repr_dim=0, patch_repr_dim=1
+[Critic] State-only mode, input_dim=27 (action=7 + prop=20)
+[Actor] State-only: policy_in_dim=27 (prop_dim=27)
+============encoder weights=============
+ModuleList()
+| Module   |   #Params |   % |
+|----------+-----------+-----|
+| Total    |         0 | 100 |
+=============critic weights=============
+Critic(
+  (q_ensemble): SpatialEmbQEnsemble(
+    heads: 10, state_only=True
+    (_head_template): HeadMLP(
+      (net): Sequential(
+        (0): Linear(in_features=27, out_features=256, bias=True)
+        (1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (2): ReLU()
+        (3): Linear(in_features=256, out_features=256, bias=True)
+        (4): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+        (5): ReLU()
+        (6): Linear(in_features=256, out_features=1, bias=True)
+      )
+    )
+  )
+)
+| Module                                 |   #Params |      % |
+|----------------------------------------+-----------+--------|
+| q_ensemble._vmap_param_net_0_weight    |    69,120 |   8.46 |
+| q_ensemble._vmap_param_net_0_bias      |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_1_weight    |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_1_bias      |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_3_weight    |   655,360 |  80.25 |
+| q_ensemble._vmap_param_net_3_bias      |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_4_weight    |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_4_bias      |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_6_weight    |     2,560 |   0.31 |
+| q_ensemble._vmap_param_net_6_bias      |        10 |   0.00 |
+| q_ensemble._head_template.net.0.weight |     6,912 |   0.85 |
+| q_ensemble._head_template.net.0.bias   |       256 |   0.03 |
+| q_ensemble._head_template.net.1.weight |       256 |   0.03 |
+| q_ensemble._head_template.net.1.bias   |       256 |   0.03 |
+| q_ensemble._head_template.net.3.weight |    65,536 |   8.02 |
+| q_ensemble._head_template.net.3.bias   |       256 |   0.03 |
+| q_ensemble._head_template.net.4.weight |       256 |   0.03 |
+| q_ensemble._head_template.net.4.bias   |       256 |   0.03 |
+| q_ensemble._head_template.net.6.weight |       256 |   0.03 |
+| q_ensemble._head_template.net.6.bias   |         1 |   0.00 |
+| Total                                  |   816,651 | 100.00 |
+=============actor weights==============
+Actor(
+  (policy): Sequential(
+    (0): Linear(in_features=27, out_features=256, bias=True)
+    (1): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+    (2): Dropout(p=0, inplace=False)
+    (3): ReLU()
+    (4): Linear(in_features=256, out_features=256, bias=True)
+    (5): LayerNorm((256,), eps=1e-05, elementwise_affine=True)
+    (6): Dropout(p=0, inplace=False)
+    (7): ReLU()
+    (8): Linear(in_features=256, out_features=7, bias=True)
+    (9): Tanh()
+  )
+)
+| Module          |   #Params |      % |
+|-----------------+-----------+--------|
+| policy.0.weight |     6,912 |   9.12 |
+| policy.0.bias   |       256 |   0.34 |
+| policy.1.weight |       256 |   0.34 |
+| policy.1.bias   |       256 |   0.34 |
+| policy.4.weight |    65,536 |  86.48 |
+| policy.4.bias   |       256 |   0.34 |
+| policy.5.weight |       256 |   0.34 |
+| policy.5.bias   |       256 |   0.34 |
+| policy.8.weight |     1,792 |   2.36 |
+| policy.8.bias   |         7 |   0.01 |
+| Total           |    75,783 | 100.00 |
+[QAgent] State-only: encoder_opt uses dummy param (no-op)
+[mujoco-stack-td3] Offline buffer created (dir=outputs/offline_stack_66ep, fraction=0.75)
+[mujoco-stack-td3]   [offline] reward_relabel=sparse, data_dir=outputs/offline_stack_66ep, files=66
+[mujoco-stack-td3]   [offline] buffer_size=10000, will stop after buffer is full
+2026-05-02 15:54:27,177 [torchrl][INFO]    Initialized LazyTensorStorage with torch.Size([10000]) shape [END]
+[mujoco-stack-td3]   [offline] Buffer full (10257 >= 10000), stopping early (30 files skipped)
+[mujoco-stack-td3]   Loaded 10257 transitions from 66 files
+[mujoco-stack-td3]   [offline] SPARSE RELABEL: 14 terminal-success steps out of 10257 total transitions (0.1365%)
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/torchrl/data/replay_buffers/replay_buffers.py:1007: UserWarning: Got conflicting batch_sizes in constructor (48) and `sample` (1000). Refer to the ReplayBuffer documentation for a proper usage of the batch-size arguments. The batch-size provided to the sample method will prevail.
+  warnings.warn(
+[mujoco-stack-td3]   [offline] Reward stats (sample 1000): min=0.0000, max=1.0000, mean=0.0049, nonzero=5/1000
+[mujoco-stack-td3] Offline buffer populated: 10000 transitions
+[mujoco-stack-td3] Saved offline cache (hash=79f4abc164169149) in 0.1s
+wandb: WARNING Unable to read the token file at /var/run/secrets/kubernetes.io/serviceaccount/token due to permission error ([Errno 13] Permission denied: '/var/run/secrets/kubernetes.io/serviceaccount/token').The current user id is 10011. Consider changing the securityContext to run the container as the current user.
+[mujoco-stack-td3] Warm-up: collecting 1000 transitions (base policy + noise)...
+2026-05-02 15:54:40,629 [torchrl][INFO]    Initialized LazyTensorStorage with torch.Size([10000]) shape [END]
+[mujoco-stack-td3]   warmup: 200/1000 transitions, 0 episodes
+[groot-infer] batch=2 envs, time=211ms, avg=296ms
+[mujoco-stack-td3]   warmup: 400/1000 transitions, 0 episodes
+[groot-infer] batch=1 envs, time=154ms, avg=180ms
+[mujoco-stack-td3]   warmup: 600/1000 transitions, 2 episodes
+[groot-infer] batch=1 envs, time=157ms, avg=157ms
+[mujoco-stack-td3]   warmup: 800/1000 transitions, 2 episodes
+[groot-infer] batch=1 envs, time=156ms, avg=153ms
+[groot-infer] batch=1 envs, time=149ms, avg=157ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=89.7ms
+[mujoco-stack-td3]   warmup: 1000/1000 transitions, 3 episodes
+[mujoco-stack-td3] Warm-up done: 1000 transitions, 3 episodes
+[mujoco-stack-td3] Critic warmup: 50 updates...
+/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/torchrl/data/replay_buffers/replay_buffers.py:1007: UserWarning: Got conflicting batch_sizes in constructor (16) and `sample` (64). Refer to the ReplayBuffer documentation for a proper usage of the batch-size arguments. The batch-size provided to the sample method will prevail.
+  warnings.warn(
+[QAgent._encode] State-only: returning empty feat (B=64, 0, 1) on cuda:0
+[QAgent._prepare_prop] Object state concat: 10D + 10D = 20D
+/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/resfit/rl_finetuning/off_policy/rl/q_agent.py:707: UserWarning: `parameters` is an empty generator, no gradient clipping will occur.
+  encoder_grad_norm = torch.nn.utils.clip_grad_norm_(self.encoders.parameters(), self.cfg.critic_grad_clip_norm)
+[mujoco-stack-td3]   critic warmup: 0/50 loss=0.1033
+[mujoco-stack-td3] Critic warmup done.
+[mujoco-stack-td3] Training for 100 steps...
+[mujoco-stack-td3] step=0/100 reward=0.0000 eps=0 speed=1.0step/s ETA=0.0h res_mean=0.02523
+[mujoco-stack-td3]   timing: env_step=35.2ms agent_act=4.1ms grad_update=70.8ms buffer_store=5.2ms
+[mujoco-stack-td3] Evaluating (2 episodes)...
+[groot-infer] batch=2 envs, time=176ms, avg=200ms
+[groot-infer] batch=2 envs, time=162ms, avg=162ms
+[groot-infer] batch=2 envs, time=177ms, avg=165ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=65.9ms
+[groot-infer] batch=2 envs, time=222ms, avg=216ms
+[mujoco-stack-td3]   success_rate=0.00%, mean_return=0.00
+[mujoco-stack-td3]   Saved best checkpoint: /tmp/stk_sparse_test/checkpoints/best.pt
+[mujoco-stack-td3] Evaluating (2 episodes)...
+[groot-infer] batch=2 envs, time=192ms, avg=214ms
+[groot-infer] batch=2 envs, time=220ms, avg=210ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=82.1ms
+[groot-infer] batch=2 envs, time=177ms, avg=198ms
+[groot-infer] batch=2 envs, time=158ms, avg=161ms
+[mujoco-stack-td3]   success_rate=25.00%, mean_return=0.25
+[mujoco-stack-td3]   Saved best checkpoint: /tmp/stk_sparse_test/checkpoints/best.pt
+[groot-infer] batch=1 envs, time=166ms, avg=156ms
+[mujoco-stack-td3] Evaluating (2 episodes)...
+[groot-infer] batch=2 envs, time=216ms, avg=189ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=81.5ms
+[groot-infer] batch=2 envs, time=198ms, avg=200ms
+[groot-infer] batch=2 envs, time=203ms, avg=203ms
+[groot-infer] batch=2 envs, time=180ms, avg=195ms
+[mujoco-stack-td3]   success_rate=50.00%, mean_return=0.50
+[mujoco-stack-td3]   Saved best checkpoint: /tmp/stk_sparse_test/checkpoints/best.pt
+[mujoco-stack-td3] Final evaluation...
+[groot-infer] batch=2 envs, time=153ms, avg=140ms
+[wrapper-timing] groot_query=0.0ms mujoco_step=86.1ms
+[groot-infer] batch=1 envs, time=153ms, avg=170ms
+[groot-infer] batch=1 envs, time=150ms, avg=154ms
+[groot-infer] batch=2 envs, time=219ms, avg=196ms
+[groot-infer] batch=2 envs, time=217ms, avg=219ms
+[mujoco-stack-td3] Final: success_rate=25.00%
+[mujoco-stack-td3] Final checkpoint: /tmp/stk_sparse_test/checkpoints/final_step101.pt
+[mujoco-stack-td3] Training complete.
+___BEGIN___COMMAND_DONE_MARKER___0
+(groot) 

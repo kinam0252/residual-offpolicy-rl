@@ -310,10 +310,16 @@ class MuJoCoResidualWrapperDrawer:
                 combined[i, 3:7] = combined_rot.as_quat()
 
                 # Build 7D normalized combined for replay
-                combined_pg_norm_np = combined_pg_norm.squeeze(0).numpy()
-                combined_naction_7d[i, :3] = combined_pg_norm_np[:3]
+                # Bug fix: re-scale the EXECUTED physical action to get the
+                # clamped normalized value (matches what env actually ran)
+                executed_pg = _torch.from_numpy(
+                    np.concatenate([combined[i, :3], [0.0]])  # grip=0.0 (always closed)
+                ).float().unsqueeze(0)
+                executed_pg_norm = scaler.scale(executed_pg)
+                executed_pg_norm_np = executed_pg_norm.squeeze(0).numpy()
+                combined_naction_7d[i, :3] = executed_pg_norm_np[:3]
                 combined_naction_7d[i, 3:6] = residual[i, 3:6]
-                combined_naction_7d[i, 6] = combined_pg_norm_np[3]
+                combined_naction_7d[i, 6] = executed_pg_norm_np[3]  # grip=const
         else:
             for i in range(self.num_envs):
                 base_pos = base_action[i, :3]

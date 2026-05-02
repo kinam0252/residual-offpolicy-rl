@@ -293,15 +293,9 @@ def main():
     )
     _log("Eval environment ready.")
 
-    # -- Create agent --
-    _asymmetric = args.asymmetric_critic
-    object_state_dim = 10 if _asymmetric else 0
-    if _asymmetric:
-        image_keys = ["observation.depth.front", "observation.depth.wrist"]
-        img_c = 1
-    else:
-        image_keys = ["observation.images.front", "observation.images.back", "observation.images.wrist"]
-        img_c = 3
+    # -- Create agent (state-only) --
+    image_keys = []
+    object_state_dim = env.observation_space["observation.object_state"].shape[1]  # 10
 
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     action_dim = env.action_dim
@@ -312,14 +306,14 @@ def main():
     cfg.agent.critic.hidden_dim = args.critic_hidden_dim
 
     agent = QAgent(
-        obs_shape=(img_c, 84, 84),
+        obs_shape=(3, 84, 84),  # dummy, not used in state-only
         prop_shape=(lowdim_dim,),
         action_dim=action_dim,
-        rl_cameras=image_keys,
+        rl_cameras=[],  # state-only
         cfg=cfg.agent,
         residual_actor=True,
         object_state_dim=object_state_dim,
-        asymmetric_critic=_asymmetric,
+        asymmetric_critic=False,
     )
 
     # -- W&B --

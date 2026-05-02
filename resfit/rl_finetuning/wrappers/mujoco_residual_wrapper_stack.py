@@ -198,7 +198,7 @@ class MuJoCoResidualWrapperStack:
         # Step MuJoCo env with combined absolute actions
         combined_t = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
         _t0 = time.time()
-        raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode="rl_only")
+        raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode="none")
         _dt_mujoco = time.time() - _t0
 
         # Internal timing stats (exposed via info)
@@ -238,7 +238,7 @@ class MuJoCoResidualWrapperStack:
             # Auto-reset done environments so next step starts fresh
             self.vec_env.reset_envs(done_ids)
             # Rebuild obs from reset state
-            raw_obs = self.vec_env._build_obs_dict(render_mode="rl_only")
+            raw_obs = self.vec_env._build_obs_dict(render_mode="none")
 
         # Get next base action for augmented obs
         next_base_action = self._get_base_actions()
@@ -515,7 +515,7 @@ class MuJoCoResidualWrapperStack:
 
     def _build_obs(self) -> dict[str, torch.Tensor]:
         """Rebuild observations (used after auto-reset)."""
-        raw_obs = self.vec_env._build_obs_dict()
+        raw_obs = self.vec_env._build_obs_dict(render_mode="none")
         base_action = self._held_base_action.copy()
         return self._augment_obs(raw_obs, base_action)
 

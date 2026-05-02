@@ -42,6 +42,8 @@ L2=${L2:-0.0}
 CW=${CW:-5000}
 OF=${OF:-0.5}
 SUFFIX=${SUFFIX:-""}
+REWARD=${REWARD:-"dense"}
+EVAL_STDDEV=${EVAL_STDDEV:-0.0}
 
 GROOT_CKPT=~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000
 OFFLINE_DIR=outputs/offline_drawer_zgate_100k
@@ -65,5 +67,7 @@ python resfit/rl_finetuning/scripts/train_residual_td3_mujoco_drawer.py \
     --offline_fraction $OF \
     --critic_warmup_steps $CW \
     --output_dir $OUTPUT_DIR \
+    --reward_type $REWARD \
+    --eval_stddev $EVAL_STDDEV \
     --wandb_project mujoco-drawer-residual-td3 \
     --wandb_name "$WANDB_NAME"

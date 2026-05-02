@@ -5,7 +5,7 @@
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
-#SBATCH --nodelist=worker-7
+#SBATCH --nodelist=worker-8
 #SBATCH --time=12:00:00
 #SBATCH --output=/home/nas_main/kinamkim/slurms/stk_r10a2_%j.out
 #SBATCH --error=/home/nas_main/kinamkim/slurms/stk_r10a2_%j.err
@@ -30,6 +30,7 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --groot_checkpoint ~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000 \
     --use_action_scaler \
     --no_action_clamp \
+    --eval_num_envs 15 \
     --offline_data_dir outputs/offline_stack_66ep \
     --offline_fraction 0.75 \
     --num_envs 30 \

@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=stk_r10a1
-#SBATCH --partition=sub
-#SBATCH --qos=core-on-sub
+#SBATCH --partition=core
+#SBATCH --qos=core-extra
+#SBATCH --nodelist=worker-8
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
@@ -29,6 +30,7 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --groot_checkpoint ~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000 \
     --use_action_scaler \
     --no_action_clamp \
+    --eval_num_envs 15 \
     --offline_data_dir outputs/offline_stack_66ep \
     --offline_fraction 0.75 \
     --num_envs 30 \

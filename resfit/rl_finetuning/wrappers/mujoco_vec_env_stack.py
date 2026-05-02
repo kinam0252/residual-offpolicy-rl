@@ -482,7 +482,7 @@ class MuJoCoVecEnvStack:
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
         for i in range(self.num_envs):
             self._reset_single_env(i)
-        return self._build_obs_dict(), {}
+        return self._build_obs_dict(render_mode="none"), {}
 
     def reset_envs(self, env_ids: list[int]) -> None:
         for eid in env_ids:

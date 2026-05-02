@@ -1,14 +1,13 @@
 #!/bin/bash
-#SBATCH --job-name=stk_r05a1
+#SBATCH --job-name=stk_dn6
 #SBATCH --partition=core
-#SBATCH --qos=core-extra
-#SBATCH --nodelist=worker-3
+#SBATCH --qos=core-on-free
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
-#SBATCH --time=12:00:00
-#SBATCH --output=/home/nas_main/kinamkim/slurms/stk_r05a1_%j.out
-#SBATCH --error=/home/nas_main/kinamkim/slurms/stk_r05a1_%j.err
+#SBATCH --time=72:00:00
+#SBATCH --output=/home/nas_main/kinamkim/slurms/stk_dn6_%j.out
+#SBATCH --error=/home/nas_main/kinamkim/slurms/stk_dn6_%j.err
 
 set -e
 . ~/.venvs/groot/bin/activate
@@ -23,20 +22,22 @@ export PATH=~/bin:$PATH
 export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export PYTHONUNBUFFERED=1
+export CUDA_VISIBLE_DEVICES=0
 
 cd ~/Repos/Intern/residual-offpolicy-rl
 
+# Exp6: dense control + action_scale=0.05 (reduce saturation baseline)
 python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --groot_checkpoint ~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-100000 \
     --use_action_scaler \
     --no_action_clamp \
-    --eval_num_envs 15 \
+    --eval_num_envs 20 \
     --offline_data_dir outputs/offline_stack_66ep \
     --offline_fraction 0.75 \
     --num_envs 30 \
     --episode_positions_file configs/stack_cube_positions.json \
     --eval_positions_file configs/stack_cube_positions.json \
-    --total_timesteps 50000 \
+    --total_timesteps 500000 \
     --eval_interval 2000 \
     --checkpoint_interval 10000 \
     --batch_size 256 \
@@ -55,7 +56,9 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --actor_hidden_dim 256 \
     --critic_hidden_dim 256 \
     --wandb_mode offline \
+    --reward_type dense \
+    --offline_reward_relabel none \
     --residual_rot_scale 0.05 \
-    --action_scale 0.1 \
+    --action_scale 0.05 \
     --seed 42 \
-    --output_dir outputs/stack_rl/sweep_rot05_act01
+    --output_dir outputs/stack_rl/dn6_g95_n3_a05

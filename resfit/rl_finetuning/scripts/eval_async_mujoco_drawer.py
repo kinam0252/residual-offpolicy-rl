@@ -79,6 +79,7 @@ def evaluate_drawer(
     device: torch.device,
     active_drawers: list[int],
     eval_step: int = 0,
+    eval_stddev: float = 0.0,
 ) -> dict[str, float]:
     """Evaluate per-drawer success rate.
 
@@ -103,7 +104,7 @@ def evaluate_drawer(
 
         for step in range(env.vec_env.max_episode_steps):
             with torch.no_grad():
-                action = agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
+                action = agent.act(obs, eval_mode=True, stddev=eval_stddev, cpu=False)
 
             obs, reward, terminated, truncated, info = env.step(action)
             done = terminated | truncated
@@ -183,6 +184,7 @@ def parse_args():
     p.add_argument("--critic_hidden_dim", type=int, default=1024)
     # Eval
     p.add_argument("--eval_num_episodes", type=int, default=10)
+    p.add_argument("--eval_stddev", type=float, default=0.0)
     # W&B
     p.add_argument("--wandb_mode", type=str, default="disabled")
     p.add_argument("--wandb_project", type=str, default="mujoco-drawer-residual-td3")
@@ -314,6 +316,7 @@ def main():
                 device=device,
                 active_drawers=args.active_drawers,
                 eval_step=step,
+                eval_stddev=args.eval_stddev,
             )
 
             # Save JSON result

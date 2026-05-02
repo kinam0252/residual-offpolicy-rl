@@ -1,14 +1,14 @@
 #!/bin/bash
-#SBATCH --job-name=stk_r05a1
+#SBATCH --job-name=stk_l2_3
 #SBATCH --partition=core
 #SBATCH --qos=core-extra
-#SBATCH --nodelist=worker-3
 #SBATCH --gres=gpu:1
 #SBATCH --cpus-per-task=14
 #SBATCH --mem=200G
+#SBATCH --nodelist=worker-7
 #SBATCH --time=12:00:00
-#SBATCH --output=/home/nas_main/kinamkim/slurms/stk_r05a1_%j.out
-#SBATCH --error=/home/nas_main/kinamkim/slurms/stk_r05a1_%j.err
+#SBATCH --output=/home/nas_main/kinamkim/slurms/stk_l2_3_%j.out
+#SBATCH --error=/home/nas_main/kinamkim/slurms/stk_l2_3_%j.err
 
 set -e
 . ~/.venvs/groot/bin/activate
@@ -46,7 +46,7 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --target_tau 0.005 \
     --max_episode_steps 300 \
     --random_action_noise_scale 0.05 \
-    --action_l2_reg 1.0 \
+    --action_l2_reg 0.01 \
     --critic_warmup_steps 2000 \
     --n_step 3 \
     --async_eval \
@@ -55,7 +55,7 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_stack.py \
     --actor_hidden_dim 256 \
     --critic_hidden_dim 256 \
     --wandb_mode offline \
-    --residual_rot_scale 0.05 \
-    --action_scale 0.1 \
+    --residual_rot_scale 0.1 \
+    --action_scale 0.2 \
     --seed 42 \
-    --output_dir outputs/stack_rl/sweep_rot05_act01
+    --output_dir outputs/stack_rl/sweep_l2_3_a02_l001_r10

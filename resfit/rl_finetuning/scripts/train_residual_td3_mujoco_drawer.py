@@ -312,6 +312,7 @@ class AsyncEvaluator:
             "--max_episode_steps", str(a.max_episode_steps),
             "--device", a.device,
             "--eval_num_episodes", str(a.eval_num_episodes),
+            "--eval_stddev", str(a.eval_stddev),
             "--active_drawers", *[str(d) for d in a.active_drawers],
             "--poll_interval_sec", "10",
         ]
@@ -487,6 +488,7 @@ def parse_args():
     p.add_argument("--output_dir", type=str, default="outputs/drawer_td3")
     p.add_argument("--eval_interval", type=int, default=5_000)
     p.add_argument("--eval_num_episodes", type=int, default=10)
+    p.add_argument("--eval_stddev", type=float, default=0.0)
     p.add_argument("--debug_zero_residual", action="store_true")
     # Checkpoint & Resume
     p.add_argument("--checkpoint_interval", type=int, default=5000)
@@ -749,6 +751,8 @@ def main():
     train_start = time.time()
     ep_cum_reward = torch.zeros(num_envs, device=device)
     ep_step_counter = torch.zeros(num_envs, device=device, dtype=torch.long)
+    _last_ep_return = 0.0
+    _last_ep_steps = 0.0
 
     while global_step <= args.total_timesteps:
         # ── (1) Collect transition ──
@@ -772,9 +776,12 @@ def main():
             n_done = done_mask.sum().item()
             episode_count += n_done
 
+            ep_return = float(ep_cum_reward[done_mask].mean().item())
+            ep_steps = float(ep_step_counter[done_mask].float().mean().item())
+            _last_ep_return = ep_return
+            _last_ep_steps = ep_steps
+
             if _wb is not None and _wb.run is not None:
-                ep_return = float(ep_cum_reward[done_mask].mean().item())
-                ep_steps = float(ep_step_counter[done_mask].float().mean().item())
                 _wb.log({
                     "training/episode_return": ep_return,
                     "training/episode_steps": ep_steps,
@@ -822,13 +829,12 @@ def main():
         # ── (3) Periodic logging ──
         if global_step % 500 == 0:
             ra = residual_action[0].detach().cpu().numpy() if residual_action is not None else np.zeros(7)
-            rw = reward[0].item()
             elapsed = time.time() - train_start
             steps_per_sec = max(1, global_step) / max(1, elapsed)
             eta_h = (args.total_timesteps - global_step) / max(0.01, steps_per_sec) / 3600
 
-            _log(f"step={global_step}/{args.total_timesteps} reward={rw:.4f} eps={episode_count} "
-                 f"speed={steps_per_sec:.1f}step/s ETA={eta_h:.1f}h "
+            _log(f"step={global_step}/{args.total_timesteps} ep_ret={_last_ep_return:.3f} ep_len={_last_ep_steps:.0f} "
+                 f"eps={episode_count} speed={steps_per_sec:.1f}step/s ETA={eta_h:.1f}h "
                  f"res_mean={ra[:6].mean():.5f}")
 
         # ── (4) Evaluation ──
