@@ -620,7 +620,7 @@ class MuJoCoVecEnvStack:
         random_cube_range: dict | list | None = None,
         depth_norm: dict[str, dict[str, float]] | None = None,
         parallel_envs: bool = True,
-        num_workers: int = 4,
+        num_workers: int = 8,
     ):
         self.num_envs = num_envs
         self.max_episode_steps = max_episode_steps

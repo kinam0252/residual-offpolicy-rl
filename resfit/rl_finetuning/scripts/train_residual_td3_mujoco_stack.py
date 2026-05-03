@@ -580,7 +580,7 @@ def parse_args():
     p.add_argument("--reward_type", type=str, default="dense", choices=["sparse", "dense"])
     p.add_argument("--parallel_envs", type=int, default=1,
                    help="1=parallel SubprocVecEnv (default), 0=sequential")
-    p.add_argument("--num_workers", type=int, default=6,
+    p.add_argument("--num_workers", type=int, default=8,
                    help="Number of worker processes for parallel env stepping")
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
