@@ -51,28 +51,29 @@ def extract_features(mujoco_env, env_idx=0):
     model, data, ids = env["model"], env["data"], env["ids"]
 
     # TCP pose
-    tcp_pos, tcp_quat_xyzw = get_tcp_pose(model, data, ids["hand_id"])
+    tcp_pos, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
+    tcp_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat().astype(np.float32)
 
-    # Cup state
+    # Cup state via env dict
     cup_jnt_id = env.get("cup_jnt_id", -1)
-    cup_bid = env.get("cup_body_id", -1)
+    cup_qpa = env.get("cup_qposadr")
+    cup_dof = env.get("cup_dofadr")
     cup_pos = np.zeros(3, dtype=np.float32)
     cup_quat_wxyz = np.array([1, 0, 0, 0], dtype=np.float32)
     uprightness = 0.0
     cup_vel = 0.0
 
-    if cup_jnt_id >= 0:
-        cup_qpa = model.jnt_qposadr[cup_jnt_id]
+    if cup_qpa is not None:
         cup_pos = data.qpos[cup_qpa:cup_qpa + 3].copy().astype(np.float32)
         cup_quat_wxyz = data.qpos[cup_qpa + 3:cup_qpa + 7].copy().astype(np.float32)
-    if cup_bid >= 0:
-        cup_mat = data.xmat[cup_bid].reshape(3, 3)
-        uprightness = float(cup_mat[:, 2][2])
-        cup_dof = model.jnt_dofadr[cup_jnt_id] if cup_jnt_id >= 0 else -1
-        if cup_dof >= 0:
-            cup_vel = float(np.linalg.norm(data.qvel[cup_dof:cup_dof + 6]))
+    
+    # Uprightness via vec_env method
+    uprightness = mujoco_env._get_uprightness(env_idx)
+    
+    if cup_dof is not None:
+        cup_vel = float(np.linalg.norm(data.qvel[cup_dof:cup_dof + 6]))
 
-    # Grasp state
+    # Grasp state (now contact-based)
     grasped = env.get("grasp_state", {}).get("grasped", False)
 
     # TCP to cup distance

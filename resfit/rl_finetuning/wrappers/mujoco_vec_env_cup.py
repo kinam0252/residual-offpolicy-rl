@@ -196,6 +196,10 @@ FINGER_GAIN = 1500.0
 FINGER_BIAS = -1500.0
 N_SETTLE_INIT = 30  # cup settle frames before episode starts
 
+# Grasp detection constants
+GRIPPER_CLOSE_THRESHOLD = 0.028  # below this → gripper is "closing"
+GRASP_CONTACT_THRESHOLD = 1     # contact_count frames needed to confirm grasp
+
 # Real robot initial joints for stand cup
 CUP_HOME_QPOS = np.array([-0.835542, -0.972155, 1.060006, -2.601308,
                             0.814271, 1.7855, 0.34296])
@@ -441,6 +445,14 @@ class MuJoCoVecEnvCup:
         for gi in cup_col_gids:
             model.geom_friction[gi] = CUP_FRICTION
 
+        # Finger geom IDs for contact-based grasp detection
+        finger_geom_ids = []
+        for gi in range(model.ngeom):
+            gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gi) or ""
+            bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
+            if "finger" in gname or "finger" in bname or "pad" in gname or "lip" in gname:
+                finger_geom_ids.append(gi)
+
         return {
             "model": model,
             "data": data,
@@ -458,6 +470,8 @@ class MuJoCoVecEnvCup:
             "cup_qposadr": cup_qposadr,
             "cup_dofadr": cup_dofadr,
             "cup_col_gids": cup_col_gids,
+            "finger_geom_ids": finger_geom_ids,
+            "grasp_state": {"grasped": False, "contact_count": 0},
             "episode_id": episode_id,
             "cup_pos_init": cup_pos.copy(),
             "cup_quat_wxyz_init": cup_quat_wxyz.copy(),
@@ -600,6 +614,53 @@ class MuJoCoVecEnvCup:
         for _ in range(env["n_substeps"]):
             mujoco.mj_step(model, data)
 
+        # Update grasp state based on contact
+        self._update_grasp(env_idx)
+
+    def _update_grasp(self, env_idx):
+        """Contact-based grasp detection: both fingers touching cup + gripper closing."""
+        env = self._envs[env_idx]
+        model, data = env["model"], env["data"]
+        gs = env["grasp_state"]
+        cup_gids = set(env["cup_col_gids"])
+        finger_gids = env["finger_geom_ids"]
+
+        # Check bilateral finger-cup contact
+        left_contact = False
+        right_contact = False
+        for ci in range(data.ncon):
+            c = data.contact[ci]
+            g1, g2 = c.geom1, c.geom2
+            # Check if one geom is cup and other is finger
+            if g1 in cup_gids or g2 in cup_gids:
+                other = g2 if g1 in cup_gids else g1
+                if other in finger_gids:
+                    idx = finger_gids.index(other)
+                    if idx % 2 == 0:
+                        left_contact = True
+                    else:
+                        right_contact = True
+
+        bilateral_contact = left_contact and right_contact
+
+        # Gripper width
+        finger_id = env["ids"]["finger_ids"][0]
+        gripper_width = float(data.qpos[model.jnt_qposadr[finger_id]]) if finger_id >= 0 else GRIPPER_MAX_WIDTH
+        gripper_closing = gripper_width < GRIPPER_CLOSE_THRESHOLD
+
+        # Update contact counter (hysteresis)
+        if gripper_closing and bilateral_contact:
+            gs["contact_count"] = min(gs["contact_count"] + 1, 10)
+        else:
+            gs["contact_count"] = max(gs["contact_count"] - 2, 0)
+
+        # Grasp state with hysteresis (once grasped, stay grasped while gripper closed)
+        was_grasped = gs["grasped"]
+        if was_grasped and gripper_closing:
+            gs["grasped"] = True
+        else:
+            gs["grasped"] = (gs["contact_count"] >= GRASP_CONTACT_THRESHOLD and gripper_closing)
+
     # ------------------------------------------------------------------
     # Internal: reset
     # ------------------------------------------------------------------
@@ -647,6 +708,7 @@ class MuJoCoVecEnvCup:
 
         self._step_counts[env_idx] = 0
         self._last_actions[env_idx] = 0.0
+        env["grasp_state"] = {"grasped": False, "contact_count": 0}
 
     # ------------------------------------------------------------------
     # Internal: reward and success
@@ -656,9 +718,36 @@ class MuJoCoVecEnvCup:
         if self.reward_type == "sparse":
             return 1.0 if self._is_success(env_idx) else 0.0
 
-        # Dense reward: uprightness
+        # Staged dense reward:
+        #   approach (0.20): tanh decay on tcp-cup distance
+        #   grasp   (0.15): flat reward when grasped
+        #   upright (0.65): uprightness (only when grasped)
+        env = self._envs[env_idx]
+        model, data, ids = env["model"], env["data"], env["ids"]
+
+        # TCP position
+        tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
+        # Cup position
+        cup_qpa = env["cup_qposadr"]
+        if cup_qpa is None:
+            return 0.0
+        cup_pos = data.qpos[cup_qpa:cup_qpa + 3]
+        tcp_cup_dist = float(np.linalg.norm(tcp_pos - cup_pos))
+
+        # Approach: 1 - tanh(dist / scale)
+        approach_scale = 0.10
+        approach_reward = 1.0 - float(np.tanh(tcp_cup_dist / approach_scale))
+
+        # Grasp
+        grasped = env["grasp_state"]["grasped"]
+        grasp_reward = 1.0 if grasped else 0.0
+
+        # Upright (only counts when grasped)
         uprightness = self._get_uprightness(env_idx)
-        return float(np.clip(uprightness, 0.0, 1.0))
+        upright_reward = float(np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
+
+        reward = 0.20 * approach_reward + 0.15 * grasp_reward + 0.65 * upright_reward
+        return float(np.clip(reward, 0.0, 1.0))
 
     def _is_success(self, env_idx) -> bool:
         """Cup is upright and stable on table."""
