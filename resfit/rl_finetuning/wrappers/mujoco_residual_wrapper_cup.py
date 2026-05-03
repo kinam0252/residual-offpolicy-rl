@@ -265,31 +265,29 @@ class MuJoCoResidualWrapperCup:
 
     def _combine_actions(self, base_action, residual):
         combined = np.zeros_like(base_action)
-        for i in range(self.num_envs):
-            base_pos = base_action[i, :3]
-            base_quat_xyzw = base_action[i, 3:7]
-            base_grip = base_action[i, 7]
-            res_pos = residual[i, :3] * self.residual_pos_scale
-            res_euler = residual[i, 3:6] * self.residual_rot_scale
-            res_grip = residual[i, 6] * self.residual_grip_scale
-            combined[i, :3] = base_pos + res_pos
-            base_rot = Rotation.from_quat(base_quat_xyzw)
-            delta_rot = Rotation.from_euler("xyz", res_euler)
-            combined_rot = base_rot * delta_rot
-            combined[i, 3:7] = combined_rot.as_quat()
-            combined[i, 7] = np.clip(base_grip + res_grip, _GRIP_MIN, _GRIP_MAX)
+        # Position: direct add (vectorized)
+        combined[:, :3] = base_action[:, :3] + residual[:, :3] * self.residual_pos_scale
+        # Gripper: clip (vectorized)
+        combined[:, 7] = np.clip(
+            base_action[:, 7] + residual[:, 6] * self.residual_grip_scale,
+            _GRIP_MIN, _GRIP_MAX)
+        # Rotation: must use Rotation (batch-capable)
+        base_rots = Rotation.from_quat(base_action[:, 3:7])
+        delta_rots = Rotation.from_euler("xyz", residual[:, 3:6] * self.residual_rot_scale)
+        combined[:, 3:7] = (base_rots * delta_rots).as_quat()
         return combined
 
     def _augment_obs(self, raw_obs, base_action):
         out = dict(raw_obs)
         ba_7d = np.zeros((base_action.shape[0], 7), dtype=np.float32)
-        for i in range(base_action.shape[0]):
-            ba_7d[i, :3] = base_action[i, :3]
-            quat_xyzw = base_action[i, 3:7]
-            qn = np.linalg.norm(quat_xyzw)
-            if qn > 1e-6:
-                ba_7d[i, 3:6] = Rotation.from_quat(quat_xyzw / qn).as_euler("xyz")
-            ba_7d[i, 6] = base_action[i, 7]
+        ba_7d[:, :3] = base_action[:, :3]
+        quats = base_action[:, 3:7]
+        norms = np.linalg.norm(quats, axis=1, keepdims=True)
+        valid = (norms > 1e-6).ravel()
+        if valid.any():
+            safe_quats = quats[valid] / norms[valid]
+            ba_7d[valid, 3:6] = Rotation.from_quat(safe_quats).as_euler("xyz")
+        ba_7d[:, 6] = base_action[:, 7]
         out["observation.base_action"] = torch.as_tensor(ba_7d, device=self.device, dtype=torch.float32)
         return out
 

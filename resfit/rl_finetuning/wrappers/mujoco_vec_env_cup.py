@@ -314,6 +314,22 @@ class MuJoCoVecEnvCup:
         self._step_counts = np.zeros(num_envs, dtype=np.int64)
         self._last_actions = np.zeros((num_envs, 8), dtype=np.float32)
 
+        # Preallocated buffers for _build_obs_dict (avoid per-step allocation)
+        self._buf_states = np.zeros((num_envs, self._state_dim), dtype=np.float32)
+        self._buf_obj_states = np.zeros((num_envs, 8), dtype=np.float32)
+        self._buf_images = {
+            k: np.zeros((num_envs, 3, rl_img_size, rl_img_size), dtype=np.uint8)
+            for k in self.CAMERA_MAP.values()
+        }
+        self._zero_img = np.zeros((3, rl_img_size, rl_img_size), dtype=np.uint8)
+
+        # Precompute finger_geom_ids as set for O(1) lookup in _update_grasp
+        for env in self._envs:
+            env["finger_geom_id_set"] = set(env["finger_geom_ids"])
+            # Also build a side lookup: geom_id → (is_left: bool)
+            fgids = env["finger_geom_ids"]
+            env["finger_geom_side"] = {gid: (i % 2 == 0) for i, gid in enumerate(fgids)}
+
     def _get_cup_placement(self, episode_id: int):
         """Get cup position and quaternion for an episode."""
         ep_key = f"episode_{episode_id:03d}"
@@ -627,7 +643,8 @@ class MuJoCoVecEnvCup:
         model, data = env["model"], env["data"]
         gs = env["grasp_state"]
         cup_gids = set(env["cup_col_gids"])
-        finger_gids = env["finger_geom_ids"]
+        finger_set = env["finger_geom_id_set"]
+        finger_side = env["finger_geom_side"]
 
         # Check bilateral finger-cup contact
         left_contact = False
@@ -635,15 +652,15 @@ class MuJoCoVecEnvCup:
         for ci in range(data.ncon):
             c = data.contact[ci]
             g1, g2 = c.geom1, c.geom2
-            # Check if one geom is cup and other is finger
             if g1 in cup_gids or g2 in cup_gids:
                 other = g2 if g1 in cup_gids else g1
-                if other in finger_gids:
-                    idx = finger_gids.index(other)
-                    if idx % 2 == 0:
+                if other in finger_set:
+                    if finger_side[other]:
                         left_contact = True
                     else:
                         right_contact = True
+                    if left_contact and right_contact:
+                        break
 
         bilateral_contact = left_contact and right_contact
 
@@ -772,16 +789,18 @@ class MuJoCoVecEnvCup:
                 and cup_z_pos < CUP_HEIGHT * 1.5)
 
     def _get_uprightness(self, env_idx) -> float:
-        """Cup local z dot world z. 1.0 = perfectly upright."""
+        """Cup local z dot world z. 1.0 = perfectly upright.
+        Uses direct quaternion math (avoids Rotation object overhead)."""
         env = self._envs[env_idx]
         cup_qpa = env["cup_qposadr"]
         if cup_qpa is None:
             return 0.0
         data = env["data"]
-        quat_wxyz = data.qpos[cup_qpa + 3:cup_qpa + 7]
-        q_xyzw = [quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]]
-        R = Rotation.from_quat(q_xyzw).as_matrix()
-        return float(np.dot(R[:, 2], [0, 0, 1]))
+        q = data.qpos[cup_qpa + 3:cup_qpa + 7]  # wxyz
+        w, x, y, z = q[0], q[1], q[2], q[3]
+        # R[:,2] (third column of rotation matrix) dot [0,0,1] = R[2,2]
+        # R[2,2] = 1 - 2*(x^2 + y^2)
+        return float(1.0 - 2.0 * (x * x + y * y))
 
     def get_cup_state(self, env_idx) -> dict:
         """Get cup position, orientation, uprightness for debugging."""
@@ -804,9 +823,9 @@ class MuJoCoVecEnvCup:
     # ------------------------------------------------------------------
 
     def _build_obs_dict(self, render_mode: str = "full") -> dict[str, torch.Tensor]:
-        states = []
-        images: dict[str, list[np.ndarray]] = {k: [] for k in self.CAMERA_MAP.values()}
-        object_states = []
+        states = self._buf_states
+        obj_states = self._buf_obj_states
+        do_render = render_mode in ("full", "rl_only")
 
         for i in range(self.num_envs):
             env = self._envs[i]
@@ -817,45 +836,60 @@ class MuJoCoVecEnvCup:
             eef_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat()
             finger_id = ids["finger_ids"][0]
             grip = max(0.0, float(data.qpos[model.jnt_qposadr[finger_id]])) if finger_id >= 0 else GRIPPER_MAX_WIDTH
-            state = np.concatenate([
-                tcp_pos.astype(np.float32),
-                eef_quat_xyzw.astype(np.float32),
-                np.array([grip], dtype=np.float32),
-            ])
-            states.append(state)
+            states[i, :3] = tcp_pos
+            states[i, 3:7] = eef_quat_xyzw
+            states[i, 7] = grip
 
-            # Images (RGB only)
-            if render_mode in ("full", "rl_only"):
-                self._render_cameras(i, images)
-            else:  # "none" — skip rendering entirely
-                for key in images:
-                    images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
+            # Images
+            if do_render:
+                self._render_cameras_inplace(i)
+            else:
+                self._buf_images["observation.images.cam_base"][i] = self._zero_img
+                self._buf_images["observation.images.cam_wrist"][i] = self._zero_img
 
             # Object state: cup_pos(3) + cup_quat_wxyz(4) + uprightness(1)
-            cup_state = self.get_cup_state(i)
-            obj_s = np.concatenate([
-                cup_state["pos"].astype(np.float32),
-                cup_state["quat_wxyz"].astype(np.float32),
-                np.array([cup_state["uprightness"]], dtype=np.float32),
-            ])
-            object_states.append(obj_s)
+            cup_qpa = env["cup_qposadr"]
+            if cup_qpa is not None:
+                obj_states[i, :3] = data.qpos[cup_qpa:cup_qpa + 3]
+                obj_states[i, 3:7] = data.qpos[cup_qpa + 3:cup_qpa + 7]
+                obj_states[i, 7] = self._get_uprightness(i)
+            else:
+                obj_states[i] = 0.0
 
         obs = {
             "observation.state": torch.as_tensor(
-                np.stack(states), device=self.device, dtype=torch.float32),
+                states, device=self.device, dtype=torch.float32),
             "observation.object_state": torch.as_tensor(
-                np.stack(object_states), device=self.device, dtype=torch.float32),
+                obj_states, device=self.device, dtype=torch.float32),
         }
-        for key, img_list in images.items():
-            obs[key] = torch.as_tensor(np.stack(img_list), device=self.device, dtype=torch.uint8)
+        for key in self._buf_images:
+            obs[key] = torch.as_tensor(self._buf_images[key], device=self.device, dtype=torch.uint8)
         return obs
 
-    def _render_cameras(self, env_idx, images_dict):
+    def _render_cameras_inplace(self, env_idx):
+        """Render cameras directly into preallocated image buffers."""
         env = self._envs[env_idx]
         data = env["data"]
         _rs = self.rl_img_size
 
-        # cam_base
+        env["renderer_base"].update_scene(data, camera=env["cam_base_id"],
+                                           scene_option=env["opt_base"])
+        frame_base = env["renderer_base"].render()
+        img_base = cv2.resize(frame_base, (_rs, _rs))
+        self._buf_images["observation.images.cam_base"][env_idx] = np.transpose(img_base, (2, 0, 1))
+
+        env["renderer_wrist"].update_scene(data, camera=env["cam_wrist_id"],
+                                            scene_option=env["opt_wrist"])
+        frame_wrist = env["renderer_wrist"].render()
+        img_wrist = cv2.resize(frame_wrist, (_rs, _rs))
+        self._buf_images["observation.images.cam_wrist"][env_idx] = np.transpose(img_wrist, (2, 0, 1))
+
+    def _render_cameras(self, env_idx, images_dict):
+        """Legacy render (used by get_groot_obs)."""
+        env = self._envs[env_idx]
+        data = env["data"]
+        _rs = self.rl_img_size
+
         env["renderer_base"].update_scene(data, camera=env["cam_base_id"],
                                            scene_option=env["opt_base"])
         frame_base = env["renderer_base"].render().copy()
@@ -864,7 +898,6 @@ class MuJoCoVecEnvCup:
             np.transpose(img_base, (2, 0, 1)).astype(np.uint8)
         )
 
-        # cam_wrist
         env["renderer_wrist"].update_scene(data, camera=env["cam_wrist_id"],
                                             scene_option=env["opt_wrist"])
         frame_wrist = env["renderer_wrist"].render().copy()
