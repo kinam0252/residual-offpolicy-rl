@@ -578,6 +578,10 @@ def parse_args():
     p.add_argument("--calib_path", type=str, default=None)
     p.add_argument("--max_episode_steps", type=int, default=500)
     p.add_argument("--reward_type", type=str, default="dense", choices=["sparse", "dense"])
+    p.add_argument("--parallel_envs", type=int, default=1,
+                   help="1=parallel SubprocVecEnv (default), 0=sequential")
+    p.add_argument("--num_workers", type=int, default=6,
+                   help="Number of worker processes for parallel env stepping")
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")
@@ -735,8 +739,10 @@ def main():
         reward_type=args.reward_type,
         device=args.device,
         random_cube_range=random_cube_range,
+        parallel_envs=bool(args.parallel_envs),
+        num_workers=args.num_workers,
     )
-    _log(f"MuJoCo Stack env: {args.num_envs} envs, white={args.white_cube_pos}, green={args.green_cube_pos}")
+    _log(f"MuJoCo Stack env: {args.num_envs} envs, white={args.white_cube_pos}, green={args.green_cube_pos}, parallel={bool(args.parallel_envs)}, workers={args.num_workers}")
 
     # ── Build ActionScaler ──
     _action_scaler = None

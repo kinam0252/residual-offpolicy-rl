@@ -1,0 +1,18 @@
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/scripts/video_eval_drawer.py", line 33, in <module>
+    import mujoco
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/__init__.py", line 68, in <module>
+    from mujoco.rendering.classic.renderer import Renderer  # pytype: disable=import-error
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 20, in <module>
+    from mujoco.rendering.classic import gl_context
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/gl_context.py", line 41, in <module>
+    from mujoco.egl import GLContext as _GLContext
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 31, in <module>
+    from mujoco.egl import egl_ext as EGL
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/egl_ext.py", line 27, in <module>
+    from OpenGL import EGL
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/EGL/__init__.py", line 2, in <module>
+    from OpenGL.raw.EGL._types import *
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/raw/EGL/_types.py", line 87, in <module>
+    raw_eglQueryString = _p.PLATFORM.EGL.eglQueryString
+AttributeError: 'NoneType' object has no attribute 'eglQueryString'
