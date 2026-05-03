@@ -220,7 +220,11 @@ def load_cup_positions(path=None):
     """Load per-episode cup positions. Returns dict: ep_key → {cup_position, cup_orientation_wxyz}."""
     path = path or _CUP_POSITIONS
     with open(path) as f:
-        return json.load(f)
+        data = json.load(f)
+    # Support both list format and dict format (episode_000, ...)
+    if isinstance(data, list):
+        return {f"episode_{i:03d}": item for i, item in enumerate(data)}
+    return data
 
 
 class MuJoCoVecEnvCup:
