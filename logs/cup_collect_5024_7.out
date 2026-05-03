@@ -1,0 +1,17 @@
+=== Cup Collect: chunk 7/7 ===
+  Episodes/env: 13
+  Output: outputs/offline_cup_batch/chunk_7
+=== Stand Cup Offline Data Collection (BATCH) ===
+  Cup positions: 27 episodes (parallel envs)
+  Rollouts/position: 13
+  Total episodes: 351
+  Max steps/episode: 300
+  GR00T: /home/nas_main/kinamkim/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000
+
+Creating Cup environment (all positions batch)...
+[MuJoCoVecEnvCup] Loaded 33 cup positions
+[load_calib_wrist] Loaded from camera_info_66ep.yaml: pos=[-0.06653175 -0.02519977  0.05951161], quat=[0.2722828  0.26626734 0.64614796 0.66140502]
+[MuJoCoVecEnvCup] Spawned 8 workers for 27 envs
+Loading GR00T policy...
+[MuJoCoResidualWrapperCup] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000...
+=== Done chunk 7 ===

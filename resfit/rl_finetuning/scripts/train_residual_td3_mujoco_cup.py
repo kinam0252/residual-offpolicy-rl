@@ -349,6 +349,8 @@ class AsyncEvaluator:
             cmd += ["--asymmetric_critic"]
         if a.torch_compile:
             cmd += ["--torch_compile"]
+        if a.chunk_sync:
+            cmd += ["--chunk_sync"]
         # ActionScaler forwarding
         if a.use_action_scaler and self._action_scaler is not None:
             cmd += ["--use_action_scaler"]
@@ -495,6 +497,8 @@ def parse_args():
     p.add_argument("--ema_alpha", type=float, default=0.0)
     p.add_argument("--torch_compile", action="store_true", default=False,
                    help="Apply torch.compile to GR00T model for inference acceleration")
+    p.add_argument("--chunk_sync", action="store_true", default=False,
+                   help="Sync all env chunk boundaries for batched GR00T inference")
     # Algorithm
     p.add_argument("--total_timesteps", type=int, default=500_000)
     p.add_argument("--learning_starts", type=int, default=1_000)
@@ -634,6 +638,7 @@ def main():
         residual_grip_scale=args.residual_grip_scale,
         ema_alpha=args.ema_alpha,
         torch_compile=args.torch_compile,
+        chunk_sync=args.chunk_sync,
     )
     _log("Environment ready.")
 

@@ -22,6 +22,12 @@ from scipy.spatial.transform import Rotation
 
 from resfit.rl_finetuning.wrappers.mujoco_vec_env_cup import MuJoCoVecEnvCup
 
+# get_tcp_pose from Mujoco_Franka/src/utils.py (path set up by mujoco_vec_env_cup import)
+try:
+    from utils import get_tcp_pose  # noqa: E402
+except ImportError:
+    get_tcp_pose = None
+
 # ── Isaac-GR00T imports ──
 _GROOT_ROOT = str(Path(__file__).resolve().parents[4] / "Isaac-GR00T")
 if _GROOT_ROOT not in sys.path:
@@ -67,6 +73,7 @@ class MuJoCoResidualWrapperCup:
         action_clip: float = 1.0,
         ema_alpha: float = 0.0,
         torch_compile: bool = False,
+        chunk_sync: bool = False,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -125,6 +132,10 @@ class MuJoCoResidualWrapperCup:
         self._grip_latched: list[bool] = [False] * self.num_envs
         self._grip_open_count: list[int] = [0] * self.num_envs  # consecutive open steps needed to unlatch
 
+        # Chunk sync: batch all GR00T calls every open_loop_horizon steps
+        self._chunk_sync = chunk_sync
+        self._global_chunk_step: int = self.open_loop_horizon  # start at horizon to trigger first call
+
         # Observation space (augment with base_action)
         spaces = dict(vec_env.observation_space.spaces)
         spaces["observation.base_action"] = gym.spaces.Box(
@@ -154,6 +165,7 @@ class MuJoCoResidualWrapperCup:
         self._ema_quat = [None] * self.num_envs
         self._grip_latched = [False] * self.num_envs
         self._grip_open_count = [0] * self.num_envs
+        self._global_chunk_step = self.open_loop_horizon  # trigger GR00T on first call
         base_action = self._get_base_actions(force_infer=True)
         augmented_obs = self._augment_obs(raw_obs, base_action)
         self._last_obs = raw_obs
@@ -172,17 +184,23 @@ class MuJoCoResidualWrapperCup:
         combined_t = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
 
         # Skip rendering if no env needs GR00T inference next step
-        needs_infer_next = any(
-            self._cached_chunks[i] is None or self._chunk_idx[i] + 1 >= self.open_loop_horizon
-            for i in range(self.num_envs)
-        )
+        if self._chunk_sync:
+            needs_infer_next = (self._global_chunk_step + 1 >= self.open_loop_horizon)
+        else:
+            needs_infer_next = any(
+                self._cached_chunks[i] is None or self._chunk_idx[i] + 1 >= self.open_loop_horizon
+                for i in range(self.num_envs)
+            )
         render = "rl_only" if needs_infer_next else "none"
         raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode=render)
 
         info["scaled_action"] = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
 
-        for i in range(self.num_envs):
-            self._chunk_idx[i] += 1
+        if self._chunk_sync:
+            self._global_chunk_step += 1
+        else:
+            for i in range(self.num_envs):
+                self._chunk_idx[i] += 1
 
         done = terminated | truncated
         if done.any():
@@ -211,6 +229,10 @@ class MuJoCoResidualWrapperCup:
     # ------------------------------------------------------------------
 
     def _get_base_actions(self, force_infer: bool = False) -> np.ndarray:
+        if self._chunk_sync and not force_infer:
+            return self._get_base_actions_sync()
+
+        # Original staggered mode
         need_infer = []
         for i in range(self.num_envs):
             if (force_infer or self._cached_chunks[i] is None
@@ -250,6 +272,47 @@ class MuJoCoResidualWrapperCup:
 
         self._held_base_action = actions.copy()
         return actions
+
+    def _get_base_actions_sync(self) -> np.ndarray:
+        """Chunk-synced mode: all envs share the same chunk boundary."""
+        actions = np.zeros((self.num_envs, 8), dtype=np.float32)
+
+        if self._global_chunk_step >= self.open_loop_horizon:
+            # Sync point: call GR00T for all envs with valid state
+            all_ids = list(range(self.num_envs))
+            self._query_groot_batch(all_ids)
+            self._global_chunk_step = 0
+
+        for i in range(self.num_envs):
+            chunk = self._cached_chunks[i]
+            idx = self._global_chunk_step
+            if chunk is not None and idx < chunk["eef_pos"].shape[0]:
+                actions[i, :3] = chunk["eef_pos"][idx]
+                actions[i, 3:7] = chunk["eef_quat"][idx]
+                actions[i, 7] = chunk["gripper_width"][idx, 0]
+            else:
+                # Hold position: return current EEF pose
+                actions[i] = self._get_current_pose(i)
+
+        self._held_base_action = actions.copy()
+        return actions
+
+    def _get_current_pose(self, env_idx: int) -> np.ndarray:
+        """Get current EEF pose as 8D action (hold position), no rendering."""
+        env = self.vec_env._envs[env_idx]
+        model, data, ids = env["model"], env["data"], env["ids"]
+        if self.vec_env._parallel and self.vec_env._needs_qpos_sync:
+            self.vec_env._sync_qpos_from_workers()
+            self.vec_env._needs_qpos_sync = False
+        tcp_pos, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
+        eef_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat()
+        finger_id = ids["finger_ids"][0]
+        gripper_width = max(0.0, float(data.qpos[model.jnt_qposadr[finger_id]])) if finger_id >= 0 else 0.04
+        pose = np.zeros(8, dtype=np.float32)
+        pose[:3] = tcp_pos
+        pose[3:7] = eef_quat_xyzw
+        pose[7] = gripper_width
+        return pose
 
     def _query_groot_batch(self, env_ids: list[int]) -> None:
         if not env_ids:

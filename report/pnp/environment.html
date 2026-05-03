@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pick-and-Place — Environment & Physics Settings</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --heading: #e6edf3; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 24px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 28px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  h2 { color: var(--heading); font-size: 22px; margin: 32px 0 16px; }
+  h3 { color: var(--accent); font-size: 18px; margin: 24px 0 12px; }
+  .subtitle { color: var(--text); opacity: 0.7; margin-bottom: 24px; }
+  .nav { margin-bottom: 24px; }
+  .nav a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; margin: 16px 0; }
+  th { background: #1c2128; color: var(--heading); font-weight: 600; text-align: left; padding: 12px; font-size: 13px; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:hover { background: #1c2128; }
+  code { background: #1c2128; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--accent); }
+  pre { background: #1c2128; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin: 12px 0; }
+  .insight { background: #1c2128; border-left: 4px solid var(--accent); padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+  .insight.good { border-left-color: var(--green); }
+  .insight.warn { border-left-color: var(--yellow); }
+  .insight.bad { border-left-color: var(--red); }
+  .section { margin: 24px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="nav"><a href="../index.html">← Report Index</a> · <a href="training.html">Training</a> · <a href="data_pipeline.html">Data Pipeline</a></div>
+
+<h1>🟥 Pick-and-Place — Environment & Physics Settings</h1>
+<p class="subtitle">Franka FR3 + Cube → Bowl | Physics-Based MuJoCo Simulation</p>
+
+<!-- ===== 1. Task Description ===== -->
+<h2>1. Task Description</h2>
+<div class="section">
+<p>Franka FR3 로봇이 테이블 위의 큐브를 집어서 보울(bowl)에 놓는 pick-and-place task.</p>
+<ul>
+  <li><strong>Goal:</strong> 큐브를 grasping → lifting → bowl 위에 placing</li>
+  <li><strong>Success condition:</strong> cube가 bowl 안에 안착 (거리 &lt; 9.5cm, 속도 &lt; 0.05m/s)</li>
+  <li><strong>Max episode steps:</strong> 500 steps (25s at 20Hz)</li>
+  <li><strong>Cube positions:</strong> 64개 고정 위치 (cube + bowl 쌍)</li>
+  <li><strong>Difficulty levels:</strong> normal (±2cm, ±15°), hard (±5cm, ±45°)</li>
+</ul>
+</div>
+
+<!-- ===== 2. MuJoCo Simulation Settings ===== -->
+<h2>2. MuJoCo Simulation Settings</h2>
+<div class="section">
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Note</th></tr>
+  <tr><td>Control frequency</td><td><strong>20 Hz</strong></td><td>FPS = 20</td></tr>
+  <tr><td>Physics substeps</td><td><strong>25</strong></td><td>PHYSICS_SUBSTEPS = 25</td></tr>
+  <tr><td>Timestep (dt)</td><td><strong>0.002s</strong></td><td>25 × 0.002 = 0.05s/step</td></tr>
+  <tr><td>Grasp mechanism</td><td><strong>Physics-based + Weld constraint</strong></td><td>Contact detection → weld 활성화</td></tr>
+  <tr><td>Scene XML</td><td><code>franka_fr3/fr3_with_hand.xml</code></td><td>MuJoCo Menagerie FR3 + hand</td></tr>
+</table>
+
+<div class="insight good">
+<strong>Physics sim 전환 (2025-04-17):</strong> Lift의 kinematic grasp에서 → 실제 물리 기반 grasping으로 전환. 
+IK scratch → ctrl → mj_step × 25 substeps 방식. Contact-based grasp detection 사용.
+</div>
+</div>
+
+<!-- ===== 3. Object Settings ===== -->
+<h2>3. Object Settings</h2>
+<div class="section">
+<table>
+  <tr><th>Object</th><th>Parameter</th><th>Value</th></tr>
+  <tr><td rowspan="6">Red Cube</td><td>Size (half-extents)</td><td><code>(0.04, 0.02, 0.02)</code> → <strong>8×4×4 cm</strong></td></tr>
+  <tr><td>Mass</td><td><strong>0.03 kg</strong></td></tr>
+  <tr><td>Friction (slide/torsion/roll)</td><td><code>5.0 / 0.5 / 0.1</code></td></tr>
+  <tr><td>condim</td><td><strong>6</strong> (full friction cone)</td></tr>
+  <tr><td>solimp</td><td><code>0.95 0.99 0.001</code></td></tr>
+  <tr><td>solref</td><td><code>0.002 1</code></td></tr>
+  <tr><td rowspan="2">Bowl</td><td>Radius</td><td><strong>0.095 m</strong> (9.5cm)</td></tr>
+  <tr><td>Height</td><td><strong>0.005 m</strong></td></tr>
+</table>
+
+<div class="insight warn">
+<strong>Cube vs Lift:</strong> PnP 큐브(8cm)는 Lift 큐브(12cm)보다 작아서 grasping이 더 어려움. 
+물리 파라미터 튜닝이 필요했음 (kp=5000, friction=5.0이 최적).
+</div>
+</div>
+
+<!-- ===== 4. Gripper Settings ===== -->
+<h2>4. Gripper Settings</h2>
+<div class="section">
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Note</th></tr>
+  <tr><td>Gripper normalization</td><td><strong>Normalized 0–1</strong></td><td>width / max_width</td></tr>
+  <tr><td>Gripper close threshold</td><td><code>0.65</code></td><td>gripper_width &lt; 0.65 → closing</td></tr>
+  <tr><td>Finger kp</td><td><strong>5000</strong></td><td>Position gain</td></tr>
+  <tr><td>ctrl_range</td><td><code>[-0.01, 0.04]</code></td><td>Finger actuator range</td></tr>
+  <tr><td>jnt_range</td><td><code>[-0.01, 0.04]</code></td><td>Finger joint range</td></tr>
+  <tr><td>Gripper offset</td><td><strong>-10mm</strong></td><td>Fingers close 10mm tighter than commanded</td></tr>
+</table>
+
+<h3>Physics Parameter Tuning History</h3>
+<p>최적 파라미터를 찾기 위한 실험 진행:</p>
+<table>
+  <tr><th>Config</th><th>kp</th><th>Friction</th><th>Offset</th><th>solref</th><th>Contact</th><th>Lift</th></tr>
+  <tr><td>Initial</td><td>100</td><td>0.5/0.1/0.01</td><td>0</td><td>default</td><td>0/5</td><td>0/5</td></tr>
+  <tr><td>Fix 1</td><td>500</td><td>2.0/0.1/0.01</td><td>-5mm</td><td>default</td><td>2/5</td><td>0/5</td></tr>
+  <tr><td style="color:var(--green);font-weight:bold">✅ Best</td><td><strong>5000</strong></td><td><strong>5.0/0.5/0.1</strong></td><td><strong>-10mm</strong></td><td><strong>0.002</strong></td><td><strong>5/5</strong></td><td><strong>5/5</strong></td></tr>
+  <tr><td>Over-tuned</td><td>10000</td><td>10.0/0.1/0.01</td><td>-15mm</td><td>0.002</td><td>5/5</td><td>0/5</td></tr>
+</table>
+
+<div class="insight">
+<strong>Key Insight:</strong> kp와 friction에 sweet spot이 있음. 
+너무 높으면 (kp=10000, friction=10.0) 손가락이 큐브를 밀어냄. <strong>kp=5000 + friction=5.0이 최적.</strong>
+</div>
+</div>
+
+<!-- ===== 5. Grasp Detection ===== -->
+<h2>5. Contact-Based Grasp Detection</h2>
+<div class="section">
+<table>
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Detection method</td><td>Finger-cube geom pair contact check via <code>data.contact</code></td></tr>
+  <tr><td>Finger geom discovery</td><td>Body name ("left_finger", "right_finger") + group=3</td></tr>
+  <tr><td>Contact threshold</td><td><code>GRASP_CONTACT_THRESHOLD = 1</code></td></tr>
+  <tr><td>Hysteresis</td><td>contact_count +1 on contact, -2 on no contact</td></tr>
+  <tr><td>Grasp condition</td><td>contact_count ≥ 1 AND gripper closing</td></tr>
+  <tr><td>Lift threshold</td><td><strong>1 cm</strong> (for grasp sustain)</td></tr>
+  <tr><td>Place threshold</td><td><strong>9.5 cm</strong> (bowl radius)</td></tr>
+  <tr><td>Settled velocity</td><td><strong>0.05 m/s</strong></td></tr>
+</table>
+
+<h3>Grasp Sustain: Weld Constraint</h3>
+<pre>
+&lt;equality&gt;
+  &lt;weld name="cube_grasp" body1="hand" body2="cube" active="false"/&gt;
+&lt;/equality&gt;
+
+# On grasp detection → weld activated
+# While gripper closed → weld stays active
+# On gripper open → weld deactivated
+</pre>
+</div>
+
+<!-- ===== 6. Observation & Action Space ===== -->
+<h2>6. Observation & Action Space</h2>
+<div class="section">
+
+<h3>Observation (RL Critic)</h3>
+<table>
+  <tr><th>Component</th><th>Dim</th><th>Description</th></tr>
+  <tr><td>eef_pos</td><td>3</td><td>End-effector position (x, y, z)</td></tr>
+  <tr><td>eef_quat</td><td>4</td><td>End-effector orientation quaternion</td></tr>
+  <tr><td>gripper_width</td><td>2</td><td>Gripper state</td></tr>
+  <tr><td>contact</td><td>1</td><td>Contact flag</td></tr>
+  <tr><td>object_state</td><td>7</td><td>Cube position + quaternion</td></tr>
+  <tr><td>Images</td><td>84×84×3 ×2</td><td>cam_base + cam_wrist</td></tr>
+</table>
+
+<h3>Action (GR00T output + Residual)</h3>
+<table>
+  <tr><th>Component</th><th>Dim</th><th>Range</th></tr>
+  <tr><td>EEF position (x, y, z)</td><td>3</td><td>Absolute workspace coords</td></tr>
+  <tr><td>EEF quaternion (qx, qy, qz, qw)</td><td>4</td><td>Unit quaternion</td></tr>
+  <tr><td>Gripper width</td><td>1</td><td>0–1 (normalized)</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>8D</strong></td><td></td></tr>
+</table>
+
+<h3>Action Chunking</h3>
+<p>GR00T base policy: <strong>action_horizon = 16</strong> (16-step open-loop chunk). RL residual은 매 step마다 적용.</p>
+</div>
+
+<!-- ===== 7. Camera Setup ===== -->
+<h2>7. Camera Setup</h2>
+<div class="section">
+<table>
+  <tr><th>Camera</th><th>Resolution</th><th>Note</th></tr>
+  <tr><td><code>cam_base</code></td><td>84×84 (RL) / 640×360 (render)</td><td>정면 고정 카메라</td></tr>
+  <tr><td><code>cam_wrist</code></td><td>84×84 (RL) / 640×360 (render)</td><td>손목 카메라</td></tr>
+</table>
+</div>
+
+<!-- ===== 8. Reward Design ===== -->
+<h2>8. Reward Design (dense_v3)</h2>
+<div class="section">
+<p>현재 사용 중인 dense_v3 reward:</p>
+<pre>
+# Phase 1: Approach (0.0 – 0.2)
+r_approach = 0.2 * (1 - tanh(5 * tcp_cube_dist))
+
+# Phase 2: Grasp (0.2 – 0.4)
+r_grasp = 0.2 * is_grasped
+
+# Phase 3: Lift (0.4 – 0.6)
+r_lift = 0.2 * clip(cube_z / target_z, 0, 1)
+
+# Phase 4: Transport (0.6 – 0.8)
+r_transport = 0.2 * (1 - tanh(5 * cube_bowl_dist))
+
+# Phase 5: Place (0.8 – 1.0)
+r_place = 0.2 * is_placed_and_settled
+
+Total: r = r_approach + r_grasp + r_lift + r_transport + r_place  ∈ [0, 1]
+</pre>
+</div>
+
+<!-- ===== 9. Key Files ===== -->
+<h2>9. Key Files</h2>
+<div class="section">
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>wrappers/mujoco_vec_env_pnp.py</code></td><td>PnP MuJoCo vectorized environment (physics-based)</td></tr>
+  <tr><td><code>franka_fr3/fr3_with_hand.xml</code></td><td>MuJoCo scene XML (cube + bowl)</td></tr>
+  <tr><td><code>configs/pnp_66ep_positions.json</code></td><td>64개 고정 cube/bowl 위치</td></tr>
+  <tr><td><code>scripts/submit_train_v3.sh</code></td><td>SLURM training submission script</td></tr>
+</table>
+</div>
+
+</div>
+</body>
+</html>

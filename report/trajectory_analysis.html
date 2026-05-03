@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Trajectory Analysis: Base vs Residual Policy</title>
+<link rel="stylesheet" href="common/style.css">
+<style>
+  .tbl-compact { border-collapse: collapse; margin: 1em 0; font-size: 0.9em; }
+  .tbl-compact th, .tbl-compact td { border: 1px solid #ccc; padding: 4px 10px; text-align: center; }
+  .tbl-compact th { background: #f0f0f0; }
+  .win { background: #d4edda; font-weight: bold; }
+  .lose { background: #f8d7da; }
+  .same { background: #fff3cd; }
+  .metric-better { color: #28a745; font-weight: bold; }
+  .metric-worse  { color: #dc3545; }
+  .key-finding { background: #e7f3ff; border-left: 4px solid #007bff; padding: 10px 15px; margin: 1em 0; }
+  pre.log { background: #f8f9fa; padding: 10px; border-radius: 4px; font-size: 0.85em; overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>Trajectory Analysis: Base vs Residual Policy</h1>
+<p><strong>Date:</strong> 2026-04-29 &nbsp; <strong>Status:</strong> <span class="badge badge-wip">Analysis</span></p>
+<p>
+  Comparison of GR00T base policy vs base+residual (TD3) across Pick-and-Place and Stack Cube tasks.
+  Evaluations use <strong>fixed position sets</strong> matching training-time async eval for reproducibility.
+</p>
+
+<hr>
+<h2>1. Evaluation Setup</h2>
+<table class="tbl-compact">
+  <tr><th>Parameter</th><th>PnP (Normal)</th><th>Stack Cube (Hard)</th></tr>
+  <tr><td>Eval Positions</td><td>15 fixed (<code>pnp_eval_normal.json</code>)</td><td>20 fixed (<code>stack_cube_positions.json</code>)</td></tr>
+  <tr><td>Rounds</td><td>1</td><td>3</td></tr>
+  <tr><td>Total Episodes</td><td>15</td><td>60</td></tr>
+  <tr><td>Max Steps</td><td>500</td><td>1000</td></tr>
+  <tr><td>Residual Checkpoint</td><td><code>pnp_v3_normal_as0.1_l21.0_g0.95_s42/best.pt</code></td><td><code>stack_td3_75k/hard_l25.0_g095/best.pt</code></td></tr>
+  <tr><td>Residual Config</td><td>action_scale=0.1, L2=1.0, γ=0.95</td><td>action_scale=0.1, L2=5.0, γ=0.95</td></tr>
+  <tr><td>Residual Scales</td><td>pos=0.02, rot=0.05, grip=0.1</td><td>pos=0.02, rot=0.05, grip=0.004</td></tr>
+</table>
+
+<hr>
+<h2>2. Overall Success Rate</h2>
+<table class="tbl-compact">
+  <tr><th>Task</th><th>Base SR</th><th>Residual SR</th><th>Δ</th><th>Training Peak</th></tr>
+  <tr>
+    <td>PnP Normal</td>
+    <td>66.7% (10/15)</td>
+    <td>53.3% (8/15)</td>
+    <td class="lose">−13.3%p</td>
+    <td>86.7% (step 14k)</td>
+  </tr>
+  <tr>
+    <td>Stack Hard</td>
+    <td>61.7% (37/60)</td>
+    <td>58.3% (35/60)</td>
+    <td class="lose">−3.3%p</td>
+    <td>80.0% (step 56k)</td>
+  </tr>
+</table>
+
+<div class="key-finding">
+  <strong>Note:</strong> Overall SR shows high variance due to limited episodes (15/60).
+  The training peak SR was a stochastic spike — the average training SR over all eval steps was ~65% for both tasks.
+  More informative metrics below: per-position analysis, episode length, and smoothness.
+</div>
+
+<hr>
+<h2>3. Per-Position Success Analysis</h2>
+
+<h3>3.1 Stack Cube (20 positions × 3 rounds)</h3>
+<table class="tbl-compact">
+  <tr><th>Position</th><th>Base SR</th><th>Residual SR</th><th>Δ</th><th>Note</th></tr>
+  <tr class="win"><td>0</td><td>0%</td><td>33%</td><td>+33%p</td><td>Residual solves previously impossible position</td></tr>
+  <tr class="win"><td>5</td><td>33%</td><td>67%</td><td>+33%p</td><td>Doubled success rate</td></tr>
+  <tr class="win"><td>6</td><td>33%</td><td>67%</td><td>+33%p</td><td>Doubled success rate</td></tr>
+  <tr class="win"><td>8</td><td>33%</td><td>67%</td><td>+33%p</td><td>Doubled success rate</td></tr>
+  <tr class="win"><td>14</td><td>67%</td><td>100%</td><td>+33%p</td><td>Perfect SR + faster completion</td></tr>
+  <tr class="win"><td>15</td><td>67%</td><td>100%</td><td>+33%p</td><td>Perfect SR + faster completion</td></tr>
+  <tr class="same"><td>3,4,9,10,13,16,17,18,19</td><td colspan="4">Same SR (both succeed or both fail)</td></tr>
+  <tr class="lose"><td>1</td><td>100%</td><td>33%</td><td>−67%p</td><td>Regression</td></tr>
+  <tr class="lose"><td>2</td><td>100%</td><td>67%</td><td>−33%p</td><td>Regression</td></tr>
+  <tr class="lose"><td>7</td><td>67%</td><td>0%</td><td>−67%p</td><td>Regression</td></tr>
+  <tr class="lose"><td>11</td><td>67%</td><td>33%</td><td>−33%p</td><td>Regression</td></tr>
+  <tr class="lose"><td>12</td><td>67%</td><td>0%</td><td>−67%p</td><td>Regression</td></tr>
+</table>
+
+<p><strong>Summary:</strong> 6 positions improved (all +33%p), 5 positions degraded. Residual helps on harder positions where base
+  struggles (0%, 33% base SR), but can regress on positions where base already succeeds.</p>
+
+<h3>3.2 PnP (15 positions × 1 round)</h3>
+<table class="tbl-compact">
+  <tr><th>Position</th><th>Base SR</th><th>Residual SR</th><th>Note</th></tr>
+  <tr class="win"><td>1</td><td>0%</td><td>100%</td><td>Residual solves previously impossible position</td></tr>
+  <tr class="lose"><td>7</td><td>100%</td><td>0%</td><td>Regression</td></tr>
+  <tr class="lose"><td>12</td><td>100%</td><td>0%</td><td>Regression</td></tr>
+  <tr class="lose"><td>13</td><td>100%</td><td>0%</td><td>Regression</td></tr>
+  <tr class="same"><td>Others (11)</td><td colspan="3">Same SR</td></tr>
+</table>
+
+<hr>
+<h2>4. Episode Length (Task Efficiency)</h2>
+
+<div class="key-finding">
+  <strong>Key Finding:</strong> When residual succeeds, it completes tasks <strong>faster</strong> than base.
+</div>
+
+<table class="tbl-compact">
+  <tr><th>Task</th><th>Metric</th><th>Base</th><th>Residual</th><th>Improvement</th></tr>
+  <tr>
+    <td rowspan="3">PnP</td>
+    <td>Mean (success only)</td><td>262 steps</td><td class="win">206 steps</td><td class="metric-better">−21.5%</td>
+  </tr>
+  <tr><td>Median</td><td>242 steps</td><td class="win">193 steps</td><td class="metric-better">−20.2%</td></tr>
+  <tr><td>Std</td><td>90 steps</td><td class="win">32 steps</td><td class="metric-better">−64.4% (more consistent)</td></tr>
+  <tr>
+    <td rowspan="3">Stack</td>
+    <td>Mean (success only)</td><td>318 steps</td><td class="win">303 steps</td><td class="metric-better">−4.7%</td>
+  </tr>
+  <tr><td>Median</td><td>240 steps</td><td>264 steps</td><td>+10.0%</td></tr>
+  <tr><td>Std</td><td>209 steps</td><td class="win">146 steps</td><td class="metric-better">−30.1% (more consistent)</td></tr>
+</table>
+
+<p><strong>PnP:</strong> Residual completes successful episodes <strong>56 steps faster</strong> on average (21.5% reduction)
+  with dramatically lower variance (std 32 vs 90), indicating more consistent execution.</p>
+<p><strong>Stack:</strong> Residual shows 15-step improvement in mean and significantly lower variance
+  (std 146 vs 209), suggesting more reliable trajectories.</p>
+
+<h3>4.1 Case Study: Stack Positions 14 &amp; 15 (Residual → 100% SR)</h3>
+<pre class="log">Position 14 — base 67% → residual 100%:
+  Round 0: base SUCCESS(211st) → res SUCCESS(233st)
+  Round 1: base SUCCESS(352st) → res SUCCESS(264st)  ← 25% faster
+  Round 2: base FAIL(1000st)   → res SUCCESS(210st)  ← saved from failure
+
+Position 15 — base 67% → residual 100%:
+  Round 0: base FAIL(1000st)   → res SUCCESS(163st)  ← saved from failure
+  Round 1: base SUCCESS(163st) → res SUCCESS(168st)
+  Round 2: base SUCCESS(179st) → res SUCCESS(146st)  ← 18% faster</pre>
+
+<hr>
+<h2>5. Action Smoothness (Jerk Analysis)</h2>
+<p>Jerk = mean absolute 2nd derivative of action trajectory. Lower = smoother motion.</p>
+
+<h3>5.1 PnP (Success Episodes Only)</h3>
+<table class="tbl-compact">
+  <tr><th>Axis</th><th>Base Jerk</th><th>Residual Jerk</th><th>Δ%</th><th>Verdict</th></tr>
+  <tr><td>pos_x</td><td>0.002981</td><td>0.003125</td><td>+4.8%</td><td>~same</td></tr>
+  <tr><td>pos_y</td><td>0.005848</td><td class="win">0.005611</td><td>−4.1%</td><td class="metric-better">smoother</td></tr>
+  <tr><td>pos_z</td><td>0.002928</td><td>0.002883</td><td>−1.5%</td><td>~same</td></tr>
+  <tr><td>rot_x</td><td>0.265328</td><td class="win">0.243092</td><td>−8.4%</td><td class="metric-better">smoother</td></tr>
+  <tr><td>rot_z</td><td>0.023989</td><td class="win">0.023064</td><td>−3.9%</td><td class="metric-better">smoother</td></tr>
+  <tr><td>grip</td><td>0.016336</td><td class="win">0.014136</td><td>−13.5%</td><td class="metric-better">smoother</td></tr>
+</table>
+
+<h3>5.2 Stack Cube (Success Episodes Only)</h3>
+<table class="tbl-compact">
+  <tr><th>Axis</th><th>Base Jerk</th><th>Residual Jerk</th><th>Δ%</th><th>Verdict</th></tr>
+  <tr><td>pos_x</td><td>0.002575</td><td class="win">0.002476</td><td>−3.8%</td><td class="metric-better">smoother</td></tr>
+  <tr><td>pos_y</td><td>0.006767</td><td>0.006641</td><td>−1.9%</td><td>~same</td></tr>
+  <tr><td>pos_z</td><td>0.003402</td><td>0.003379</td><td>−0.7%</td><td>~same</td></tr>
+  <tr><td>rot_x</td><td>0.413029</td><td>0.424695</td><td>+2.8%</td><td>~same</td></tr>
+  <tr><td>rot_y</td><td>0.006096</td><td>0.005983</td><td>−1.9%</td><td>~same</td></tr>
+  <tr><td>rot_z</td><td>0.020821</td><td>0.020467</td><td>−1.7%</td><td>~same</td></tr>
+  <tr><td>grip</td><td>0.000490</td><td>0.000551</td><td>+12.4%</td><td class="metric-worse">slightly rougher</td></tr>
+</table>
+
+<div class="key-finding">
+  <strong>PnP:</strong> Residual is smoother on <strong>4 out of 6 axes</strong>, especially gripper (−13.5%) and rot_x (−8.4%).<br>
+  <strong>Stack:</strong> Residual shows marginal smoothness improvements on position axes; grip is slightly rougher (expected — residual actively adjusts grip timing).
+</div>
+
+<hr>
+<h2>6. Residual Behavior Analysis</h2>
+
+<h3>6.1 Residual Magnitude</h3>
+<table class="tbl-compact">
+  <tr><th>Task</th><th>Pos |mean|</th><th>Rot |mean|</th><th>Grip |mean|</th><th>Total</th></tr>
+  <tr><td>PnP</td><td>0.049</td><td>0.016</td><td>0.068</td><td>0.035</td></tr>
+  <tr><td>Stack</td><td>0.004</td><td>0.004</td><td>0.004</td><td>0.004</td></tr>
+</table>
+
+<p>PnP residual is ~10× larger than Stack. This aligns with different grip scales (0.1 vs 0.004) and 
+  suggests PnP's residual is more corrective while Stack's is more fine-tuning.</p>
+
+<h3>6.2 Temporal Profile (Stack, Success Episodes)</h3>
+<pre class="log">Residual magnitude over episode (5 equal bins, early → late):
+  Ep 0 (518st): 0.0042 → 0.0033 → 0.0028 → 0.0028 → 0.0118
+  Ep 2 (225st): 0.0058 → 0.0038 → 0.0044 → 0.0098 → 0.0169
+  Ep 4 (465st): 0.0023 → 0.0016 → 0.0022 → 0.0021 → 0.0038</pre>
+
+<p>Pattern: residual is <strong>small during mid-trajectory</strong> (following base policy) and
+  <strong>increases near task completion</strong> — the residual provides critical corrections during
+  the final placement/stacking phase where precision matters most.</p>
+
+<h3>6.3 PnP Position 1 Case Study (Base Fails, Residual Succeeds)</h3>
+<pre class="log">Base: FAIL after 500 steps (timeout) — Y range only 0.08m (stuck)
+Residual: SUCCESS in 275 steps — Y range 0.36m (full reach)
+  Residual magnitude: pos_y=0.064 (largest), grip=0.068
+  Timing: early=0.017 → mid=0.038 → late=0.058 (increases over time)
+  
+The residual corrects the base policy's Y-axis under-reach,
+progressively increasing its contribution as the task demands it.</pre>
+
+<hr>
+<h2>7. Summary of Findings</h2>
+
+<table class="tbl-compact">
+  <tr><th>Metric</th><th>PnP</th><th>Stack</th></tr>
+  <tr><td>Overall SR</td><td>Base > Residual (66.7% vs 53.3%)</td><td>Base ≈ Residual (61.7% vs 58.3%)</td></tr>
+  <tr><td>Positions Improved</td><td>1 of 15</td><td>6 of 20</td></tr>
+  <tr><td>Positions Degraded</td><td>3 of 15</td><td>5 of 20</td></tr>
+  <tr><td>Episode Length (success)</td><td class="win">−21.5% faster</td><td class="win">−4.7% faster</td></tr>
+  <tr><td>Consistency (std)</td><td class="win">−64.4% lower variance</td><td class="win">−30.1% lower variance</td></tr>
+  <tr><td>Smoothness (jerk)</td><td class="win">4/6 axes smoother</td><td>Marginal improvement</td></tr>
+  <tr><td>Residual Pattern</td><td>Large corrections (esp. grip, Y-pos)</td><td>Small fine-tuning, increases at task end</td></tr>
+</table>
+
+<div class="key-finding">
+  <strong>Conclusions:</strong>
+  <ol>
+    <li><strong>Residual improves task efficiency</strong> — successful episodes complete 5–21% faster with much lower variance, indicating more decisive and consistent execution.</li>
+    <li><strong>Residual helps on hard positions</strong> — positions where base struggles (0–33% SR) see the biggest gains (up to +33%p), converting failures into successes.</li>
+    <li><strong>Residual can regress on easy positions</strong> — positions where base already succeeds reliably sometimes degrade. This suggests the residual over-corrects when correction isn't needed.</li>
+    <li><strong>Residual increases at task completion</strong> — temporal analysis shows the residual's main contribution is during the final phase (grasp/place/stack), providing precision corrections that the base policy lacks.</li>
+    <li><strong>Action smoothness is preserved or improved</strong> — the residual does not introduce jitter; PnP grip jerk is 13.5% lower, and rotation smoothness improves by 3–8%.</li>
+  </ol>
+</div>
+
+<hr>
+<p><a href="index.html">← Back to Index</a></p>
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Stack Cube — Data Pipeline</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --heading: #e6edf3; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 24px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 28px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  h2 { color: var(--heading); font-size: 22px; margin: 32px 0 16px; }
+  h3 { color: var(--accent); font-size: 18px; margin: 24px 0 12px; }
+  .subtitle { color: var(--text); opacity: 0.7; margin-bottom: 24px; }
+  .nav { margin-bottom: 24px; }
+  .nav a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; margin: 16px 0; }
+  th { background: #1c2128; color: var(--heading); font-weight: 600; text-align: left; padding: 12px; font-size: 13px; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:hover { background: #1c2128; }
+  code { background: #1c2128; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--accent); }
+  pre { background: #1c2128; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin: 12px 0; }
+  .insight { background: #1c2128; border-left: 4px solid var(--accent); padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+  .insight.warn { border-left-color: var(--yellow); }
+  .insight.bad { border-left-color: var(--red); }
+  .section { margin: 24px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="nav"><a href="../index.html">← Report Index</a> · <a href="environment.html">Environment</a> · <a href="training.html">Training</a></div>
+
+<h1>🟩 Stack Cube — Data Pipeline</h1>
+<p class="subtitle">CSV → MuJoCo Replay → LeRobot v2.1 Dataset</p>
+
+<!-- ===== 1. Pipeline Overview ===== -->
+<h2>1. Pipeline Overview</h2>
+<div class="section">
+<pre>
+CSV (real robot logs)
+  ↓  batch_replay_stack.py
+MuJoCo physics replay (3-phase)
+  ↓  render cam_base + cam_wrist
+LeRobot v2.1 dataset (parquet + mp4)
+  ↓
+GR00T fine-tuning
+</pre>
+<p>Source: <code>MSRA/stack_cube/physics/batch_replay_stack.py</code> (584 lines)</p>
+</div>
+
+<!-- ===== 2. Dataset Statistics ===== -->
+<h2>2. Dataset Statistics</h2>
+<div class="section">
+<table>
+  <tr><th>Property</th><th>Value</th></tr>
+  <tr><td>Dataset path</td><td><code>DATA/INTERN/datasets/Stack_sim_66ep/</code></td></tr>
+  <tr><td>Format</td><td>LeRobot v2.1 (codebase_version)</td></tr>
+  <tr><td>Episodes</td><td><strong>66</strong></td></tr>
+  <tr><td>Total frames</td><td><strong>19,941</strong></td></tr>
+  <tr><td>Avg episode length</td><td>~302 frames (~20s at 15Hz)</td></tr>
+  <tr><td>FPS</td><td><strong>15</strong></td></tr>
+  <tr><td>robot_type</td><td>fr3</td></tr>
+</table>
+
+<h3>PnP 데이터셋과 비교</h3>
+<table>
+  <tr><th></th><th>Stack (66ep)</th><th>PnP (66ep)</th></tr>
+  <tr><td>Total frames</td><td>19,941</td><td>~16,000</td></tr>
+  <tr><td>Avg episode length</td><td>~302</td><td>~242</td></tr>
+  <tr><td>FPS</td><td>15</td><td>15</td></tr>
+  <tr><td>Gripper width</td><td><strong>0.0197 – 0.0398 (raw m)</strong></td><td>0.49 – 1.0 (normalized)</td></tr>
+</table>
+</div>
+
+<!-- ===== 3. Data Format ===== -->
+<h2>3. Data Format (Parquet)</h2>
+<div class="section">
+<table>
+  <tr><th>Column</th><th>Shape</th><th>Type</th><th>Description</th></tr>
+  <tr><td><code>observation.state</code></td><td>(8,)</td><td>float32</td><td>[x, y, z, qx, qy, qz, qw, gripper_width]</td></tr>
+  <tr><td><code>action</code></td><td>(8,)</td><td>float32</td><td>Same format as state</td></tr>
+  <tr><td><code>timestamp</code></td><td>scalar</td><td>float64</td><td>Episode-relative time</td></tr>
+  <tr><td><code>frame_index</code></td><td>scalar</td><td>int64</td><td>Global frame index</td></tr>
+  <tr><td><code>episode_index</code></td><td>scalar</td><td>int64</td><td>Episode number</td></tr>
+  <tr><td><code>task_index</code></td><td>scalar</td><td>int64</td><td>Task ID</td></tr>
+</table>
+
+<h3>Video Files</h3>
+<table>
+  <tr><th>Camera</th><th>Resolution</th><th>Format</th></tr>
+  <tr><td><code>cam_base</code></td><td>640×360</td><td>MP4 (per episode)</td></tr>
+  <tr><td><code>cam_wrist</code></td><td>640×360</td><td>MP4 (per episode)</td></tr>
+</table>
+</div>
+
+<!-- ===== 4. Gripper Width Analysis ===== -->
+<h2>4. Gripper Width Analysis</h2>
+<div class="section">
+<pre>
+Stack gripper_width (raw meters):
+  min  = 0.0197  (~2.0cm, fully closed)
+  max  = 0.0398  (~4.0cm, fully open)
+  mean = 0.0287
+
+PnP gripper_width (normalized 0-1):
+  min  = 0.4885
+  max  = 0.9959
+  mean = 0.7356
+</pre>
+
+<div class="insight bad">
+<strong>⚠ Stack gripper는 정규화되지 않음.</strong><br>
+GR00T processor에 <code>mean_std_embedding_keys: null</code> 이므로 
+모델은 raw 스케일 그대로 학습됨. RL env에서도 반드시 raw meter 값 사용.
+</div>
+</div>
+
+<!-- ===== 5. Replay Pipeline Details ===== -->
+<h2>5. Replay Pipeline Details</h2>
+<div class="section">
+
+<h3>Input: CSV Files</h3>
+<ul>
+  <li>디렉토리: <code>stack_cube*/</code> 패턴으로 검색</li>
+  <li>각 episode = CSV 파일 (timestamp, eef_pos, eef_quat, gripper_width)</li>
+</ul>
+
+<h3>Processing: 3-Phase MuJoCo Replay</h3>
+<table>
+  <tr><th>Phase</th><th>Mode</th><th>Description</th></tr>
+  <tr><td>Pre-grasp</td><td>Kinematic (IK)</td><td>로봇을 grasp 시작점까지 이동, 큐브 테이블 위</td></tr>
+  <tr><td>Grasp</td><td>Kinematic + attach</td><td>큐브를 TCP에 rigid attach, 로봇이 들고 이동</td></tr>
+  <tr><td>Release</td><td>Physics (mj_step)</td><td>Green cube 위에서 release, N_SETTLE=30 steps 안정화</td></tr>
+</table>
+
+<h3>Key Parameters</h3>
+<pre>
+CUBE_HALF = 0.02                    # 4cm cube (half-size)
+GRIPPER_CLOSE_THRESHOLD = 0.028     # Raw meters
+N_SETTLE = 30                       # Physics settle steps after release
+SKIP_FRAMES = 20                    # MuJoCo substeps per frame
+</pre>
+
+<h3>Output: LeRobot v2.1 Dataset</h3>
+<ul>
+  <li>Parquet files: <code>data/chunk-000/episode_NNNNNN.parquet</code></li>
+  <li>Videos: <code>videos/chunk-000/{cam_base,cam_wrist}/episode_NNNNNN.mp4</code></li>
+  <li>Meta: <code>meta/info.json</code>, <code>meta/episodes.jsonl</code>, <code>meta/tasks.jsonl</code></li>
+</ul>
+</div>
+
+<!-- ===== 6. Key Files ===== -->
+<h2>6. Key Files</h2>
+<div class="section">
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>MSRA/stack_cube/physics/batch_replay_stack.py</code></td><td>Main pipeline: CSV → replay → LeRobot (584 lines)</td></tr>
+  <tr><td><code>MSRA/stack_cube/physics/utils_stack.py</code></td><td>make_model_with_two_cubes(), shared utils (129 lines)</td></tr>
+  <tr><td><code>DATA/INTERN/datasets/Stack_sim_66ep/</code></td><td>Generated LeRobot dataset</td></tr>
+</table>
+</div>
+
+</div>
+</body>
+</html>

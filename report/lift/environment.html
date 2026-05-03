@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cube Lift — Environment & Physics Settings</title>
+<style>
+  :root { --bg: #0d1117; --card: #161b22; --border: #30363d; --text: #c9d1d9; --heading: #e6edf3; --accent: #58a6ff; --green: #3fb950; --red: #f85149; --yellow: #d29922; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 24px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { color: var(--heading); font-size: 28px; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+  h2 { color: var(--heading); font-size: 22px; margin: 32px 0 16px; }
+  h3 { color: var(--accent); font-size: 18px; margin: 24px 0 12px; }
+  .subtitle { color: var(--text); opacity: 0.7; margin-bottom: 24px; }
+  .nav { margin-bottom: 24px; }
+  .nav a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  table { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 8px; overflow: hidden; margin: 16px 0; }
+  th { background: #1c2128; color: var(--heading); font-weight: 600; text-align: left; padding: 12px; font-size: 13px; border-bottom: 2px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 13px; }
+  tr:hover { background: #1c2128; }
+  code { background: #1c2128; padding: 2px 6px; border-radius: 4px; font-size: 12px; color: var(--accent); }
+  pre { background: #1c2128; padding: 16px; border-radius: 8px; overflow-x: auto; font-size: 12px; margin: 12px 0; }
+  .insight { background: #1c2128; border-left: 4px solid var(--accent); padding: 16px; margin: 16px 0; border-radius: 0 8px 8px 0; }
+  .insight.warn { border-left-color: var(--yellow); }
+  .section { margin: 24px 0; }
+</style>
+</head>
+<body>
+<div class="container">
+<div class="nav"><a href="../index.html">← Report Index</a> · <a href="training_experiments.html">Training</a></div>
+
+<h1>🟦 Cube Lift — Environment & Physics Settings</h1>
+<p class="subtitle">Franka FR3 + Single Cube Lifting | MuJoCo Simulation</p>
+
+<!-- ===== 1. Task Description ===== -->
+<h2>1. Task Description</h2>
+<div class="section">
+<p>Franka FR3 로봇이 테이블 위의 큐브를 들어올리는 단일 오브젝트 manipulation task.</p>
+<ul>
+  <li><strong>Goal:</strong> 큐브를 4cm 이상 들어올리기 (z ≥ table_height + 0.04)</li>
+  <li><strong>Success threshold:</strong> 5mm (sparse reward boundary)</li>
+  <li><strong>Max episode steps:</strong> ~300 steps (15s at 20Hz)</li>
+  <li><strong>Cube positions:</strong> 10개 고정 위치 (right-biased, 46/50 episodes dx>0)</li>
+</ul>
+</div>
+
+<!-- ===== 2. MuJoCo Simulation Settings ===== -->
+<h2>2. MuJoCo Simulation Settings</h2>
+<div class="section">
+<table>
+  <tr><th>Parameter</th><th>Value</th><th>Note</th></tr>
+  <tr><td>Control frequency</td><td><strong>20 Hz</strong></td><td>FPS = 20</td></tr>
+  <tr><td>Physics substeps</td><td><strong>25</strong></td><td>per control step</td></tr>
+  <tr><td>Timestep (dt)</td><td><strong>0.002s</strong></td><td>25 × 0.002 = 0.05s/step</td></tr>
+  <tr><td>Grasp mechanism</td><td><strong>Kinematic attach</strong></td><td>Cube rigidly attached on grasp detection</td></tr>
+  <tr><td>Scene XML</td><td><code>franka_fr3/fr3_with_hand.xml</code></td><td>MuJoCo Menagerie FR3 + hand</td></tr>
+</table>
+</div>
+
+<!-- ===== 3. Object Settings ===== -->
+<h2>3. Object Settings</h2>
+<div class="section">
+<table>
+  <tr><th>Object</th><th>Parameter</th><th>Value</th></tr>
+  <tr><td rowspan="4">Cube</td><td>Size (half-extents)</td><td><code>(0.06, 0.02, 0.02)</code> → 12×4×4 cm</td></tr>
+  <tr><td>Mass</td><td><strong>0.03 kg</strong></td></tr>
+  <tr><td>Friction</td><td>Default</td></tr>
+  <tr><td>Joint</td><td>Freejoint</td></tr>
+</table>
+
+<div class="insight warn">
+<strong>Note:</strong> Lift 큐브는 12cm로 PnP 큐브(8cm)보다 큼. 그래스핑이 더 쉬움.
+</div>
+</div>
+
+<!-- ===== 4. Gripper Settings ===== -->
+<h2>4. Gripper Settings</h2>
+<div class="section">
+<table>
+  <tr><th>Parameter</th><th>Value</th></tr>
+  <tr><td>Gripper close threshold</td><td><code>0.5</code> (normalized 0–1)</td></tr>
+  <tr><td>Gripper normalization</td><td><strong>Normalized 0–1</strong> (width / max_width)</td></tr>
+  <tr><td>Gripper offset</td><td>None (kinematic mode)</td></tr>
+  <tr><td>Control type</td><td>Kinematic (직접 qpos 세팅)</td></tr>
+</table>
+</div>
+
+<!-- ===== 5. Observation & Action Space ===== -->
+<h2>5. Observation & Action Space</h2>
+<div class="section">
+
+<h3>Observation (RL Critic)</h3>
+<table>
+  <tr><th>Component</th><th>Dim</th><th>Description</th></tr>
+  <tr><td>dof_pos</td><td>9</td><td>Joint positions (7 arm + 2 finger)</td></tr>
+  <tr><td>dof_vel</td><td>9</td><td>Joint velocities</td></tr>
+  <tr><td>cogact_ref</td><td>7</td><td>GR00T base policy reference action</td></tr>
+  <tr><td>contact</td><td>3</td><td>Contact flags</td></tr>
+  <tr><td>ee_xyzrpy</td><td>6</td><td>End-effector pose</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>34D</strong></td><td></td></tr>
+</table>
+
+<h3>Action (GR00T output + Residual)</h3>
+<table>
+  <tr><th>Component</th><th>Dim</th><th>Range</th></tr>
+  <tr><td>EEF position (x, y, z)</td><td>3</td><td>Absolute workspace coords</td></tr>
+  <tr><td>EEF quaternion (qx, qy, qz, qw)</td><td>4</td><td>Unit quaternion</td></tr>
+  <tr><td>Gripper width</td><td>1</td><td>0–1 (normalized)</td></tr>
+  <tr><td><strong>Total</strong></td><td><strong>8D</strong></td><td></td></tr>
+</table>
+
+<h3>Action chunking</h3>
+<p>GR00T base policy: <strong>action_horizon = 16</strong> (16-step open-loop chunk). RL residual은 매 step마다 적용.</p>
+</div>
+
+<!-- ===== 6. Camera Setup ===== -->
+<h2>6. Camera Setup</h2>
+<div class="section">
+<table>
+  <tr><th>Camera</th><th>Resolution</th><th>Note</th></tr>
+  <tr><td><code>cam_base</code></td><td>84×84 (RL) / 640×360 (render)</td><td>정면 고정 카메라</td></tr>
+  <tr><td><code>cam_wrist</code></td><td>84×84 (RL) / 640×360 (render)</td><td>손목 카메라, 15° tilt</td></tr>
+</table>
+</div>
+
+<!-- ===== 7. Key Files ===== -->
+<h2>7. Key Files</h2>
+<div class="section">
+<table>
+  <tr><th>File</th><th>Description</th></tr>
+  <tr><td><code>wrappers/mujoco_vec_env.py</code></td><td>Lift MuJoCo vectorized environment</td></tr>
+  <tr><td><code>franka_fr3/fr3_with_hand.xml</code></td><td>MuJoCo scene XML</td></tr>
+  <tr><td><code>configs/cube_positions.json</code></td><td>10개 고정 큐브 위치</td></tr>
+</table>
+</div>
+
+</div>
+</body>
+</html>
