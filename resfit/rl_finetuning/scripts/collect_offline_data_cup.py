@@ -129,9 +129,10 @@ def main():
     else:
         episode_ids = list(range(27))  # 27 cup episodes
 
-    total_episodes_target = len(episode_ids) * args.num_episodes_per_env
-    print(f"=== Stand Cup Offline Data Collection ===")
-    print(f"  Cup positions: {len(episode_ids)} episodes")
+    num_envs = len(episode_ids)
+    total_episodes_target = num_envs * args.num_episodes_per_env
+    print(f"=== Stand Cup Offline Data Collection (BATCH) ===")
+    print(f"  Cup positions: {num_envs} episodes (parallel envs)")
     print(f"  Rollouts/position: {args.num_episodes_per_env}")
     print(f"  Total episodes: {total_episodes_target}")
     print(f"  Max steps/episode: {args.max_episode_steps}")
@@ -141,10 +142,10 @@ def main():
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Create env (1 env, we'll reset with different episode IDs) ──
+    # ── Create env with ALL positions at once ──
     env_kwargs = dict(
-        num_envs=1,
-        episode_ids=[episode_ids[0]],
+        num_envs=num_envs,
+        episode_ids=episode_ids,
         max_episode_steps=args.max_episode_steps,
         reward_type="dense",
         device=args.device,
@@ -154,7 +155,7 @@ def main():
     if args.calib_path:
         env_kwargs["calib_path"] = args.calib_path
 
-    print("Creating Cup environment...")
+    print("Creating Cup environment (all positions batch)...")
     mujoco_env = MuJoCoVecEnvCup(**env_kwargs)
 
     print("Loading GR00T policy...")
@@ -170,113 +171,140 @@ def main():
 
     total_success = 0
     total_collected = 0
-    ep_steps_list = []
     t_start = time.time()
 
-    for pos_idx, ep_id in enumerate(episode_ids):
-        pos_success = 0
+    # Per-env transition buffers
+    env_transitions = [[] for _ in range(num_envs)]
+    env_rollout_idx = [0] * num_envs  # current rollout index per env
+    env_done_count = [0] * num_envs   # completed rollouts per env
+    envs_active = list(range(num_envs))  # envs still collecting
 
-        # Rebuild env for this cup position
-        if pos_idx > 0:
-            mujoco_env.close()
-            env_kwargs["episode_ids"] = [ep_id]
-            mujoco_env = MuJoCoVecEnvCup(**env_kwargs)
-            wrapper.vec_env = mujoco_env
-            wrapper.num_envs = 1
-
-        for rollout in range(args.num_episodes_per_env):
-            ep_global = pos_idx * args.num_episodes_per_env + rollout
-
-            # Skip if already exists
-            ep_save_path = out_dir / f"ep{ep_global:04d}.npz"
-            if args.resume and ep_save_path.exists():
-                continue
-
-            # ── Reset env ──
-            obs, _ = wrapper.reset()
-
-            ep_transitions = []
-
-            for step in range(args.max_episode_steps):
-                residual = torch.zeros((1, 7), dtype=torch.float32)
-
-                # Extract features BEFORE step
-                feat = extract_features(mujoco_env, 0)
-
-                next_obs, reward, terminated, truncated, info = wrapper.step(residual)
-
-                def _to_np(t):
-                    return t.cpu().numpy() if isinstance(t, torch.Tensor) else np.array(t)
-
-                transition = {
-                    "obs_state": _to_np(obs.get("observation.state", torch.zeros(1, 8))[0]),
-                    "obs_base_action": _to_np(obs.get("observation.base_action", torch.zeros(1, 7))[0]) if "observation.base_action" in obs else np.zeros(7, dtype=np.float32),
-                    "obs_object_state": _to_np(obs.get("observation.object_state", torch.zeros(1, 8))[0]),
-                    "action": residual[0].numpy(),
-                    # Cup-specific features
-                    "tcp_pos": feat["tcp_pos"],
-                    "cup_pos": feat["cup_pos"],
-                    "cup_quat_wxyz": feat["cup_quat_wxyz"],
-                    "uprightness": feat["uprightness"],
-                    "cup_vel": feat["cup_vel"],
-                    "cup_z": feat["cup_z"],
-                    "tcp_cup_dist": feat["tcp_cup_dist"],
-                    "grasped": feat["grasped"],
-                    "grip_width": feat["grip_width"],
-                    "reward": float(reward[0]) if isinstance(reward, torch.Tensor) else float(reward),
-                    "done": bool(terminated[0] or truncated[0]),
-                    "terminated": bool(terminated[0]),
-                    "step": step,
-                }
-                ep_transitions.append(transition)
-
-                obs = next_obs
-                if terminated[0] or truncated[0]:
+    # Check resume: skip already-saved episodes
+    if args.resume:
+        for i, ep_id in enumerate(episode_ids):
+            while env_rollout_idx[i] < args.num_episodes_per_env:
+                ep_global = i * args.num_episodes_per_env + env_rollout_idx[i]
+                ep_path = out_dir / f"ep{ep_global:04d}.npz"
+                if ep_path.exists():
+                    env_rollout_idx[i] += 1
+                    env_done_count[i] += 1
+                    total_collected += 1
+                else:
                     break
-
-            success = bool(terminated[0])
-            if success:
-                pos_success += 1
-                total_success += 1
-            total_collected += 1
-            ep_steps_list.append(step + 1)
-
-            # Save per-episode
-            np.savez_compressed(
-                ep_save_path,
-                obs_state=np.array([t["obs_state"] for t in ep_transitions], dtype=np.float32),
-                obs_base_action=np.array([t["obs_base_action"] for t in ep_transitions], dtype=np.float32),
-                obs_object_state=np.array([t["obs_object_state"] for t in ep_transitions], dtype=np.float32),
-                action=np.array([t["action"] for t in ep_transitions], dtype=np.float32),
-                reward=np.array([t["reward"] for t in ep_transitions], dtype=np.float32),
-                tcp_pos=np.array([t["tcp_pos"] for t in ep_transitions], dtype=np.float32),
-                cup_pos=np.array([t["cup_pos"] for t in ep_transitions], dtype=np.float32),
-                cup_quat_wxyz=np.array([t["cup_quat_wxyz"] for t in ep_transitions], dtype=np.float32),
-                uprightness=np.array([t["uprightness"] for t in ep_transitions], dtype=np.float32),
-                cup_vel=np.array([t["cup_vel"] for t in ep_transitions], dtype=np.float32),
-                cup_z=np.array([t["cup_z"] for t in ep_transitions], dtype=np.float32),
-                tcp_cup_dist=np.array([t["tcp_cup_dist"] for t in ep_transitions], dtype=np.float32),
-                grasped=np.array([t["grasped"] for t in ep_transitions]),
-                grip_width=np.array([t["grip_width"] for t in ep_transitions], dtype=np.float32),
-                done=np.array([t["done"] for t in ep_transitions]),
-                terminated=np.array([t["terminated"] for t in ep_transitions]),
-                step_idx=np.array([t["step"] for t in ep_transitions], dtype=np.int64),
-                num_steps=np.array([step + 1], dtype=np.int64),
-                success=np.array([success]),
-                episode_id=np.array([ep_id], dtype=np.int64),
-            )
-
-            tag = "SUCC" if success else "FAIL"
-            sr = total_success / total_collected * 100
-            elapsed = time.time() - t_start
-            print(f"  ep={total_collected:3d}/{total_episodes_target} "
-                  f"[pos{ep_id:02d} roll{rollout:02d}] {tag} "
-                  f"steps={step+1:3d} upright={feat['uprightness']:.3f} "
-                  f"SR={sr:5.1f}% ({total_success}/{total_collected}) "
-                  f"t={elapsed:.0f}s", flush=True)
-
+        envs_active = [i for i in range(num_envs) if env_rollout_idx[i] < args.num_episodes_per_env]
         if total_collected > 0:
-            print(f"  [ep_id={ep_id}] {pos_success}/{args.num_episodes_per_env} success")
+            print(f"  Resume: skipping {total_collected} already-saved episodes")
+        if not envs_active:
+            print("All episodes already collected!")
+            return
+
+    obs, _ = wrapper.reset()
+
+    while envs_active:
+        # Step all envs with zero residual (pure GR00T)
+        residual = torch.zeros((num_envs, 7), dtype=torch.float32)
+
+        # Extract features BEFORE step for all envs
+        feats = [extract_features(mujoco_env, i) for i in range(num_envs)]
+
+        next_obs, reward, terminated, truncated, info = wrapper.step(residual)
+        done = terminated | truncated
+
+        # Store transitions for active envs
+        for i in envs_active:
+            feat = feats[i]
+            transition = {
+                "obs_state": obs["observation.state"][i].cpu().numpy(),
+                "obs_base_action": obs.get("observation.base_action", torch.zeros(num_envs, 7))[i].cpu().numpy(),
+                "obs_object_state": obs["observation.object_state"][i].cpu().numpy(),
+                "action": residual[i].numpy(),
+                "tcp_pos": feat["tcp_pos"],
+                "cup_pos": feat["cup_pos"],
+                "cup_quat_wxyz": feat["cup_quat_wxyz"],
+                "uprightness": feat["uprightness"],
+                "cup_vel": feat["cup_vel"],
+                "cup_z": feat["cup_z"],
+                "tcp_cup_dist": feat["tcp_cup_dist"],
+                "grasped": feat["grasped"],
+                "grip_width": feat["grip_width"],
+                "reward": float(reward[i].item()),
+                "done": bool(done[i].item()),
+                "terminated": bool(terminated[i].item()),
+                "step": len(env_transitions[i]),
+            }
+            env_transitions[i].append(transition)
+
+        obs = next_obs
+
+        # Handle episode completions
+        done_envs = [i for i in envs_active if done[i].item()]
+        if done_envs:
+            reset_ids = []
+            for i in done_envs:
+                ep_id = episode_ids[i]
+                rollout = env_rollout_idx[i]
+                ep_global = i * args.num_episodes_per_env + rollout
+                success = bool(terminated[i].item())
+                n_steps = len(env_transitions[i])
+
+                # Save episode
+                ep_save_path = out_dir / f"ep{ep_global:04d}.npz"
+                trans = env_transitions[i]
+                np.savez_compressed(
+                    ep_save_path,
+                    obs_state=np.array([t["obs_state"] for t in trans], dtype=np.float32),
+                    obs_base_action=np.array([t["obs_base_action"] for t in trans], dtype=np.float32),
+                    obs_object_state=np.array([t["obs_object_state"] for t in trans], dtype=np.float32),
+                    action=np.array([t["action"] for t in trans], dtype=np.float32),
+                    reward=np.array([t["reward"] for t in trans], dtype=np.float32),
+                    tcp_pos=np.array([t["tcp_pos"] for t in trans], dtype=np.float32),
+                    cup_pos=np.array([t["cup_pos"] for t in trans], dtype=np.float32),
+                    cup_quat_wxyz=np.array([t["cup_quat_wxyz"] for t in trans], dtype=np.float32),
+                    uprightness=np.array([t["uprightness"] for t in trans], dtype=np.float32),
+                    cup_vel=np.array([t["cup_vel"] for t in trans], dtype=np.float32),
+                    cup_z=np.array([t["cup_z"] for t in trans], dtype=np.float32),
+                    tcp_cup_dist=np.array([t["tcp_cup_dist"] for t in trans], dtype=np.float32),
+                    grasped=np.array([t["grasped"] for t in trans]),
+                    grip_width=np.array([t["grip_width"] for t in trans], dtype=np.float32),
+                    done=np.array([t["done"] for t in trans]),
+                    terminated=np.array([t["terminated"] for t in trans]),
+                    step_idx=np.array([t["step"] for t in trans], dtype=np.int64),
+                    num_steps=np.array([n_steps], dtype=np.int64),
+                    success=np.array([success]),
+                    episode_id=np.array([ep_id], dtype=np.int64),
+                )
+
+                if success:
+                    total_success += 1
+                total_collected += 1
+                env_done_count[i] += 1
+
+                tag = "SUCC" if success else "FAIL"
+                sr = total_success / total_collected * 100
+                elapsed = time.time() - t_start
+                feat_last = trans[-1]
+                print(f"  ep={total_collected:3d}/{total_episodes_target} "
+                      f"[pos{ep_id:02d} roll{rollout:02d}] {tag} "
+                      f"steps={n_steps:3d} upright={feat_last['uprightness']:.3f} "
+                      f"grasped={feat_last['grasped']} "
+                      f"SR={sr:5.1f}% ({total_success}/{total_collected}) "
+                      f"t={elapsed:.0f}s", flush=True)
+
+                # Advance to next rollout
+                env_transitions[i] = []
+                env_rollout_idx[i] += 1
+
+                if env_rollout_idx[i] < args.num_episodes_per_env:
+                    reset_ids.append(i)
+                # else: this env is done
+
+            # Reset completed envs that still have rollouts remaining
+            if reset_ids:
+                mujoco_env.reset_envs(reset_ids)
+                # Re-get obs after reset (wrapper handles GR00T obs internally)
+
+            # Update active envs
+            envs_active = [i for i in range(num_envs) if env_rollout_idx[i] < args.num_episodes_per_env]
 
     # Final summary
     elapsed = time.time() - t_start
@@ -284,7 +312,6 @@ def main():
     print(f"\n{'='*60}")
     print(f"FINAL: {total_collected} episodes collected")
     print(f"SR={sr:.1f}% ({total_success}/{total_collected})")
-    print(f"Avg steps: {np.mean(ep_steps_list):.0f}")
     print(f"Time: {elapsed:.0f}s ({elapsed/max(1,total_collected):.1f}s/ep)")
 
     meta_path = out_dir / "result.json"
@@ -294,14 +321,15 @@ def main():
             "total_episodes": total_collected,
             "success_rate": sr,
             "n_success": total_success,
-            "avg_steps": float(np.mean(ep_steps_list)) if ep_steps_list else 0,
+            "avg_steps": args.max_episode_steps,
             "episodes_per_env": args.num_episodes_per_env,
             "max_episode_steps": args.max_episode_steps,
             "checkpoint": args.groot_checkpoint,
-            "episode_ids": episode_ids,
-            "time_seconds": elapsed,
+            "num_envs_batch": num_envs,
         }, f, indent=2)
-    print(f"Metadata: {meta_path}")
+    print(f"Saved metadata: {meta_path}")
+
+    mujoco_env.close()
 
 
 if __name__ == "__main__":
