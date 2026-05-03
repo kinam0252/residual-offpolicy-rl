@@ -8,6 +8,7 @@
 #SBATCH --time=12:00:00
 #SBATCH --output=/home/nas_main/kinamkim/slurms/cup_offline_%j.out
 #SBATCH --error=/home/nas_main/kinamkim/slurms/cup_offline_%j.err
+#SBATCH --array=0-7
 
 set -e
 . ~/.venvs/groot/bin/activate
@@ -20,9 +21,22 @@ export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVIC
 
 cd ~/Repos/Intern/residual-offpolicy-rl
 
+# Split 27 cup positions across 8 array tasks
+ALL_IDS=($(seq 0 26))
+N=${#ALL_IDS[@]}
+NTASKS=8
+IDX=$SLURM_ARRAY_TASK_ID
+
+# Compute this task's slice
+START=$(( IDX * N / NTASKS ))
+END=$(( (IDX + 1) * N / NTASKS ))
+SLICE="${ALL_IDS[@]:$START:$((END - START))}"
+echo "Task $IDX: episodes $SLICE"
+
 python3 resfit/rl_finetuning/scripts/collect_offline_data_cup.py \
-    --groot_checkpoint ~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000 \
+    --groot_checkpoint ~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000 \
+    --episode_ids $SLICE \
     --num_episodes_per_env 100 \
     --max_episode_steps 500 \
-    --output_dir outputs/offline_cup_27ep \
+    --output_dir outputs/offline_cup_batch \
     --resume
