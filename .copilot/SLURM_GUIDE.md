@@ -112,6 +112,27 @@ squeue -u kinamkim -w worker-4
 scontrol show job JOB_ID
 ```
 
+### Stand Cup — 배치 오프라인 수집
+```bash
+# 8개 array job으로 병렬 수집 (core-on-sub)
+sbatch scripts/cup_collect_batch.sh
+```
+- **스크립트**: `scripts/cup_collect_batch.sh`
+- **array=0-7**: 8잡 × 13 ep/env × 27 positions = 총 2,808 episodes
+- **출력**: `outputs/offline_cup_batch/chunk_{0..7}/`
+- **GR00T**: `~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000`
+- **최적화 적용**: SubprocVecEnv(8 workers) + render-skip(16스텝 중 15번) 자동 적용
+- **주의**: `python3` 사용 필수 (`python`은 worker에서 없음), `six` 모듈이 `~/.local`에 설치돼있어야 함
+- **수집 후 merge**: 학습 전 chunk들을 하나로 합쳐야 함 (또는 학습 스크립트에서 다중 디렉토리 지원)
+
+### Stand Cup — RL 학습
+```bash
+sbatch scripts/slurm_train_cup_td3.sh  # (아직 미작성)
+```
+- 학습 스크립트: `resfit/rl_finetuning/scripts/train_residual_td3_mujoco_cup.py`
+- offline data: 배치 수집 결과 merge 후 경로 지정
+- reward_type: dense (approach + uprightness + contact grasp)
+
 ## wandb 설정
 
 - **online 모드**: 실시간 모니터링 가능 (권장)

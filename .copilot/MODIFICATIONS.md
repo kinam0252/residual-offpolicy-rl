@@ -127,3 +127,11 @@ git diff --stat
 - **파일**: `mujoco_vec_env_cup.py` _update_grasp()
 - **내용**: `list.index()` O(n) → `set` O(1) lookup, bilateral 확인 시 early break
 - **효과**: contact 수가 많을 때 루프 조기 종료
+
+### 7. SubprocVecEnv 병렬 물리 스테핑
+- **파일**: `mujoco_vec_env_cup.py` _cup_env_worker_loop(), __init__()
+- **내용**: `multiprocessing.Pipe` + `spawn` 컨텍스트로 워커 프로세스 분산 물리 시뮬레이션
+- **기본값**: `parallel_envs=True, num_workers=8`
+- **효과**: 27 envs 기준 154.8ms/step → 29.3ms/step (**5.29x speedup**)
+- **검증**: reward diff = 0.0 (exact match)
+- **주의**: 워커에서 `MUJOCO_GL=osmesa` 설정 (EGL 충돌 방지), `spawn` 컨텍스트라 `if __name__ == "__main__"` 가드 필요
