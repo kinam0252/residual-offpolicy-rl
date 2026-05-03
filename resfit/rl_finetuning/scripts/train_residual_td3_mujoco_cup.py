@@ -94,6 +94,27 @@ def _log(msg: str) -> None:
 
 
 # ══════════════════════════════════════════════════════════════════
+# Convert 8D combined action to 7D replay action for ActionScaler mode
+# ══════════════════════════════════════════════════════════════════
+
+def _to_replay_action_7d(combined_8d: torch.Tensor, residual_7d: torch.Tensor,
+                         action_scaler) -> torch.Tensor:
+    """Convert 8D combined (pos3+quat4+grip1) to 7D replay (norm_pos3+euler3+norm_grip1).
+
+    The replay buffer stores actions in the same format as offline data:
+      [normalized_pos(3), euler_residual(3), normalized_grip(1)]
+    """
+    n = combined_8d.shape[0]
+    pg = torch.cat([combined_8d[:, :3], combined_8d[:, 7:8]], dim=-1)  # (N, 4)
+    pg_norm = action_scaler.scale(pg)  # (N, 4) normalized
+    out = torch.zeros(n, 7, device=combined_8d.device, dtype=combined_8d.dtype)
+    out[:, :3] = pg_norm[:, :3]       # normalized pos
+    out[:, 3:6] = residual_7d[:, 3:6] # raw euler residual
+    out[:, 6] = pg_norm[:, 3]         # normalized grip
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════
 # ActionScaler stats computation (cup: pos+grip from 7D base_action)
 # ══════════════════════════════════════════════════════════════════
 
@@ -315,9 +336,11 @@ class AsyncEvaluator:
             "--reward_type", a.reward_type,
             "--device", a.device,
             "--eval_num_episodes", str(a.eval_num_episodes),
-            "--cup_positions_file", a.cup_positions_file,
+            "--max_eval_envs", str(a.eval_num_envs),
             "--poll_interval_sec", "10",
         ]
+        if a.cup_positions_file:
+            cmd += ["--cup_positions_file", a.cup_positions_file]
         if a.groot_policy_device:
             cmd += ["--groot_policy_device", a.groot_policy_device]
         if a.save_video:
@@ -455,7 +478,7 @@ def parse_args():
     p.add_argument("--cup_positions_file", type=str, default=None,
                    help="JSON with per-episode cup positions (configs/cup_positions.json)")
     p.add_argument("--max_episode_steps", type=int, default=500)
-    p.add_argument("--reward_type", type=str, default="dense", choices=["sparse", "dense"])
+    p.add_argument("--reward_type", type=str, default="dense", choices=["sparse", "dense", "dense_bonus"])
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")
@@ -783,7 +806,7 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(noise)
         done = terminated | truncated
 
-        _replay_action = info["scaled_action"] if _action_scaler is not None else noise
+        _replay_action = _to_replay_action_7d(info["scaled_action"], noise, _action_scaler) if _action_scaler is not None else noise
         _add_transitions(
             obs=obs, next_obs=next_obs, actions=_replay_action,
             reward=reward, done=done, device=device,
@@ -809,6 +832,8 @@ def main():
         _log(f"Critic warmup: {args.critic_warmup_steps} updates...")
         for i in range(args.critic_warmup_steps):
             batch = online_rb.sample(args.batch_size).to(device, non_blocking=True)
+            if batch.ndim > 1:
+                batch = batch.squeeze(1)
             metrics = agent.update(batch, stddev=0.0, update_actor=False, bc_batch=None, ref_agent=agent)
             if i % 200 == 0:
                 cl = metrics.get("train/critic_loss", 0)
@@ -869,7 +894,7 @@ def main():
             ep_step_counter[done_mask] = 0
 
         # Store transition
-        _replay_action = info["scaled_action"] if _action_scaler is not None else residual_action
+        _replay_action = _to_replay_action_7d(info["scaled_action"], residual_action, _action_scaler) if _action_scaler is not None else residual_action
         _t0 = time.perf_counter()
         _add_transitions(
             obs=obs, next_obs=next_obs, actions=_replay_action,
@@ -885,11 +910,15 @@ def main():
             _t0 = time.perf_counter()
             for _ui in range(args.num_updates_per_iteration):
                 batch = online_rb.sample(max(online_batch_size, 1)).to(device, non_blocking=True)
+                if batch.ndim > 1:
+                    batch = batch.squeeze(1)
                 _use_offline = (offline_rb is not None and len(offline_rb) > 0
                                 and offline_batch_size > 0
                                 and not (args.offline_pretrain_only and global_step >= args.critic_warmup_steps))
                 if _use_offline:
                     obatch = offline_rb.sample(offline_batch_size).to(device, non_blocking=True)
+                    if obatch.ndim > 1:
+                        obatch = obatch.squeeze(1)
                     if "_priority" in batch.keys():
                         batch = batch.exclude("_priority")
                     if "_priority" in obatch.keys():

@@ -567,7 +567,10 @@ def _cup_env_worker_loop(pipe, init_kwargs):
         uprightness = _get_uprightness_local(env)
         upright_reward = float(_np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
         reward = 0.20 * approach_reward + 0.15 * grasp_reward + 0.65 * upright_reward
-        return float(_np.clip(reward, 0.0, 1.0))
+        reward = float(_np.clip(reward, 0.0, 1.0))
+        if reward_type == "dense_bonus" and _is_success_local(env):
+            reward += 2.0
+        return reward
 
     def _is_success_local(env):
         cup_qpa = env["cup_qposadr"]
@@ -1334,6 +1337,7 @@ class MuJoCoVecEnvCup:
         if self.reward_type == "sparse":
             return 1.0 if self._is_success(env_idx) else 0.0
 
+        # dense and dense_bonus share the same staged reward structure
         # Staged dense reward:
         #   approach (0.20): tanh decay on tcp-cup distance
         #   grasp   (0.15): flat reward when grasped
@@ -1363,7 +1367,11 @@ class MuJoCoVecEnvCup:
         upright_reward = float(np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
 
         reward = 0.20 * approach_reward + 0.15 * grasp_reward + 0.65 * upright_reward
-        return float(np.clip(reward, 0.0, 1.0))
+        reward = float(np.clip(reward, 0.0, 1.0))
+        # dense_bonus: add success bonus to sharpen gradient near success threshold
+        if self.reward_type == "dense_bonus" and self._is_success(env_idx):
+            reward += 2.0
+        return reward
 
     def _is_success(self, env_idx) -> bool:
         """Cup is upright and stable on table."""

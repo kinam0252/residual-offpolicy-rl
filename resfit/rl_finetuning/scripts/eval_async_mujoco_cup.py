@@ -170,6 +170,7 @@ def parse_args():
     p.add_argument("--asymmetric_critic", action="store_true")
     # Eval
     p.add_argument("--eval_num_episodes", type=int, default=1)
+    p.add_argument("--max_eval_envs", type=int, default=20)
     p.add_argument("--save_video", action="store_true")
     # W&B
     p.add_argument("--wandb_mode", type=str, default="disabled")
@@ -194,7 +195,7 @@ def main():
     # -- Load cup positions --
     from resfit.rl_finetuning.wrappers.mujoco_vec_env_cup import load_cup_positions
     cup_data = load_cup_positions(args.cup_positions_file)
-    num_envs = len(cup_data)
+    num_envs = min(len(cup_data), getattr(args, 'max_eval_envs', len(cup_data)))
     episode_ids = list(range(num_envs))
     _log(f"Eval envs: {num_envs} cup positions")
 

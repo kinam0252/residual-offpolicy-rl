@@ -13,7 +13,7 @@ set -e
 . ~/.venvs/groot/bin/activate
 export MUJOCO_GL=egl
 NV=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia
-export LD_LIBRARY_PATH=$HOME/lib-compat:$NV/cuda_runtime/lib:$NV/cublas/lib:$NV/cudnn/lib:$NV/cufft/lib:$NV/cusolver/lib:$NV/cusparse/lib:$NV/nvjitlink/lib:$NV/cuda_nvrtc/lib:$NV/nccl/lib:$HOME/.local/lib/gl:${LD_LIBRARY_PATH:-}
+export LD_LIBRARY_PATH=$HOME/.local/lib:$HOME/lib-compat:$NV/cuda_runtime/lib:$NV/cublas/lib:$NV/cudnn/lib:$NV/cufft/lib:$NV/cusolver/lib:$NV/cusparse/lib:$NV/nvjitlink/lib:$NV/cuda_nvrtc/lib:$NV/nccl/lib:$HOME/.local/lib/gl:${LD_LIBRARY_PATH:-}
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 DS_BUILD_OPS=0 CUDA_HOME=~/fake_cuda
 export PATH=~/bin:$PATH
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVICES=0
@@ -21,8 +21,8 @@ export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1 CUDA_VISIBLE_DEVIC
 cd ~/Repos/Intern/residual-offpolicy-rl
 
 # ── Defaults (override via SBATCH env vars or edit below) ──
-GROOT_CKPT=${GROOT_CKPT:-~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000}
-OFFLINE_DIR=${OFFLINE_DIR:-outputs/offline_cup_27ep}
+GROOT_CKPT=${GROOT_CKPT:-~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000}
+OFFLINE_DIR=${OFFLINE_DIR:-outputs/offline_cup_batch}
 NUM_ENVS=${NUM_ENVS:-27}
 TOTAL_STEPS=${TOTAL_STEPS:-500000}
 ACTION_SCALE=${ACTION_SCALE:-0.1}
@@ -47,6 +47,7 @@ python3 resfit/rl_finetuning/scripts/train_residual_td3_mujoco_cup.py \
     --async_eval \
     --eval_interval 2000 \
     --eval_num_episodes 1 \
+    --eval_num_envs 20 \
     --checkpoint_interval 10000 \
     --wandb_mode online \
     --wandb_name "$WANDB_NAME" \
