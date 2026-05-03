@@ -149,7 +149,14 @@ class MuJoCoResidualWrapperCup:
         base_action = self._get_base_actions()
         combined = self._combine_actions(base_action, residual_np)
         combined_t = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
-        raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode="rl_only")
+
+        # Skip rendering if no env needs GR00T inference next step
+        needs_infer_next = any(
+            self._cached_chunks[i] is None or self._chunk_idx[i] + 1 >= self.open_loop_horizon
+            for i in range(self.num_envs)
+        )
+        render = "rl_only" if needs_infer_next else "none"
+        raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode=render)
 
         info["scaled_action"] = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
 

@@ -821,11 +821,9 @@ class MuJoCoVecEnvCup:
             states.append(state)
 
             # Images (RGB only)
-            if render_mode == "full":
+            if render_mode in ("full", "rl_only"):
                 self._render_cameras(i, images)
-            elif render_mode == "rl_only":
-                self._render_cameras(i, images)
-            else:
+            else:  # "none" — skip rendering entirely
                 for key in images:
                     images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
 
