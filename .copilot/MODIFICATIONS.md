@@ -92,3 +92,38 @@ git diff --stat
 1. **공유 코드 (`q_agent.py`, `normalization.py`)** 수정은 모든 task에 영향
 2. **각 task wrapper/train/eval**은 task별 독립 — 다른 task에 영향 없음
 3. Drawer의 replay clamp 수정이 Stack에도 필요한지 **미확인** (같은 패턴 코드가 Stack wrapper line 421-425에 존재)
+
+## 🚀 성능 최적화 (Cup — 2026-05-03)
+
+학습/수집/평가 모든 경로에 자동 적용됨 (vec_env + wrapper 레벨 변경).
+
+### 1. 렌더링 스킵 (16스텝 중 15번)
+- **파일**: `mujoco_residual_wrapper_cup.py` step(), `mujoco_vec_env_cup.py` _build_obs_dict()
+- **내용**: GR00T 추론은 16스텝마다 1회. 나머지 15스텝에선 `render_mode="none"`으로 카메라 렌더링 스킵
+- **효과**: 127ms/step → 68ms/step (**1.86x speedup**)
+- **검증**: reward diff = 0.0 (이미지는 reward 계산에 무관)
+
+### 2. obs 버퍼 프리얼로케이트
+- **파일**: `mujoco_vec_env_cup.py` __init__, _build_obs_dict()
+- **내용**: 매 스텝 `list → np.stack → torch` 할당 대신 `__init__`에서 버퍼 사전 할당, in-place 쓰기
+- **효과**: GC 압력 감소, 메모리 할당 오버헤드 제거
+
+### 3. 렌더링 `.copy()` 제거
+- **파일**: `mujoco_vec_env_cup.py` _render_cameras_inplace()
+- **내용**: 렌더러 출력을 복사 없이 직접 버퍼에 기록
+- **효과**: 렌더링 스텝에서 불필요한 복사 제거
+
+### 4. uprightness 직접 계산
+- **파일**: `mujoco_vec_env_cup.py` _get_uprightness()
+- **내용**: `Rotation.from_quat().as_matrix()` 대신 `1 - 2(x² + y²)` 직접 계산
+- **효과**: reward/success 체크 시 Rotation 객체 생성 오버헤드 제거 (diff < 2e-15)
+
+### 5. _combine_actions / _augment_obs 벡터화
+- **파일**: `mujoco_residual_wrapper_cup.py`
+- **내용**: per-env Python 루프 → batch `Rotation.from_quat/euler` 한 번 호출
+- **효과**: env 수가 많을수록 효과 커짐 (27 envs 기준 유의미)
+
+### 6. grasp 탐지 최적화
+- **파일**: `mujoco_vec_env_cup.py` _update_grasp()
+- **내용**: `list.index()` O(n) → `set` O(1) lookup, bilateral 확인 시 early break
+- **효과**: contact 수가 많을 때 루프 조기 종료
