@@ -66,6 +66,7 @@ class MuJoCoResidualWrapperCup:
         residual_grip_scale: float = 0.004,
         action_clip: float = 1.0,
         ema_alpha: float = 0.0,
+        torch_compile: bool = False,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -97,6 +98,19 @@ class MuJoCoResidualWrapperCup:
                 device=policy_device,
             )
             print(f"[MuJoCoResidualWrapperCup] GR00T loaded in {time.time() - t0:.1f}s")
+
+            # ── Optional torch.compile for inference acceleration ──
+            if torch_compile and hasattr(self.policy, 'model'):
+                import torch as _torch
+                print("[MuJoCoResidualWrapperCup] Applying torch.compile to GR00T model...")
+                t1 = time.time()
+                _torch._dynamo.config.suppress_errors = True
+                self.policy.model = _torch.compile(
+                    self.policy.model,
+                    mode="reduce-overhead",
+                    fullgraph=False,
+                )
+                print(f"[MuJoCoResidualWrapperCup] torch.compile applied in {time.time() - t1:.1f}s")
 
         self.config = _FakeImageFeaturesConfig()
 

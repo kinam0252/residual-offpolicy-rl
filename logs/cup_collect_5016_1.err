@@ -1,0 +1,1990 @@
+/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/transformers/utils/hub.py:105: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/resfit/rl_finetuning/scripts/collect_offline_data_cup.py", line 336, in <module>
+    main()
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/resfit/rl_finetuning/scripts/collect_offline_data_cup.py", line 162, in main
+    wrapper = MuJoCoResidualWrapperCup(
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/resfit/rl_finetuning/scripts/../../../resfit/rl_finetuning/wrappers/mujoco_residual_wrapper_cup.py", line 92, in __init__
+    self.policy = Gr00tPolicy(
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/policy/gr00t_policy.py", line 76, in __init__
+    import gr00t.model  # noqa: F401
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/__init__.py", line 1, in <module>
+    from .gr00t_n1d6.setup import Gr00tN1d6Pipeline
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/gr00t_n1d6/setup.py", line 7, in <module>
+    from gr00t.data.dataset.factory import DatasetFactory
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/data/dataset/factory.py", line 7, in <module>
+    from gr00t.data.dataset.sharded_single_step_dataset import ShardedSingleStepDataset
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/data/dataset/sharded_single_step_dataset.py", line 5, in <module>
+    import pandas as pd
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/pandas/__init__.py", line 49, in <module>
+    from pandas.core.api import (
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/pandas/core/api.py", line 1, in <module>
+    from pandas._libs import (
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/pandas/_libs/__init__.py", line 18, in <module>
+    from pandas._libs.interval import Interval
+  File "interval.pyx", line 1, in init pandas._libs.interval
+  File "hashtable.pyx", line 1, in init pandas._libs.hashtable
+  File "missing.pyx", line 1, in init pandas._libs.missing
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/pandas/_libs/tslibs/__init__.py", line 40, in <module>
+    from pandas._libs.tslibs.conversion import localize_pydatetime
+  File "conversion.pyx", line 1, in init pandas._libs.tslibs.conversion
+  File "offsets.pyx", line 1, in init pandas._libs.tslibs.offsets
+  File "timestamps.pyx", line 1, in init pandas._libs.tslibs.timestamps
+  File "timedeltas.pyx", line 1, in init pandas._libs.tslibs.timedeltas
+  File "timezones.pyx", line 24, in init pandas._libs.tslibs.timezones
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/dateutil/tz/__init__.py", line 2, in <module>
+    from .tz import *
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/dateutil/tz/tz.py", line 19, in <module>
+    import six
+ModuleNotFoundError: No module named 'six'
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/platform/baseplatform.py", line 487, in __call__
+    return self(*args, **named)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624740>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624740>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 131, in free
+    EGL.eglMakeCurrent(EGL_DISPLAY, EGL.EGL_NO_SURFACE,
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglMakeCurrent,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x7c3982680f40>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x7c3982680f40>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3982680ec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 131, in free
+    EGL.eglMakeCurrent(EGL_DISPLAY, EGL.EGL_NO_SURFACE,
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglMakeCurrent,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x7c3982680f40>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x7c3982680f40>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3982680ec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746245c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746245c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746261c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746261c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746247c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746247c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874626040>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874626040>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624e40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624e40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625ec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625ec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624cc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624cc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625d40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625d40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624b40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624b40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625bc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625bc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746249c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746249c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625a40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625a40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624940>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624940>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746258c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746258c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624340>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624340>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625740>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625740>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625540>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625540>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746255c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746255c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624640>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624640>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746254c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746254c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746244c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746244c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625340>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625340>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624440>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624440>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746251c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746251c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746242c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746242c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625040>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874625040>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624240>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624240>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624ec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624ec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746241c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746241c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624d40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624d40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624140>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624140>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624040>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624040>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746240c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746240c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624a40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624a40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624840>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c3874624840>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746248c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c38746248c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fdc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fdc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fc40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fc40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fa40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fa40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fd40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fd40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fb40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fb40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f840>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f840>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f7c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f7c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f9c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f9c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fcc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fcc0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f8c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5f8c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fec0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fe40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c395df5fe40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4ba4c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4ba4c0>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4b9240>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4b9240>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4b8e40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4b8e40>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x7c3981794af0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4b8d40>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x7c3981794310>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x7c396c4b96c0>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x7c396c4b8d40>,
+	),
+	result = 0
+)

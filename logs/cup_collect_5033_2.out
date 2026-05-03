@@ -1,0 +1,195 @@
+=== Cup Collect: chunk 2/7 ===
+  Episodes/env: 13
+  Output: outputs/offline_cup_batch/chunk_2
+=== Stand Cup Offline Data Collection (BATCH) ===
+  Cup positions: 27 episodes (parallel envs)
+  Rollouts/position: 13
+  Total episodes: 351
+  Max steps/episode: 300
+  GR00T: /home/nas_main/kinamkim/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000
+
+Creating Cup environment (all positions batch)...
+[MuJoCoVecEnvCup] Loaded 33 cup positions
+[load_calib_wrist] Loaded from camera_info_66ep.yaml: pos=[-0.06653175 -0.02519977  0.05951161], quat=[0.2722828  0.26626734 0.64614796 0.66140502]
+[MuJoCoVecEnvCup] Spawned 8 workers for 27 envs
+Loading GR00T policy...
+[MuJoCoResidualWrapperCup] Loading GR00T from /home/nas_main/kinamkim/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-200000...
+Tune backbone llm: False
+Tune backbone visual: False
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.12.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.12.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.13.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.13.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.14.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.14.post_attention_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.v_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.o_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.q_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.self_attn.k_norm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.gate_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.up_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.mlp.down_proj.weight
+Backbone trainable parameter: model.language_model.model.layers.15.input_layernorm.weight
+Backbone trainable parameter: model.language_model.model.layers.15.post_attention_layernorm.weight
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.12.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.13.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.14.post_attention_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.v_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.o_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.q_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.self_attn.k_norm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.gate_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.up_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.mlp.down_proj.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.input_layernorm.weight to fp32
+Casting trainable parameter model.language_model.model.layers.15.post_attention_layernorm.weight to fp32
+Total number of DiT parameters:  1091722240
+Using AlternateVLDiT for diffusion model
+Tune action head projector: True
+Tune action head diffusion model: True
+Tune action head vlln: True
+[MuJoCoResidualWrapperCup] GR00T loaded in 33.8s
+Ready.
+
+  ep=  1/351 [pos00 roll00] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/1) t=124s
+  ep=  2/351 [pos01 roll00] FAIL steps=300 upright=0.001 grasped=True SR=  0.0% (0/2) t=124s
+  ep=  3/351 [pos02 roll00] FAIL steps=300 upright=0.121 grasped=True SR=  0.0% (0/3) t=124s
+  ep=  4/351 [pos03 roll00] FAIL steps=300 upright=0.105 grasped=True SR=  0.0% (0/4) t=124s
+  ep=  5/351 [pos04 roll00] FAIL steps=300 upright=-0.048 grasped=True SR=  0.0% (0/5) t=124s
+  ep=  6/351 [pos05 roll00] FAIL steps=300 upright=0.134 grasped=True SR=  0.0% (0/6) t=124s
+  ep=  7/351 [pos06 roll00] FAIL steps=300 upright=0.028 grasped=True SR=  0.0% (0/7) t=124s
+  ep=  8/351 [pos07 roll00] FAIL steps=300 upright=0.109 grasped=True SR=  0.0% (0/8) t=124s
+  ep=  9/351 [pos08 roll00] FAIL steps=300 upright=-0.056 grasped=True SR=  0.0% (0/9) t=124s
+  ep= 10/351 [pos09 roll00] FAIL steps=300 upright=0.199 grasped=True SR=  0.0% (0/10) t=124s
+  ep= 11/351 [pos10 roll00] FAIL steps=300 upright=0.075 grasped=True SR=  0.0% (0/11) t=124s
+  ep= 12/351 [pos11 roll00] FAIL steps=300 upright=0.009 grasped=True SR=  0.0% (0/12) t=124s
+  ep= 13/351 [pos12 roll00] FAIL steps=300 upright=0.110 grasped=True SR=  0.0% (0/13) t=124s
+  ep= 14/351 [pos13 roll00] FAIL steps=300 upright=0.072 grasped=True SR=  0.0% (0/14) t=124s
+  ep= 15/351 [pos14 roll00] FAIL steps=300 upright=0.119 grasped=True SR=  0.0% (0/15) t=124s
+  ep= 16/351 [pos15 roll00] FAIL steps=300 upright=0.103 grasped=True SR=  0.0% (0/16) t=124s
+  ep= 17/351 [pos16 roll00] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/17) t=124s
+  ep= 18/351 [pos17 roll00] FAIL steps=300 upright=-0.097 grasped=True SR=  0.0% (0/18) t=124s
+  ep= 19/351 [pos18 roll00] FAIL steps=300 upright=0.173 grasped=True SR=  0.0% (0/19) t=124s
+  ep= 20/351 [pos19 roll00] FAIL steps=300 upright=0.188 grasped=True SR=  0.0% (0/20) t=124s
+  ep= 21/351 [pos20 roll00] FAIL steps=300 upright=0.125 grasped=False SR=  0.0% (0/21) t=124s
+  ep= 22/351 [pos21 roll00] FAIL steps=300 upright=0.106 grasped=True SR=  0.0% (0/22) t=124s
+  ep= 23/351 [pos22 roll00] FAIL steps=300 upright=-0.359 grasped=True SR=  0.0% (0/23) t=124s
+  ep= 24/351 [pos23 roll00] FAIL steps=300 upright=0.061 grasped=True SR=  0.0% (0/24) t=124s
+  ep= 25/351 [pos24 roll00] FAIL steps=300 upright=0.113 grasped=True SR=  0.0% (0/25) t=124s
+  ep= 26/351 [pos25 roll00] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/26) t=124s
+  ep= 27/351 [pos26 roll00] FAIL steps=300 upright=0.011 grasped=True SR=  0.0% (0/27) t=124s
+  ep= 28/351 [pos00 roll01] FAIL steps=300 upright=0.124 grasped=True SR=  0.0% (0/28) t=233s
+  ep= 29/351 [pos01 roll01] FAIL steps=300 upright=0.044 grasped=True SR=  0.0% (0/29) t=233s
+  ep= 30/351 [pos02 roll01] FAIL steps=300 upright=0.101 grasped=True SR=  0.0% (0/30) t=233s
+  ep= 31/351 [pos03 roll01] FAIL steps=300 upright=0.020 grasped=True SR=  0.0% (0/31) t=233s
+  ep= 32/351 [pos04 roll01] FAIL steps=300 upright=0.152 grasped=True SR=  0.0% (0/32) t=233s
+  ep= 33/351 [pos05 roll01] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/33) t=233s
+  ep= 34/351 [pos06 roll01] FAIL steps=300 upright=0.110 grasped=True SR=  0.0% (0/34) t=233s
+  ep= 35/351 [pos07 roll01] FAIL steps=300 upright=0.120 grasped=True SR=  0.0% (0/35) t=233s
+  ep= 36/351 [pos08 roll01] FAIL steps=300 upright=0.080 grasped=True SR=  0.0% (0/36) t=233s
+  ep= 37/351 [pos09 roll01] FAIL steps=300 upright=0.238 grasped=True SR=  0.0% (0/37) t=233s
+  ep= 38/351 [pos10 roll01] FAIL steps=300 upright=0.030 grasped=True SR=  0.0% (0/38) t=233s
+  ep= 39/351 [pos11 roll01] FAIL steps=300 upright=0.041 grasped=True SR=  0.0% (0/39) t=234s
+  ep= 40/351 [pos12 roll01] FAIL steps=300 upright=0.086 grasped=True SR=  0.0% (0/40) t=234s
+  ep= 41/351 [pos13 roll01] FAIL steps=300 upright=-0.068 grasped=True SR=  0.0% (0/41) t=234s
+  ep= 42/351 [pos14 roll01] FAIL steps=300 upright=0.113 grasped=True SR=  0.0% (0/42) t=234s
+  ep= 43/351 [pos15 roll01] FAIL steps=300 upright=0.123 grasped=True SR=  0.0% (0/43) t=234s
+  ep= 44/351 [pos16 roll01] FAIL steps=300 upright=0.230 grasped=True SR=  0.0% (0/44) t=234s
+  ep= 45/351 [pos17 roll01] FAIL steps=300 upright=0.397 grasped=True SR=  0.0% (0/45) t=234s
+  ep= 46/351 [pos18 roll01] FAIL steps=300 upright=0.017 grasped=True SR=  0.0% (0/46) t=234s
+  ep= 47/351 [pos19 roll01] FAIL steps=300 upright=0.045 grasped=True SR=  0.0% (0/47) t=234s
+  ep= 48/351 [pos20 roll01] FAIL steps=300 upright=0.125 grasped=False SR=  0.0% (0/48) t=234s
+  ep= 49/351 [pos21 roll01] FAIL steps=300 upright=-0.004 grasped=True SR=  0.0% (0/49) t=234s
+  ep= 50/351 [pos22 roll01] FAIL steps=300 upright=0.047 grasped=True SR=  0.0% (0/50) t=234s
+  ep= 51/351 [pos23 roll01] FAIL steps=300 upright=0.167 grasped=True SR=  0.0% (0/51) t=234s
+  ep= 52/351 [pos24 roll01] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/52) t=234s
+  ep= 53/351 [pos25 roll01] FAIL steps=300 upright=0.037 grasped=True SR=  0.0% (0/53) t=234s
+  ep= 54/351 [pos26 roll01] FAIL steps=300 upright=0.026 grasped=True SR=  0.0% (0/54) t=234s
+  ep= 55/351 [pos00 roll02] FAIL steps=300 upright=0.093 grasped=True SR=  0.0% (0/55) t=346s
+  ep= 56/351 [pos01 roll02] FAIL steps=300 upright=0.037 grasped=True SR=  0.0% (0/56) t=346s
+  ep= 57/351 [pos02 roll02] FAIL steps=300 upright=0.106 grasped=True SR=  0.0% (0/57) t=346s
+  ep= 58/351 [pos03 roll02] FAIL steps=300 upright=0.037 grasped=True SR=  0.0% (0/58) t=346s
+  ep= 59/351 [pos04 roll02] FAIL steps=300 upright=0.031 grasped=True SR=  0.0% (0/59) t=346s
+  ep= 60/351 [pos05 roll02] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/60) t=346s
+  ep= 61/351 [pos06 roll02] FAIL steps=300 upright=0.104 grasped=True SR=  0.0% (0/61) t=346s
+  ep= 62/351 [pos07 roll02] FAIL steps=300 upright=0.033 grasped=True SR=  0.0% (0/62) t=346s
+  ep= 63/351 [pos08 roll02] FAIL steps=300 upright=0.037 grasped=True SR=  0.0% (0/63) t=346s
+  ep= 64/351 [pos09 roll02] FAIL steps=300 upright=0.090 grasped=True SR=  0.0% (0/64) t=346s
+  ep= 65/351 [pos10 roll02] FAIL steps=300 upright=0.050 grasped=True SR=  0.0% (0/65) t=346s
+  ep= 66/351 [pos11 roll02] FAIL steps=300 upright=0.002 grasped=True SR=  0.0% (0/66) t=346s
+  ep= 67/351 [pos12 roll02] FAIL steps=300 upright=0.011 grasped=True SR=  0.0% (0/67) t=346s
+  ep= 68/351 [pos13 roll02] FAIL steps=300 upright=0.033 grasped=True SR=  0.0% (0/68) t=346s
+  ep= 69/351 [pos14 roll02] FAIL steps=300 upright=0.139 grasped=True SR=  0.0% (0/69) t=346s
+  ep= 70/351 [pos15 roll02] FAIL steps=300 upright=0.111 grasped=True SR=  0.0% (0/70) t=346s
+  ep= 71/351 [pos16 roll02] FAIL steps=300 upright=0.343 grasped=True SR=  0.0% (0/71) t=346s
+  ep= 72/351 [pos17 roll02] FAIL steps=300 upright=0.062 grasped=True SR=  0.0% (0/72) t=346s
+  ep= 73/351 [pos18 roll02] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/73) t=346s
+  ep= 74/351 [pos19 roll02] FAIL steps=300 upright=0.041 grasped=True SR=  0.0% (0/74) t=346s
+  ep= 75/351 [pos20 roll02] FAIL steps=300 upright=0.125 grasped=False SR=  0.0% (0/75) t=346s
+  ep= 76/351 [pos21 roll02] FAIL steps=300 upright=0.085 grasped=True SR=  0.0% (0/76) t=346s
+  ep= 77/351 [pos22 roll02] FAIL steps=300 upright=-0.105 grasped=True SR=  0.0% (0/77) t=346s
+  ep= 78/351 [pos23 roll02] FAIL steps=300 upright=0.083 grasped=True SR=  0.0% (0/78) t=346s
+  ep= 79/351 [pos24 roll02] FAIL steps=300 upright=0.191 grasped=True SR=  0.0% (0/79) t=346s
+  ep= 80/351 [pos25 roll02] FAIL steps=300 upright=0.125 grasped=True SR=  0.0% (0/80) t=346s
+  ep= 81/351 [pos26 roll02] FAIL steps=300 upright=-0.078 grasped=True SR=  0.0% (0/81) t=346s

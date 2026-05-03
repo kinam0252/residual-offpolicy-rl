@@ -1,0 +1,134 @@
+/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/transformers/utils/hub.py:105: FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+  warnings.warn(
+/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/albumentations/__init__.py:13: UserWarning: A new version of Albumentations is available: 2.0.8 (you have 1.4.18). Upgrade using: pip install -U albumentations. To disable automatic update checks, set the environment variable NO_ALBUMENTATIONS_UPDATE to 1.
+  check_for_updates()
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:205: FutureWarning: Accessing config attribute `compute_dtype` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'compute_dtype' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.compute_dtype'.
+  embedding_dim=self.inner_dim, compute_dtype=self.compute_dtype
+/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py:236: FutureWarning: Accessing config attribute `output_dim` directly via 'AlternateVLDiT' object attribute is deprecated. Please access 'output_dim' over 'AlternateVLDiT's config object instead, e.g. 'unet.config.output_dim'.
+  self.proj_out_2 = nn.Linear(self.inner_dim, self.output_dim)
+`use_fast` is set to `True` but the image processor class does not have a fast version.  Falling back to the slow version.
+Loading checkpoint shards:   0%|          | 0/2 [00:00<?, ?it/s]Loading checkpoint shards:  50%|█████     | 1/2 [00:00<00:00,  1.73it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.48it/s]Loading checkpoint shards: 100%|██████████| 2/2 [00:01<00:00,  1.52it/s]
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/scripts/cup_base_video_batch.py", line 93, in <module>
+    main()
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/scripts/cup_base_video_batch.py", line 57, in main
+    obs, info = wrapper.reset()
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/./resfit/rl_finetuning/wrappers/mujoco_residual_wrapper_cup.py", line 136, in reset
+    base_action = self._get_base_actions(force_infer=True)
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/./resfit/rl_finetuning/wrappers/mujoco_residual_wrapper_cup.py", line 198, in _get_base_actions
+    self._query_groot_batch(need_infer)
+  File "/home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl/./resfit/rl_finetuning/wrappers/mujoco_residual_wrapper_cup.py", line 257, in _query_groot_batch
+    action_result, _info = self.policy.get_action(batched_obs)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/policy/policy.py", line 87, in get_action
+    action, info = self._get_action(observation, options)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/policy/gr00t_policy.py", line 343, in _get_action
+    model_pred = self.model.get_action(**collated_inputs)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/gr00t_n1d6/gr00t_n1d6.py", line 524, in get_action
+    action_outputs = self.action_head.get_action(backbone_outputs, action_inputs)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/gr00t_n1d6/gr00t_n1d6.py", line 384, in get_action
+    return self.get_action_with_features(
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/utils/_contextlib.py", line 124, in decorate_context
+    return func(*args, **kwargs)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/gr00t_n1d6/gr00t_n1d6.py", line 339, in get_action_with_features
+    model_output = self.model(
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py", line 348, in forward
+    hidden_states = block(
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nas_main/kinamkim/Repos/Intern/Isaac-GR00T/gr00t/model/modules/dit.py", line 148, in forward
+    attn_output = self.attn1(
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1779, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1790, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/diffusers/models/attention_processor.py", line 605, in forward
+    return self.processor(
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/diffusers/models/attention_processor.py", line 2765, in __call__
+    hidden_states = F.scaled_dot_product_attention(
+RuntimeError: cuDNN Frontend error: [cudnn_frontend] Error: No valid execution plans built.
+Exception ignored in: <function Renderer.__del__ at 0x770d777670a0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/platform/baseplatform.py", line 487, in __call__
+    return self(*args, **named)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x770d5c233b40>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x770d59bf0240>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x770d777668c0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 133, in free
+    EGL.eglDestroyContext(EGL_DISPLAY, self._context)
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglDestroyContext,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x770d5c233b40>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x770d59bf0240>,
+	),
+	result = 0
+)
+Exception ignored in: <function Renderer.__del__ at 0x770d777670a0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 339, in __del__
+    self.close()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/rendering/classic/renderer.py", line 325, in close
+    self._gl_context.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 131, in free
+    EGL.eglMakeCurrent(EGL_DISPLAY, EGL.EGL_NO_SURFACE,
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglMakeCurrent,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x770d5c233b40>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x770d7893f440>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x770d7893f440>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x770d7893f640>,
+	),
+	result = 0
+)
+Exception ignored in: <function GLContext.__del__ at 0x770d777668c0>
+Traceback (most recent call last):
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 138, in __del__
+    self.free()
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/mujoco/egl/__init__.py", line 131, in free
+    EGL.eglMakeCurrent(EGL_DISPLAY, EGL.EGL_NO_SURFACE,
+  File "/home/nas_main/kinamkim/.local/lib/python3.10/site-packages/OpenGL/error.py", line 230, in glCheckError
+    raise self._errorClass(
+OpenGL.raw.EGL._errors.EGLError: EGLError(
+	err = EGL_NOT_INITIALIZED,
+	baseOperation = eglMakeCurrent,
+	cArguments = (
+		<OpenGL._opaque.EGLDisplay_pointer object at 0x770d5c233b40>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x770d7893f440>,
+		<OpenGL._opaque.EGLSurface_pointer object at 0x770d7893f440>,
+		<OpenGL._opaque.EGLContext_pointer object at 0x770d7893f640>,
+	),
+	result = 0
+)

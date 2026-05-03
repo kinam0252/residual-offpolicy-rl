@@ -158,6 +158,7 @@ def parse_args():
     p.add_argument("--residual_rot_scale", type=float, default=0.05)
     p.add_argument("--residual_grip_scale", type=float, default=0.004)
     p.add_argument("--ema_alpha", type=float, default=0.0)
+    p.add_argument("--torch_compile", action="store_true", default=False)
     p.add_argument("--action_scale", type=float, default=0.1)
     # ActionScaler (not used for cup yet, but kept for interface)
     p.add_argument("--use_action_scaler", action="store_true")
@@ -221,6 +222,7 @@ def main():
         residual_rot_scale=args.residual_rot_scale,
         residual_grip_scale=args.residual_grip_scale,
         ema_alpha=args.ema_alpha,
+        torch_compile=args.torch_compile,
     )
     _log("Eval environment ready.")
 
