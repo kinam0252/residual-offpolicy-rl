@@ -45,6 +45,8 @@ class _FakeImageFeaturesConfig:
 
 _GRIP_MIN = 0.0
 _GRIP_MAX = 0.04
+_GRIP_CLOSE_LATCH_THRESH = 0.015  # below this → latch closed
+_GRIP_OPEN_LATCH_THRESH = 0.035   # above this → unlatch (open)
 
 
 class MuJoCoResidualWrapperCup:
@@ -105,6 +107,9 @@ class MuJoCoResidualWrapperCup:
         self.ema_alpha = ema_alpha
         self._ema_pos: list[np.ndarray | None] = [None] * self.num_envs
         self._ema_quat: list[np.ndarray | None] = [None] * self.num_envs
+        # Gripper latch: once closed, stay closed until GR00T explicitly opens
+        self._grip_latched: list[bool] = [False] * self.num_envs
+        self._grip_open_count: list[int] = [0] * self.num_envs  # consecutive open steps needed to unlatch
 
         # Observation space (augment with base_action)
         spaces = dict(vec_env.observation_space.spaces)
@@ -133,6 +138,8 @@ class MuJoCoResidualWrapperCup:
         self._held_base_action[:] = 0.0
         self._ema_pos = [None] * self.num_envs
         self._ema_quat = [None] * self.num_envs
+        self._grip_latched = [False] * self.num_envs
+        self._grip_open_count = [0] * self.num_envs
         base_action = self._get_base_actions(force_infer=True)
         augmented_obs = self._augment_obs(raw_obs, base_action)
         self._last_obs = raw_obs
@@ -171,6 +178,8 @@ class MuJoCoResidualWrapperCup:
                 self._chunk_idx[eid] = self.open_loop_horizon
                 self._ema_pos[eid] = None
                 self._ema_quat[eid] = None
+                self._grip_latched[eid] = False
+                self._grip_open_count[eid] = 0
             self.vec_env.reset_envs(done_ids)
             raw_obs = self.vec_env._build_obs_dict(render_mode="rl_only")
 
@@ -267,10 +276,32 @@ class MuJoCoResidualWrapperCup:
         combined = np.zeros_like(base_action)
         # Position: direct add (vectorized)
         combined[:, :3] = base_action[:, :3] + residual[:, :3] * self.residual_pos_scale
-        # Gripper: clip (vectorized)
-        combined[:, 7] = np.clip(
+        # Gripper: clip + latch
+        raw_grip = np.clip(
             base_action[:, 7] + residual[:, 6] * self.residual_grip_scale,
             _GRIP_MIN, _GRIP_MAX)
+        for i in range(self.num_envs):
+            if self._grip_latched[i]:
+                # Latched closed — require N consecutive open commands to unlatch
+                if raw_grip[i] > _GRIP_OPEN_LATCH_THRESH:
+                    self._grip_open_count[i] += 1
+                    if self._grip_open_count[i] >= 32:  # ~2 full action chunks
+                        self._grip_latched[i] = False
+                        self._grip_open_count[i] = 0
+                        combined[i, 7] = raw_grip[i]
+                    else:
+                        combined[i, 7] = _GRIP_MIN  # still latched
+                else:
+                    self._grip_open_count[i] = 0
+                    combined[i, 7] = _GRIP_MIN  # keep closed
+            else:
+                # Not latched — check if close command
+                if raw_grip[i] < _GRIP_CLOSE_LATCH_THRESH:
+                    self._grip_latched[i] = True
+                    self._grip_open_count[i] = 0
+                    combined[i, 7] = _GRIP_MIN  # close
+                else:
+                    combined[i, 7] = raw_grip[i]
         # Rotation: must use Rotation (batch-capable)
         base_rots = Rotation.from_quat(base_action[:, 3:7])
         delta_rots = Rotation.from_euler("xyz", residual[:, 3:6] * self.residual_rot_scale)

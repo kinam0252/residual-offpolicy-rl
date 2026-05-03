@@ -186,19 +186,24 @@ TABLE_Z_OFFSET = 0.02
 GRIPPER_MAX_WIDTH = 0.04
 GRIPPER_MIN_WIDTH = 0.0
 
-# Physics constants (from batch_replay_stand.py)
-CUP_FRICTION = (8.0, 0.001, 0.001)
-FINGER_FRICTION = (8.0, 0.001, 0.001)
+# Physics constants (matched from batch_replay_stand.py _setup_physics)
+CUP_FRICTION = (5.0, 10.0, 3.0)
+FINGER_FRICTION = (5.0, 10.0, 3.0)
 CUP_ROTATIONAL_DAMPING = 0.1
-ARM_GAIN = 20000.0
-ARM_DAMPING = 2000.0
-FINGER_GAIN = 1500.0
-FINGER_BIAS = -1500.0
+FRANKA_GAINS = [4500, 4500, 3500, 3500, 2000, 2000, 2000]
+FRANKA_DAMPING = [450, 450, 350, 350, 200, 200, 200]
+FRANKA_TORQUE = [87, 87, 87, 87, 12, 12, 12]
+FINGER_GAIN = 10000.0
+FINGER_BIAS = -10000.0
+CONTACT_STIFFNESS = -500000
+CONTACT_DAMPING = -3000
+PHYSICS_DT = 0.0002  # small timestep for stiff contacts
 N_SETTLE_INIT = 30  # cup settle frames before episode starts
 
 # Grasp detection constants
-GRIPPER_CLOSE_THRESHOLD = 0.028  # below this → gripper is "closing"
+GRIPPER_CLOSE_THRESHOLD = 0.035  # below this → gripper is "closing"
 GRASP_CONTACT_THRESHOLD = 1     # contact_count frames needed to confirm grasp
+CORRECTION_DEG = 30.0           # upright correction applied at first grasp (same as replay)
 
 # Real robot initial joints for stand cup
 CUP_HOME_QPOS = np.array([-0.835542, -0.972155, 1.060006, -2.601308,
@@ -225,6 +230,83 @@ def load_cup_positions(path=None):
     if isinstance(data, list):
         return {f"episode_{i:03d}": item for i, item in enumerate(data)}
     return data
+
+
+def _setup_physics_cup(model, arm_actuator_ids, finger_actuator_ids, mj_mod=None):
+    """Configure physics to match batch_replay_stand.py _setup_physics.
+
+    Sets collision bits, contact parameters, actuator gains/torques,
+    timestep, and noslip iterations for stable cup grasping.
+    """
+    _m = mj_mod or __import__("mujoco")
+
+    # ── Timestep ──
+    model.opt.timestep = PHYSICS_DT
+    model.opt.noslip_iterations = 3
+
+    # ── Collision bits ──
+    # Cup collision geoms → contype=2, conaffinity=2
+    gripper_body_names = {"hand", "left_finger", "right_finger", "fr3_link6", "fr3_link7"}
+    cup_col_gids = []
+    for gi in range(model.ngeom):
+        bname = _m.mj_id2name(model, _m.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
+        if bname == "cup" and model.geom_contype[gi] > 0:
+            cup_col_gids.append(gi)
+            model.geom_contype[gi] = 2
+            model.geom_conaffinity[gi] = 2
+
+    # Gripper collision geoms → contype=3, conaffinity=3
+    for gi in range(model.ngeom):
+        bname = _m.mj_id2name(model, _m.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
+        if model.geom_contype[gi] == 0:
+            continue
+        if any(gb in bname for gb in gripper_body_names):
+            model.geom_contype[gi] = 3
+            model.geom_conaffinity[gi] = 3
+
+    # Table & floor
+    for gname in ["table_top", "labfloor"]:
+        gid = _m.mj_name2id(model, _m.mjtObj.mjOBJ_GEOM, gname)
+        if gid >= 0:
+            model.geom_contype[gid] = 3
+            model.geom_conaffinity[gid] = 3
+            model.geom_margin[gid] = 0.001
+
+    # ── Contact parameters for cup geoms ──
+    for gi in cup_col_gids:
+        model.geom_condim[gi] = 6
+        model.geom_solref[gi] = [CONTACT_STIFFNESS, CONTACT_DAMPING]
+        model.geom_solimp[gi] = [0.99, 0.99, 0.001, 0.5, 2]
+        model.geom_friction[gi] = CUP_FRICTION
+
+    # ── Contact parameters for gripper geoms ──
+    for gi in range(model.ngeom):
+        bname = _m.mj_id2name(model, _m.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
+        if any(gb in bname for gb in gripper_body_names) and model.geom_contype[gi] > 0:
+            model.geom_solref[gi] = [CONTACT_STIFFNESS, CONTACT_DAMPING]
+            model.geom_solimp[gi] = [0.99, 0.99, 0.001, 0.5, 2]
+        if "finger" in bname and model.geom_contype[gi] > 0:
+            model.geom_friction[gi] = FINGER_FRICTION
+            model.geom_condim[gi] = 6
+
+    # ── Per-joint arm gains + torque limits ──
+    for i, aid in enumerate(arm_actuator_ids):
+        if aid >= 0 and i < len(FRANKA_GAINS):
+            model.actuator_gainprm[aid, 0] = FRANKA_GAINS[i]
+            model.actuator_biasprm[aid, 0] = 0.0
+            model.actuator_biasprm[aid, 1] = -FRANKA_GAINS[i]
+            model.actuator_biasprm[aid, 2] = -FRANKA_DAMPING[i]
+            model.actuator_forcelimited[aid] = 1
+            model.actuator_forcerange[aid] = [-FRANKA_TORQUE[i], FRANKA_TORQUE[i]]
+
+    # ── Finger actuator gains ──
+    for faid in finger_actuator_ids:
+        model.actuator_gainprm[faid, 0] = FINGER_GAIN
+        model.actuator_biasprm[faid, 0] = 0.0
+        model.actuator_biasprm[faid, 1] = -FINGER_GAIN  # FINGER_BIAS = -FINGER_GAIN
+        model.actuator_biasprm[faid, 2] = 0.0
+
+    return cup_col_gids
 
 
 def _cup_env_worker_loop(pipe, init_kwargs):
@@ -293,13 +375,17 @@ def _cup_env_worker_loop(pipe, init_kwargs):
             aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, jname)
             arm_actuator_ids.append(aid)
 
-        # Gripper actuator
+        # Gripper actuator — try 'gripper' tendon first, then individual fingers
         gripper_actuator_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, "gripper")
+        finger_actuator_ids = []
         if gripper_actuator_id >= 0:
-            model.actuator_gainprm[gripper_actuator_id, 0] = FINGER_GAIN
-            model.actuator_biasprm[gripper_actuator_id, 0] = 0.0
-            model.actuator_biasprm[gripper_actuator_id, 1] = -FINGER_GAIN
-            model.actuator_biasprm[gripper_actuator_id, 2] = 0.0
+            finger_actuator_ids = [gripper_actuator_id]
+        else:
+            for fname in ("finger_joint1", "finger_joint2"):
+                aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, fname)
+                if aid >= 0:
+                    finger_actuator_ids.append(aid)
+            gripper_actuator_id = finger_actuator_ids[0] if finger_actuator_ids else -1
 
         # Finger joint range
         for fname in ("finger_joint1", "finger_joint2"):
@@ -307,34 +393,19 @@ def _cup_env_worker_loop(pipe, init_kwargs):
             if jid_f >= 0:
                 model.jnt_range[jid_f] = [-0.01, 0.04]
 
-        # Arm gains
-        for aid in arm_actuator_ids:
-            if aid >= 0:
-                model.actuator_gainprm[aid, 0] = ARM_GAIN
-                model.actuator_biasprm[aid, 0] = 0.0
-                model.actuator_biasprm[aid, 1] = -ARM_GAIN
-                model.actuator_biasprm[aid, 2] = -ARM_DAMPING
-
-        # Finger friction
-        for gi in range(model.ngeom):
-            gname = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_GEOM, gi) or ""
-            bname = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
-            if "finger" in gname or "finger" in bname or "pad" in gname or "lip" in gname:
-                model.geom_friction[gi] = FINGER_FRICTION
+        # Apply full physics setup (collision, contacts, gains, torques, timestep)
+        cup_col_gids = _setup_physics_cup(model, arm_actuator_ids, finger_actuator_ids, mj_mod=_mj)
 
         # Cup joint
         cup_jnt_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, "cup_joint")
         cup_qposadr = model.jnt_qposadr[cup_jnt_id] if cup_jnt_id >= 0 else None
         cup_dofadr = model.jnt_dofadr[cup_jnt_id] if cup_jnt_id >= 0 else None
 
-        # Cup collision geoms
-        cup_col_gids = []
+        # Finger geom IDs for contact-based grasp detection
         finger_geom_ids = []
         for gi in range(model.ngeom):
             bname_g = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
             gname_g = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_GEOM, gi) or ""
-            if bname_g == "cup" and model.geom_contype[gi] > 0:
-                cup_col_gids.append(gi)
             if "finger" in gname_g or "finger" in bname_g or "pad" in gname_g or "lip" in gname_g:
                 finger_geom_ids.append(gi)
 
@@ -358,7 +429,8 @@ def _cup_env_worker_loop(pipe, init_kwargs):
                 jid_a = model.actuator_trnid[aid, 0]
                 data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid_a]]
         if gripper_actuator_id >= 0:
-            data.ctrl[gripper_actuator_id] = GRIPPER_MAX_WIDTH
+            for faid in finger_actuator_ids:
+                data.ctrl[faid] = GRIPPER_MAX_WIDTH
         data.qvel[:] = 0.0
 
         # Settle cup
@@ -380,13 +452,14 @@ def _cup_env_worker_loop(pipe, init_kwargs):
             "n_substeps": n_substeps,
             "arm_actuator_ids": arm_actuator_ids,
             "gripper_actuator_id": gripper_actuator_id,
+            "finger_actuator_ids": finger_actuator_ids,
             "cup_qposadr": cup_qposadr,
             "cup_dofadr": cup_dofadr,
             "cup_col_gids": set(cup_col_gids),
             "finger_geom_ids": finger_geom_ids,
             "finger_geom_id_set": finger_geom_id_set,
             "finger_geom_side": finger_geom_side,
-            "grasp_state": {"grasped": False, "contact_count": 0},
+            "grasp_state": {"grasped": False, "contact_count": 0, "correction_applied": False},
             "cup_pos_init": cup_pos.copy(),
             "cup_quat_wxyz_init": cup_quat_wxyz.copy(),
             "step_count": 0,
@@ -413,9 +486,8 @@ def _cup_env_worker_loop(pipe, init_kwargs):
             if aid >= 0:
                 data.ctrl[aid] = tq
         finger_target = _np.clip(gripper_width_raw, GRIPPER_MIN_WIDTH, GRIPPER_MAX_WIDTH)
-        grip_aid = env["gripper_actuator_id"]
-        if grip_aid >= 0:
-            data.ctrl[grip_aid] = finger_target
+        for faid in env["finger_actuator_ids"]:
+            data.ctrl[faid] = finger_target
         for _ in range(env["n_substeps"]):
             _mj.mj_step(model, data)
         _update_grasp_local(env)
@@ -453,6 +525,23 @@ def _cup_env_worker_loop(pipe, init_kwargs):
             gs["grasped"] = True
         else:
             gs["grasped"] = (gs["contact_count"] >= GRASP_CONTACT_THRESHOLD and gripper_closing)
+        # Apply 30° upright correction once at first grasp (same as replay)
+        if gs["grasped"] and not gs["correction_applied"] and CORRECTION_DEG > 0:
+            cup_qpa = env["cup_qposadr"]
+            if cup_qpa is not None:
+                cur_quat_wxyz = data.qpos[cup_qpa + 3:cup_qpa + 7].copy()
+                cur_R = _Rot.from_quat([cur_quat_wxyz[1], cur_quat_wxyz[2],
+                                        cur_quat_wxyz[3], cur_quat_wxyz[0]])
+                cup_z = cur_R.as_matrix()[:, 2]
+                rot_axis = _np.cross(cup_z, [0, 0, 1])
+                if _np.linalg.norm(rot_axis) > 1e-6:
+                    rot_axis /= _np.linalg.norm(rot_axis)
+                    corr_R = _Rot.from_rotvec(rot_axis * _np.radians(CORRECTION_DEG))
+                    new_R = corr_R * cur_R
+                    new_q = new_R.as_quat()  # xyzw
+                    data.qpos[cup_qpa + 3] = new_q[3]       # w
+                    data.qpos[cup_qpa + 4:cup_qpa + 7] = new_q[:3]  # xyz
+                gs["correction_applied"] = True
 
     def _get_uprightness_local(env):
         cup_qpa = env["cup_qposadr"]
@@ -536,7 +625,8 @@ def _cup_env_worker_loop(pipe, init_kwargs):
                 data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid_a]]
         grip_aid = env["gripper_actuator_id"]
         if grip_aid >= 0:
-            data.ctrl[grip_aid] = GRIPPER_MAX_WIDTH
+            for faid in env["finger_actuator_ids"]:
+                data.ctrl[faid] = GRIPPER_MAX_WIDTH
         # Settle
         for _ in range(N_SETTLE_INIT):
             for _ in range(env["n_substeps"]):
@@ -545,7 +635,7 @@ def _cup_env_worker_loop(pipe, init_kwargs):
         # Re-apply cup friction
         for gi in env["cup_col_gids"]:
             model.geom_friction[gi] = CUP_FRICTION
-        env["grasp_state"] = {"grasped": False, "contact_count": 0}
+        env["grasp_state"] = {"grasped": False, "contact_count": 0, "correction_applied": False}
         env["step_count"] = 0
 
     # ── Main event loop ──
@@ -788,16 +878,18 @@ class MuJoCoVecEnvCup:
             aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, jname)
             arm_actuator_ids.append(aid)
 
-        # Gripper actuator — use the existing 'gripper' actuator which
-        # controls both finger_joint1 and finger_joint2 via tendon.
-        # (No separate finger_joint1/2 actuators in this XML.)
+        # Gripper actuator — try 'gripper' tendon actuator first,
+        # fall back to individual finger_joint1/finger_joint2 actuators.
         gripper_actuator_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, "gripper")
+        finger_actuator_ids = []
         if gripper_actuator_id >= 0:
-            # Reconfigure with high gain for strong grip
-            model.actuator_gainprm[gripper_actuator_id, 0] = FINGER_GAIN
-            model.actuator_biasprm[gripper_actuator_id, 0] = 0.0
-            model.actuator_biasprm[gripper_actuator_id, 1] = -FINGER_GAIN
-            model.actuator_biasprm[gripper_actuator_id, 2] = 0.0
+            finger_actuator_ids = [gripper_actuator_id]
+        else:
+            for fname in ("finger_joint1", "finger_joint2"):
+                aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, fname)
+                if aid >= 0:
+                    finger_actuator_ids.append(aid)
+            gripper_actuator_id = finger_actuator_ids[0] if finger_actuator_ids else -1
 
         # Extend finger joint range
         for fname in ("finger_joint1", "finger_joint2"):
@@ -805,34 +897,13 @@ class MuJoCoVecEnvCup:
             if jid_f >= 0:
                 model.jnt_range[jid_f] = [-0.01, 0.04]
 
-        # Configure arm actuator gains for physics-based tracking
-        for aid in arm_actuator_ids:
-            if aid >= 0:
-                model.actuator_gainprm[aid, 0] = ARM_GAIN
-                model.actuator_biasprm[aid, 0] = 0.0
-                model.actuator_biasprm[aid, 1] = -ARM_GAIN
-                model.actuator_biasprm[aid, 2] = -ARM_DAMPING
-
-        # (Finger actuator gains already set above for gripper_actuator_id)
-
-        # Set high friction on finger/pad/lip geoms
-        for gi in range(model.ngeom):
-            gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gi) or ""
-            bname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
-            if "finger" in gname or "finger" in bname or "pad" in gname or "lip" in gname:
-                model.geom_friction[gi] = FINGER_FRICTION
+        # Apply full physics setup (collision, contacts, gains, torques, timestep)
+        cup_col_gids = _setup_physics_cup(model, arm_actuator_ids, finger_actuator_ids)
 
         # Cup joint info
         cup_jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cup_joint")
         cup_qposadr = model.jnt_qposadr[cup_jnt_id] if cup_jnt_id >= 0 else None
         cup_dofadr = model.jnt_dofadr[cup_jnt_id] if cup_jnt_id >= 0 else None
-
-        # Cup collision geom IDs
-        cup_col_gids = []
-        for gi in range(model.ngeom):
-            bname_g = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_BODY, model.geom_bodyid[gi]) or ""
-            if bname_g == "cup" and model.geom_contype[gi] > 0:
-                cup_col_gids.append(gi)
 
         # Rotational damping for cup stability
         if cup_dofadr is not None:
@@ -853,7 +924,8 @@ class MuJoCoVecEnvCup:
                 jid_a = model.actuator_trnid[aid, 0]
                 data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid_a]]
         if gripper_actuator_id >= 0:
-            data.ctrl[gripper_actuator_id] = GRIPPER_MAX_WIDTH
+            for faid in finger_actuator_ids:
+                data.ctrl[faid] = GRIPPER_MAX_WIDTH
         data.qvel[:] = 0.0
         n_substeps = int(round(1.0 / (FPS * model.opt.timestep)))
         for _ in range(N_SETTLE_INIT):
@@ -886,12 +958,13 @@ class MuJoCoVecEnvCup:
             "opt_wrist": opt_wrist,
             "arm_actuator_ids": arm_actuator_ids,
             "gripper_actuator_id": gripper_actuator_id,
+            "finger_actuator_ids": finger_actuator_ids,
             "cup_jnt_id": cup_jnt_id,
             "cup_qposadr": cup_qposadr,
             "cup_dofadr": cup_dofadr,
             "cup_col_gids": cup_col_gids,
             "finger_geom_ids": finger_geom_ids,
-            "grasp_state": {"grasped": False, "contact_count": 0},
+            "grasp_state": {"grasped": False, "contact_count": 0, "correction_applied": False},
             "episode_id": episode_id,
             "cup_pos_init": cup_pos.copy(),
             "cup_quat_wxyz_init": cup_quat_wxyz.copy(),
@@ -1130,9 +1203,8 @@ class MuJoCoVecEnvCup:
 
         # Gripper actuator — GR00T controls gripper
         finger_target = np.clip(gripper_width_raw, GRIPPER_MIN_WIDTH, GRIPPER_MAX_WIDTH)
-        grip_aid = env["gripper_actuator_id"]
-        if grip_aid >= 0:
-            data.ctrl[grip_aid] = finger_target
+        for faid in env["finger_actuator_ids"]:
+            data.ctrl[faid] = finger_target
 
         # Physics simulation
         for _ in range(env["n_substeps"]):
@@ -1186,6 +1258,24 @@ class MuJoCoVecEnvCup:
         else:
             gs["grasped"] = (gs["contact_count"] >= GRASP_CONTACT_THRESHOLD and gripper_closing)
 
+        # Apply 30° upright correction once at first grasp (same as replay)
+        if gs["grasped"] and not gs["correction_applied"] and CORRECTION_DEG > 0:
+            cup_qpa = env["cup_qposadr"]
+            if cup_qpa is not None:
+                cur_quat_wxyz = data.qpos[cup_qpa + 3:cup_qpa + 7].copy()
+                cur_R = Rotation.from_quat([cur_quat_wxyz[1], cur_quat_wxyz[2],
+                                            cur_quat_wxyz[3], cur_quat_wxyz[0]])
+                cup_z = cur_R.as_matrix()[:, 2]
+                rot_axis = np.cross(cup_z, [0, 0, 1])
+                if np.linalg.norm(rot_axis) > 1e-6:
+                    rot_axis /= np.linalg.norm(rot_axis)
+                    corr_R = Rotation.from_rotvec(rot_axis * np.radians(CORRECTION_DEG))
+                    new_R = corr_R * cur_R
+                    new_q = new_R.as_quat()  # xyzw
+                    data.qpos[cup_qpa + 3] = new_q[3]       # w
+                    data.qpos[cup_qpa + 4:cup_qpa + 7] = new_q[:3]  # xyz
+                gs["correction_applied"] = True
+
     # ------------------------------------------------------------------
     # Internal: reset
     # ------------------------------------------------------------------
@@ -1219,7 +1309,8 @@ class MuJoCoVecEnvCup:
                 data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid]]
         grip_aid = env["gripper_actuator_id"]
         if grip_aid >= 0:
-            data.ctrl[grip_aid] = GRIPPER_MAX_WIDTH
+            for faid in env["finger_actuator_ids"]:
+                data.ctrl[faid] = GRIPPER_MAX_WIDTH
 
         # Settle cup on table
         for _ in range(N_SETTLE_INIT):
@@ -1233,7 +1324,7 @@ class MuJoCoVecEnvCup:
 
         self._step_counts[env_idx] = 0
         self._last_actions[env_idx] = 0.0
-        env["grasp_state"] = {"grasped": False, "contact_count": 0}
+        env["grasp_state"] = {"grasped": False, "contact_count": 0, "correction_applied": False}
 
     # ------------------------------------------------------------------
     # Internal: reward and success
