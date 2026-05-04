@@ -1,0 +1,55 @@
+{
+  "_description": "ActionScaler min/max stats computed from B200 offline data (obs_base_action). 4D: [pos_x, pos_y, pos_z, grip]. Used for data-driven [-1,1] normalization of pos+grip dims.",
+  "_computed_at": "2026-05-04",
+  "_source": "B200:~/Repos/Intern/residual-offpolicy-rl/outputs/offline_*/",
+
+  "lift": {
+    "samples": 149614,
+    "files": 320,
+    "offline_dir": "~/Repos/Intern/outputs/offline_data/gr00t_sim_66ep/hard",
+    "min": [0.383784, -0.263323, 0.016312, 0.494630],
+    "max": [0.584279,  0.251430, 0.222602, 0.996065]
+  },
+
+  "drawer": {
+    "samples": 16810,
+    "files": 90,
+    "offline_dir": "outputs/offline_drawer_zgate_100k",
+    "min": [0.240120, -0.264707, 0.149373, 0.000083],
+    "max": [0.524598,  0.178428, 0.346476, 0.000084]
+  },
+
+  "pnp": {
+    "samples": 256998,
+    "files": 640,
+    "offline_dir": "outputs/offline_data/pnp_66ep_dense_v3",
+    "min": [0.000000, -0.248603, 0.000000, 0.000000],
+    "max": [0.597930,  0.277090, 0.186087, 0.995900],
+    "_note": "Updated from pnp_normal → pnp_66ep_dense_v3 (current training data)"
+  },
+
+  "pnp_normal_legacy": {
+    "samples": 129161,
+    "files": 300,
+    "offline_dir": "outputs/offline_data/pnp_normal",
+    "min": [0.298746, -0.261953, 0.011372, 0.490900],
+    "max": [0.547250,  0.235368, 0.190802, 0.995900],
+    "_note": "Old dataset, NOT used in current training"
+  },
+
+  "stack": {
+    "samples": 18807,
+    "files": 66,
+    "offline_dir": "outputs/offline_stack_66ep",
+    "min": [0.410550, -0.065849, 0.009214, 0.019600],
+    "max": [0.463865,  0.224572, 0.118456, 0.039800]
+  },
+
+  "cup": {
+    "samples": 267696,
+    "files": 802,
+    "offline_dir": "outputs/offline_cup_batch",
+    "min": [0.000000, -0.152521, 0.000000, 0.000000],
+    "max": [0.606894,  0.249173, 0.277638, 0.039800]
+  }
+}

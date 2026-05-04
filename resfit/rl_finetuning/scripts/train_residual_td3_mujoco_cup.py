@@ -482,7 +482,7 @@ def parse_args():
     p.add_argument("--cup_positions_file", type=str, default=None,
                    help="JSON with per-episode cup positions (configs/cup_positions.json)")
     p.add_argument("--max_episode_steps", type=int, default=500)
-    p.add_argument("--reward_type", type=str, default="dense", choices=["sparse", "dense", "dense_bonus"])
+    p.add_argument("--reward_type", type=str, default="dense", choices=["sparse", "dense", "dense_bonus", "dense_equal", "dense_equal_bonus"])
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")

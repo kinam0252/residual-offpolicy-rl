@@ -566,9 +566,13 @@ def _cup_env_worker_loop(pipe, init_kwargs):
         grasp_reward = 1.0 if grasped else 0.0
         uprightness = _get_uprightness_local(env)
         upright_reward = float(_np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
-        reward = 0.20 * approach_reward + 0.15 * grasp_reward + 0.65 * upright_reward
+        if reward_type in ("dense_equal", "dense_equal_bonus"):
+            w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33
+        else:
+            w_approach, w_grasp, w_upright = 0.20, 0.15, 0.65
+        reward = w_approach * approach_reward + w_grasp * grasp_reward + w_upright * upright_reward
         reward = float(_np.clip(reward, 0.0, 1.0))
-        if reward_type == "dense_bonus" and _is_success_local(env):
+        if reward_type in ("dense_bonus", "dense_equal_bonus") and _is_success_local(env):
             reward += 2.0
         return reward
 
@@ -1366,10 +1370,16 @@ class MuJoCoVecEnvCup:
         uprightness = self._get_uprightness(env_idx)
         upright_reward = float(np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
 
-        reward = 0.20 * approach_reward + 0.15 * grasp_reward + 0.65 * upright_reward
+        # Select reward weights based on reward_type
+        if self.reward_type in ("dense_equal", "dense_equal_bonus"):
+            w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33
+        else:
+            w_approach, w_grasp, w_upright = 0.20, 0.15, 0.65
+
+        reward = w_approach * approach_reward + w_grasp * grasp_reward + w_upright * upright_reward
         reward = float(np.clip(reward, 0.0, 1.0))
-        # dense_bonus: add success bonus to sharpen gradient near success threshold
-        if self.reward_type == "dense_bonus" and self._is_success(env_idx):
+        # dense_bonus / dense_equal_bonus: add success bonus
+        if self.reward_type in ("dense_bonus", "dense_equal_bonus") and self._is_success(env_idx):
             reward += 2.0
         return reward
 
