@@ -1,8 +1,18 @@
 # 알려진 이슈 및 버그
 
-> 마지막 업데이트: 2026-05-02
+> 마지막 업데이트: 2026-05-04
 
 ## 🔴 Critical (성능에 직접 영향)
+
+### 0. GPU 충돌 — sub 파티션에서 CUDA_VISIBLE_DEVICES 하드코딩
+- **상태**: ✅ 해결됨 (커밋 `f3b20f6`)
+- **영향 task**: 모든 task (sub 파티션 제출 시)
+- **설명**: sbatch script에서 `export CUDA_VISIBLE_DEVICES=0`을 하드코딩하면, sub 파티션에서 같은 노드의 모든 잡이 물리 GPU 0에 몰림. 할당된 다른 GPU(1,2,...)는 완전히 유휴.
+- **원인**: sub 파티션은 하드웨어 레벨 GPU 격리가 없음. core 파티션은 격리가 있어서 문제 없었음.
+- **증거**: worker-9 (잡 5295+5296), worker-10 (잡 5291+5292) — GPU 0에 70-80GB 몰림, GPU 1은 0MB
+- **수정**: `export CUDA_VISIBLE_DEVICES=${SLURM_JOB_GPUS:-0}` — SLURM이 할당한 물리 인덱스 사용
+- **기존 잡 영향**: 수정 전 제출된 잡들은 여전히 GPU 0을 사용 중 (재제출 필요)
+- **참고**: SLURM_GUIDE.md의 "Worker별 GPU 배정" 섹션 참조
 
 ### 1. Replay Buffer Clamp 버그
 - **상태**: 🟡 Drawer만 수정 (uncommitted), Stack 미확인
@@ -19,7 +29,12 @@
 - **수정**: eval 시 반드시 `open_loop_horizon=16` 사용
 - **교훈**: standalone eval script (`scripts/standalone_eval_drawer.py`) 참조
 
-### 3. GR00T Chunking Non-Markov State
+### 3a. chunk_sync 모드 mid-reset 동작
+- **상태**: 🟡 알려진 제약 (by design)
+- **영향 task**: Cup (Stand Cup) — chunk_sync 사용 시
+- **설명**: chunk_sync 모드에서 env가 16스텝 chunk 중간에 reset되면, 다음 sync point까지 현재 자세를 유지 (hold position). 최대 15스텝, 평균 ~8스텝. 전체 스텝의 <0.5%에 해당.
+- **영향**: 학습 성능에 유의미한 차이 없음 (5273 baseline vs 5466 chunk_sync 비교 검증 완료)
+- **커밋**: `26eced4`
 - **상태**: 🔴 미해결 (연구 과제)
 - **영향 task**: 모든 task
 - **설명**: GR00T는 16-step action chunk를 사용하지만, 현재 chunk의 몇 번째 step인지 (chunk phase 0~15)가 observation에 포함되지 않음. → TD3 critic이 Markov 가정 위반 → Q-value 진동

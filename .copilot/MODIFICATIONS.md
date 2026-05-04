@@ -1,6 +1,6 @@
 # 코드 수정사항 (원본 대비)
 
-> 마지막 업데이트: 2026-05-02
+> 마지막 업데이트: 2026-05-04
 
 ## 요약
 
@@ -42,6 +42,15 @@
 - **커밋**: `c938641`
 
 ## 📁 Task-Specific 수정
+
+### Cup (Stand Cup) — Committed
+
+| 파일 | 변경 | 커밋 |
+|------|------|------|
+| `mujoco_residual_wrapper_cup.py` | **chunk_sync 구현** — `--chunk_sync` 시 16스텝마다 batch GR00T 호출, 나머지는 캐시 사용. `_get_base_actions_sync()`, `_get_current_pose()`, `_query_groot_batch()` 추가 | `26eced4` |
+| `train_residual_td3_mujoco_cup.py` | `--chunk_sync` CLI arg 추가, wrapper에 전달 | `26eced4` |
+| `eval_async_mujoco_cup.py` | `--chunk_sync` CLI arg 추가, wrapper에 전달 | `26eced4` |
+| `slurm_train_cup_td3.sh` | `CUDA_VISIBLE_DEVICES=0` → `${SLURM_JOB_GPUS:-0}` (sub 파티션 GPU 충돌 수정) | `f3b20f6` |
 
 ### Drawer (Uncommitted)
 
