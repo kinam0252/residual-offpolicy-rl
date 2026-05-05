@@ -1036,6 +1036,52 @@ class MuJoCoVecEnvPnP:
                      lift_reward + transport_reward + success_reward)
             return float(np.clip(total, 0.0, 1.0))
 
+        elif self.reward_type == "dense_v4":
+            # 4-stage reward: no lift stage, rebalanced weights (0~1.0)
+            # approach 0.20, alignment 0.10, grasp 0.20, transport 0.20, success 0.30
+            tcp_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+
+            # Get gripper rotation matrix
+            _, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
+
+            # Cube yaw quaternion → rotation matrix
+            cube_quat_wxyz = data.qpos[cube_qposadr + 3:cube_qposadr + 7]
+            cube_R = Rotation.from_quat([
+                cube_quat_wxyz[1], cube_quat_wxyz[2],
+                cube_quat_wxyz[3], cube_quat_wxyz[0]
+            ]).as_matrix()
+
+            # Gripper-cube yaw alignment
+            grip_dir = tcp_R[:2, 1]
+            cube_dir = cube_R[:2, 1]
+            grip_dir_n = grip_dir / (np.linalg.norm(grip_dir) + 1e-8)
+            cube_dir_n = cube_dir / (np.linalg.norm(cube_dir) + 1e-8)
+            cos_align = abs(float(np.dot(grip_dir_n, cube_dir_n)))
+
+            # Stage 1: Approach cube (max 0.20)
+            approach_reward = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.20
+
+            # Stage 2: Gripper-cube alignment (max 0.10, only when close)
+            proximity = max(0.0, 1.0 - tcp_cube_dist / 0.15)
+            alignment_reward = cos_align * proximity * 0.10
+
+            # Stage 3: Grasp (0.20 bonus)
+            grasp_reward = 0.20 if grasped else 0.0
+
+            # Stage 4: Transport to bowl (max 0.20, only if grasped + lifted)
+            lift_delta = cube_pos[2] - self._initial_cube_z[env_idx]
+            transport_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                transport_reward = (1.0 - np.tanh(cube_bowl_xy / 0.1)) * 0.20
+
+            # Stage 5: Success (0.30 bonus)
+            success_reward = 0.30 if self._is_success(env_idx) else 0.0
+
+            total = (approach_reward + alignment_reward + grasp_reward +
+                     transport_reward + success_reward)
+            return float(np.clip(total, 0.0, 1.0))
+
         elif self.reward_type == "dense":
             # Simple dense reward
             tcp_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))

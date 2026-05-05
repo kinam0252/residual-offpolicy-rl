@@ -38,3 +38,4 @@ workspace/
 *.pt
 memo/
 report/logs/
+logs/

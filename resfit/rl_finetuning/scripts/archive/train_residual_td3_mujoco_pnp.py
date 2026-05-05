@@ -471,7 +471,7 @@ def parse_args():
                    help="Use calibrated wrist cam from yaml (66ep/100ep). Default: hardcoded 15deg tilt (32ep).")
     p.add_argument("--max_episode_steps", type=int, default=300)
     p.add_argument("--success_threshold", type=float, default=0.03)
-    p.add_argument("--reward_type", type=str, default="dense_clipped", choices=["sparse", "dense", "dense_clipped", "dense_v2", "dense_v3"])
+    p.add_argument("--reward_type", type=str, default="dense_clipped", choices=["sparse", "dense", "dense_clipped", "dense_v2", "dense_v3", "dense_v4"])
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")

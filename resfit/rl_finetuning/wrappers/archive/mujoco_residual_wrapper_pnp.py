@@ -1,4 +1,8 @@
 """
+⚠️ DEPRECATED: Per-task wrapper. Use mujoco_residual_wrapper.py (unified) instead.
+Known bugs in this version: replay stores residual-only action (not combined).
+New experiments should use: train_residual_td3_mujoco.py --task pnp
+
 Residual environment wrapper for MuJoCo PnP + GR00T.
 
 Combines a GR00T base policy (absolute EEF actions) with an RL residual

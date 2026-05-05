@@ -17,7 +17,8 @@ export LD_LIBRARY_PATH=$HOME/.local/lib:$HOME/lib-compat:$NV/cuda_runtime/lib:$N
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 DS_BUILD_OPS=0 CUDA_HOME=~/fake_cuda
 export PATH=~/bin:$PATH
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1
-export CUDA_VISIBLE_DEVICES=${SLURM_JOB_GPUS:-0}
+# GPU: SLURM sets CUDA_VISIBLE_DEVICES automatically — do NOT override
+echo "[gpu] SLURM_JOB_GPUS=$SLURM_JOB_GPUS CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
 
 cd ~/Repos/Intern/residual-offpolicy-rl
 

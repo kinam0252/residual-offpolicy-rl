@@ -1,56 +1,92 @@
 # Active Experiments & Progress
 
-> Last updated: 2026-05-03 02:44 KST
+> Last updated: 2026-05-04 06:00 KST
 
-## Running SLURM Jobs (8/8 core-own)
+## Best Results Summary (All Tasks)
 
-| Job | Name | Config | Node | Started | Notes |
-|-----|------|--------|------|---------|-------|
-| 4730 | stk_sp5 | sparse, as=0.1, L2=0.1, γ=0.99, n=3 | w7 | ~18:00 | Old 50K limit, best SR=59% @10K |
-| 4865 | stk_r05v2 | dense, as=0.1, L2=1.0 | w8 | 01:47 | 500K, wandb online |
-| 4866 | stk_dn7v2 | dense, as=0.05, L2=0.01 (drawer best) | w6 | 01:47 | 500K, wandb online |
-| 4867 | stk_dn8v2 | dense, as=0.1, L2=0.01 | w7 | 01:47 | 500K, wandb online |
-| 4870 | stk_sp2v2 | sparse, as=0.1, γ=0.99, n=5 | w3 | 01:47 | 500K, wandb online |
-| 4871 | stk_sp4v2 | sparse, as=0.05, γ=0.99, n=3 | w3 | 01:47 | 500K, wandb online |
-| 4872 | stk_dn10v2 | dense, as=0.05, L2=0.1 | w4 | 01:47 | 500K, wandb online |
-| 4873 | stk_sp5v2 | sparse, as=0.1, L2=0.1, γ=0.99, n=3 | w4 | 01:47 | 500K remake of sp5 |
+| Task | Best SR | Base SR | **Improvement** | Config | Code | Notes |
+|------|---------|---------|----------------|--------|------|-------|
+| **Cube Lift** | **100%** | 18% | **+82%p** | ActionScaler, s=0.1, l2=5.0 | per-task | Historical best |
+| **Close Drawer** | **100%** | 50% | **+50%p** | ActionScaler, s=0.05, l2=0.01, delta reward | per-task (D2-only, job 4394) | 25K/75K ckpt, eval 95% |
+| **Stack Cube** | **80%** | 57% | **+23%p** | ActionScaler, s=0.1, l2=1.0, dense | per-task (hard set) | Historical sweep |
+| **PnP** | **50%** | ~40% | **+10%p** | ActionScaler, s=0.1, l2=0.01, dense_v3 | **unified** (job 5692) | 4K/500K, 초기 |
+| **Stand Cup** | **40%** | ~30% | **+10%p** | dense, s=0.1, l2=1.0 | per-task (job 5466) | 34K/500K, 정체 |
+
+**Pattern**: Improvement ∝ (1 - Base SR). Lower base → bigger residual gain.
+
+## Running SLURM Jobs
+
+### PnP (Unified Code, core-extra)
+| Job | Name | Config | Node | SR Trend | Speed |
+|-----|------|--------|------|----------|-------|
+| 5691 | pnp_unif | s=0.2, l2=0.01 (baseline) | w2 | 65→10→40→35% | 2.2 sps |
+| 5692 | pnp_s01 | **s=0.1**, l2=0.01 | - | 50→45→**50%** ✅ | 2.1 sps |
+| 5693 | pnp_l201 | s=0.2, **l2=0.1** | w6 | 35→25→**50%** ✅ | 2.3 sps |
+| 5694 | pnp_s01l2 | **s=0.1, l2=0.1** | w3 | 30→**45%** | 2.1 sps |
+
+### Cup (Per-task Code, core-own / core-on-sub)
+| Job | Config | Step | SR (latest) | Speed | Notes |
+|-----|--------|------|-------------|-------|-------|
+| 5466 | dense, s=0.1, l2=1.0 | 34K | 20% | 1.7 sps | core-own, 정체 |
+| 5286 | sparse, s=0.1, l2=1.0 | 56K | 30% | 1.0 sps | core-own, 정체 |
+| 5295 | sparse, s=0.05, l2=1.0 | 42K | 25% | 0.7 sps | sub, 정체 |
+| 5296 | sparse, s=0.1, l2=10.0 | 41K | 25% | 0.7 sps | sub, 정체 |
+
+### Stack Cube (Per-task Code, core-own)
+| Job | Config | Step | SR (latest) | Peak SR | Notes |
+|-----|--------|------|-------------|---------|-------|
+| 4865 | dense, s=0.1, l2=1.0 | 74K | 35% | **55%** @28K | 고점 후 하락 |
+| 4871 | sparse, s=0.05, l2=1.0 | 84K | 25% | 40% @32K | 불안정 |
+
+### PnP Old (Per-task Code, core-own) — 구버전, no ActionScaler
+| Job | Step | SR (latest) | Notes |
+|-----|------|-------------|-------|
+| 4866 | 4K | 31% | 초기 |
+| 4872 | 18K | **4%** 🔴 | SR 붕괴 (27%→4%) |
+| 4873 | 13K | 19% | 하락 중 |
 
 ## Completed Results
 
 ### Close Drawer (D2)
 - **Best config**: as=0.05, L2=0.01, delta reward, D2-only, critic_warmup=1000
-- Training peak: 100% SR (step 50001)
+- Training peak: **100% SR** (step 25K, 75K checkpoints)
 - Standalone eval: best.pt=80%, final_step50001.pt=**95%**, base_only=50%
-- **Residual adds +30~45%p over base GR00T**
+- **Residual adds +30~50%p over base GR00T**
 - Videos: `videos/drawer/` (residual 5/5=100%, base 3/5=60%)
 
-### Stack Cube (current best: sp5)
-- **sp5 best checkpoint**: SR=59% @step 10K (sparse, as=0.1, L2=0.1)
-- Standalone eval: **residual 13/20=65%**, base_only 3/9≈33%
-- **Residual adds +32%p over base GR00T**
-- Videos: `videos/stack/` (per-env with SUCCESS/FAIL naming)
+### Cube Lift (Historical)
+- **Best config**: ActionScaler, s=0.1, l2=5.0
+- **100% SR** (from 18% base) — largest improvement across all tasks
+
+### Stack Cube (Historical - Hard set)
+- **Best config**: ActionScaler, s=0.1, l2=1.0
+- **80% SR** (from 57% base)
+
+## Key Findings
+1. **Residual RL improvement ∝ base SR gap**: Lift(18%→100%) > Drawer(50%→100%) > Stack Hard(57%→80%)
+2. **ActionScaler is critical** — PnP unified (with ActionScaler) 50% vs old PnP (without) 4-19%
+3. **Unified code 2-3× faster** — chunk_sync + correct GPU isolation: 2.1-2.3 sps vs 0.7-1.0 sps
+4. **Cup all configs plateau at 20-30%** — 40K+ steps, no improvement over base
+5. **PnP s=0.1 most stable** — consistently 50% SR in early training
+6. **Drawer solved**: delta reward + conservative residual (s=0.05) key to success
+7. **GPU isolation fix**: SLURM auto-sets CUDA_VISIBLE_DEVICES — do NOT override with SLURM_JOB_GPUS
+
+## Unified Codebase
+- `resfit/rl_finetuning/scripts/train_residual_td3_unified.py` — all tasks via `--task`
+- `resfit/rl_finetuning/scripts/eval_async_unified.py` — unified async eval
+- `scripts/slurm_train_td3.sh` — unified SLURM with task-specific defaults
+- `resfit/rl_finetuning/configs/task_configs.py` — per-task config dataclass
+- `resfit/rl_finetuning/wrappers/mujoco_residual_wrapper_unified.py` — unified wrapper
 
 ## Wandb Projects
 - Drawer: `draftrec/mujoco-drawer-residual-td3`
 - Stack: `draftrec/mujoco-franka-stack-residual-td3`
-- v2 jobs are **online** (real-time monitoring)
-
-## Key Findings
-1. **Drawer solved**: 95% SR with residual (vs 50% base), ~124 steps avg
-2. **Stack in progress**: 65% SR at 10K steps, 500K runs just started
-3. **Sparse reward** (sp5) currently beating dense configs for stack
-4. **Action scale** 0.1 > 0.05 for stack (more exploration needed)
-5. Stack cube is harder — base policy only ~33% vs drawer 50%
-
-## Next Steps
-- [ ] Monitor v2 500K runs — first meaningful eval at ~2K steps (ETA ~04:00)
-- [ ] If stack plateaus at 500K, consider reward redesign (delta reward, remove approach/grasp saturation)
-- [ ] Run base_only stack video for full 20 envs (previous was preempted at 9/20)
-- [ ] Extend drawer training past 50K? (final=95%, could reach 100% stable)
+- Cup: `draftrec/mujoco-franka-cup-residual-td3` (구버전 jobs)
+- PnP: `draftrec/mujoco-franka-pnp-residual-td3` (unified jobs, online)
 
 ## Cluster Notes
-- `core-own`: 8 GPU max, priority 100222, most stable — **ALL USED**
-- `core-extra`: lower priority (40222), may PENDING
-- `core-on-sub`: preemptible (25222), good for short eval jobs
-- Login node: 8× B200, use CUDA_VISIBLE_DEVICES + EGL for eval (no srun)
+- `core-own`: 8 GPU max, priority 100222, most stable
+- `core-extra`: lower priority (40222), may PENDING but no preemption
+- `core-on-sub`: preemptible (25222), good for short jobs only
+- **GPU isolation**: Do NOT `export CUDA_VISIBLE_DEVICES=${SLURM_JOB_GPUS:-0}` — SLURM handles it automatically
 - **CRITICAL**: LD_LIBRARY_PATH must include `~/lib-compat` (libstdc++ 6.0.34) for flash_attn

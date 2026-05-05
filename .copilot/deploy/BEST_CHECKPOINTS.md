@@ -64,7 +64,9 @@
 
 ---
 
-## Stack Cube — **65% SR** (ActionScaler version)
+## Stack Cube — **65% SR** (v1) / **60% SR @ 30-pos** (v2, 학습 중)
+
+### v1: 단일 포지션 (ActionScaler, per-task 구버전)
 
 | Key | Value |
 |-----|-------|
@@ -74,13 +76,32 @@
 | **action_scale** | 0.1 |
 | **Code version** | per-task |
 | **ActionScaler stats key** | `stack` |
+| **Train positions** | 단일 고정 포지션 |
 
-### Stack Top 3 (ActionScaler=True only)
+#### v1 Top 3
 | # | Dir | AS | Best SR | Last SR | W_max | Notes |
 |---|-----|----|---------|---------|-------|-------|
-| 🥇 | `stack_rl/sp5_v2_sparse_best` | 0.1 | **65.0%** | 40.0% | 0.921 | ✅ **BEST** |
-| 🥈 | `stack_rl/dn10_v2_a05_l01` | 0.05 | 60.0% | 30.0% | 4.183 | ✅ **2nd** |
+| 🥇 | `stack_rl/sp5_v2_sparse_best` | 0.1 | **65.0%** | 40.0% | 0.921 | 📦 archive |
+| 🥈 | `stack_rl/dn10_v2_a05_l01` | 0.05 | 60.0% | 30.0% | 4.183 | 📦 archive |
 | 🥉 | `stack_rl/dn7_v2_drawer_best` | 0.05 | 60.0% | 25.0% | 4.847 | ✅ **3rd** |
+
+### v2: 30 포지션 multi-position (per-task, 학습 중 ~36k steps)
+
+| Key | Value |
+|-----|-------|
+| **GR00T checkpoint** | `~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-75000` |
+| **Offline data** | `outputs/offline_stack_66ep` |
+| **Train positions** | `configs/stack_train_30.json` (30개, 순차 할당) |
+| **Eval positions** | `configs/stack_eval_20.json` (20개 × 1 episode) |
+| **Code version** | per-task (`train_residual_td3_mujoco_stack.py`) |
+
+#### v2 Top 2 (학습 진행 중, ~36k/500k steps)
+| # | Dir (SLURM job) | AS | L2 | γ | OF | Best SR | Last SR | Notes |
+|---|-----------------|----|----|---|-----|---------|---------|-------|
+| 🥇 | `stack_sweep/stk_2` (6443) | 0.1 | 0.0 | 0.95 | 0.5 | **60%** | 55% | ✅ 상승 추세, 34k에서 60% 재달성 |
+| 🥈 | `stack_sweep/stk_6` (6447) | 0.05 | 0.0 | 0.95 | 0.5 | **60%** | 40% | 🟡 12k peak 후 40-55% |
+
+> ⚠️ v2는 30개 다양한 포지션 (white-green 거리 0.16~0.50m)에서 평가하므로, v1 단일 포지션 65%보다 v2 60%가 실질적으로 더 어려운 세팅에서의 성능.
 
 ---
 
