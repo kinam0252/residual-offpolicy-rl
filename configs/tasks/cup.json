@@ -1,0 +1,26 @@
+{
+  "task": "cup",
+  "groot_checkpoint": "~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000",
+  "offline_data_dir": "outputs/offline_cup_batch",
+
+  "positions_file": "configs/cup_positions.json",
+  "train_positions": 27,
+  "eval_positions": 27,
+
+  "num_envs": 27,
+  "eval_num_envs": 27,
+  "eval_num_episodes": 1,
+  "max_episode_steps": 500,
+  "total_timesteps": 500000,
+
+  "gamma": 0.95,
+  "action_scale": 0.1,
+  "action_l2_reg": 1.0,
+  "offline_fraction": 0.75,
+  "reward_type": "dense",
+
+  "scene_xml": null,
+  "success_threshold": 0.03,
+  "reward_relabel": "none",
+  "reward_config": null
+}

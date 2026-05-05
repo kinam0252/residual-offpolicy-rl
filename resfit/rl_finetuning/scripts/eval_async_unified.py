@@ -175,6 +175,7 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
                     _calib_path = _calib_66ep
                     _use_calibrated_wrist = True
 
+        _success_thresh = getattr(args, 'success_threshold', None) or task_cfg.success_threshold
         return VecEnvClass(
             num_envs=num_envs,
             cube_positions=[[0.45, -0.05, 0.02]] * num_envs,
@@ -186,27 +187,54 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
             calib_path=_calib_path,
             use_calibrated_wrist=_use_calibrated_wrist,
             episode_positions_file=getattr(args, 'episode_positions_file', None),
+            success_threshold=_success_thresh,
         ), num_envs
 
     elif task_cfg.name == "lift":
+        # Load positions from file if available
+        _pos_file = getattr(args, 'episode_positions_file', None)
+        cube_positions = [[0.45, -0.05, 0.02]] * num_envs
+        if _pos_file:
+            import json as _json
+            with open(_pos_file) as _f:
+                _all_pos = _json.load(_f)
+            # Use last N entries for eval (matching train/eval split convention)
+            _eval_pos = _all_pos[-num_envs:]
+            cube_positions = [p["cube_pos"] for p in _eval_pos]
+            num_envs = len(cube_positions)
+
         return VecEnvClass(
             num_envs=num_envs,
-            cube_positions=[[0.45, -0.05, 0.02]] * num_envs,
+            cube_positions=cube_positions,
             max_episode_steps=args.max_episode_steps,
             reward_type=args.reward_type,
             device=args.device,
             scene_xml=getattr(args, 'scene_xml', None),
-            episode_positions_file=getattr(args, 'episode_positions_file', None),
         ), num_envs
 
     elif task_cfg.name == "stack":
+        # Load positions from file if available
+        _pos_file = getattr(args, 'episode_positions_file', None)
+        white_positions = None
+        green_positions = None
+        if _pos_file:
+            import json as _json
+            with open(_pos_file) as _f:
+                _all_pos = _json.load(_f)
+            # Use last N entries for eval
+            _eval_pos = _all_pos[-num_envs:]
+            white_positions = [p["white_cube_pos"] for p in _eval_pos]
+            green_positions = [p["green_cube_pos"] for p in _eval_pos]
+            num_envs = len(white_positions)
+
         return VecEnvClass(
             num_envs=num_envs,
             max_episode_steps=args.max_episode_steps,
             reward_type=args.reward_type,
             device=args.device,
             scene_xml=getattr(args, 'scene_xml', None),
-            episode_positions_file=getattr(args, 'episode_positions_file', None),
+            white_cube_positions=white_positions,
+            green_cube_positions=green_positions,
         ), num_envs
 
     elif task_cfg.name == "drawer":
@@ -263,6 +291,7 @@ def parse_args():
     p.add_argument("--cup_positions_file", type=str, default=None)
     p.add_argument("--episode_positions_file", type=str, default=None)
     p.add_argument("--scene_xml", type=str, default=None)
+    p.add_argument("--success_threshold", type=float, default=None)
     # W&B
     p.add_argument("--wandb_mode", type=str, default="disabled")
     p.add_argument("--wandb_project", type=str, default="mujoco-franka-residual-td3")

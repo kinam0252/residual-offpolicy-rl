@@ -372,6 +372,8 @@ class AsyncEvaluator:
             cmd += ["--episode_positions_file", a.episode_positions_file]
         if hasattr(a, 'scene_xml') and a.scene_xml:
             cmd += ["--scene_xml", a.scene_xml]
+        if hasattr(a, 'success_threshold') and a.success_threshold is not None:
+            cmd += ["--success_threshold", str(a.success_threshold)]
         # ActionScaler
         if a.use_action_scaler and self._action_scaler is not None:
             cmd += ["--use_action_scaler"]
@@ -666,8 +668,13 @@ def _create_env(args, task_cfg: TaskConfig):
 def parse_args():
     p = argparse.ArgumentParser(description="Unified Residual TD3 on MuJoCo + GR00T")
 
+    # Config file (overrides defaults, CLI overrides config)
+    p.add_argument("--config", type=str, default=None,
+                   help="Path to task JSON config (e.g. configs/tasks/pnp.json). "
+                        "Values in JSON become defaults; explicit CLI args override them.")
+
     # Task selection
-    p.add_argument("--task", type=str, required=True, choices=["cup", "pnp", "lift", "stack", "drawer"],
+    p.add_argument("--task", type=str, default=None, choices=["cup", "pnp", "lift", "stack", "drawer"],
                    help="Task to train on")
 
     # Environment (common)
@@ -676,7 +683,7 @@ def parse_args():
     p.add_argument("--reward_type", type=str, default=None)
 
     # GR00T
-    p.add_argument("--groot_checkpoint", type=str, required=True)
+    p.add_argument("--groot_checkpoint", type=str, default=None)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")
     p.add_argument("--groot_policy_device", type=str, default=None)
     p.add_argument("--task_description", type=str, default=None)
@@ -750,7 +757,15 @@ def parse_args():
     p.add_argument("--wandb_name", type=str, default=None)
     p.add_argument("--no_offline_cache", action="store_true")
 
-    # Task-specific (PnP)
+    # Positions (unified: single file, split into train/eval)
+    p.add_argument("--positions_file", type=str, default=None,
+                   help="JSON positions file. First train_positions entries for train, last eval_positions for eval.")
+    p.add_argument("--train_positions", type=int, default=None,
+                   help="Number of positions from positions_file to use for training envs")
+    p.add_argument("--eval_positions", type=int, default=None,
+                   help="Number of positions from end of positions_file to use for eval envs")
+
+    # Task-specific (PnP) — legacy, prefer --positions_file
     p.add_argument("--cube_pos", type=float, nargs=3, default=[0.45, -0.05, 0.02])
     p.add_argument("--bowl_pos", type=float, nargs=3, default=[0.42, 0.03, 0.0])
     p.add_argument("--episode_positions_file", type=str, default=None)
@@ -762,12 +777,46 @@ def parse_args():
     p.add_argument("--scene_xml", type=str, default=None)
     p.add_argument("--calib_path", type=str, default=None)
     p.add_argument("--use_calibrated_wrist", action="store_true", default=False)
-    p.add_argument("--success_threshold", type=float, default=0.03)
+    p.add_argument("--success_threshold", type=float, default=None)
 
     # Task-specific (Cup)
     p.add_argument("--cup_positions_file", type=str, default=None)
 
-    return p.parse_args()
+    # First pass: check if --config was provided
+    args, remaining = p.parse_known_args()
+
+    # Load JSON config and set as defaults
+    if args.config:
+        import json as _json
+        config_path = Path(args.config)
+        if not config_path.exists():
+            config_path = Path(__file__).resolve().parents[3] / args.config
+        with open(config_path) as f:
+            cfg = _json.load(f)
+        # Expand ~ in path fields
+        for k in ("groot_checkpoint", "offline_data_dir", "scene_xml", "reward_config", "positions_file"):
+            if k in cfg and cfg[k] is not None:
+                cfg[k] = str(Path(cfg[k]).expanduser())
+        # Set JSON values as defaults (CLI args will override)
+        p.set_defaults(**{k: v for k, v in cfg.items() if v is not None})
+
+    # Re-parse with updated defaults
+    args = p.parse_args()
+
+    # Validate task is set
+    if args.task is None:
+        p.error("--task is required (either via CLI or --config JSON)")
+    # Validate groot_checkpoint
+    if args.groot_checkpoint is None:
+        p.error("--groot_checkpoint is required (either via CLI or --config JSON)")
+
+    # Unified positions_file → episode_positions_file / eval_positions_file mapping
+    if args.positions_file and not args.episode_positions_file:
+        args.episode_positions_file = args.positions_file
+    if args.positions_file and not args.eval_positions_file:
+        args.eval_positions_file = args.positions_file
+
+    return args
 
 
 def _apply_task_defaults(args, task_cfg: TaskConfig):
@@ -793,6 +842,7 @@ def _apply_task_defaults(args, task_cfg: TaskConfig):
         "residual_grip_scale": task_cfg.residual_grip_scale,
         "output_dir": f"outputs/{task_cfg.name}_rl",
         "eval_num_envs": task_cfg.default_num_envs,
+        "success_threshold": task_cfg.success_threshold,
     }
     for key, default_val in defaults.items():
         if getattr(args, key, None) is None:
@@ -801,6 +851,13 @@ def _apply_task_defaults(args, task_cfg: TaskConfig):
     # Scene XML: expand ~ and apply task default
     if not args.scene_xml and task_cfg.default_scene_xml:
         args.scene_xml = str(Path(task_cfg.default_scene_xml).expanduser())
+
+    # If train_positions is set, override num_envs
+    if getattr(args, 'train_positions', None) is not None:
+        args.num_envs = args.train_positions
+    # If eval_positions is set, override eval_num_envs
+    if getattr(args, 'eval_positions', None) is not None:
+        args.eval_num_envs = args.eval_positions
 
 
 # ══════════════════════════════════════════════════════════════════

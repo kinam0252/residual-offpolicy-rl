@@ -1,0 +1,26 @@
+{
+  "task": "pnp",
+  "groot_checkpoint": "~/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000",
+  "offline_data_dir": "outputs/offline_data/pnp_66ep_dense_v3",
+
+  "positions_file": "configs/pnp_66ep_positions.json",
+  "train_positions": 44,
+  "eval_positions": 20,
+
+  "num_envs": 44,
+  "eval_num_envs": 20,
+  "eval_num_episodes": 1,
+  "max_episode_steps": 500,
+  "total_timesteps": 500000,
+
+  "gamma": 0.99,
+  "action_scale": 0.2,
+  "action_l2_reg": 0.01,
+  "offline_fraction": 0.5,
+  "reward_type": "dense_v3",
+
+  "scene_xml": "~/Repos/Intern/Mujoco_Franka/mujoco_menagerie/franka_fr3/fr3_with_hand.xml",
+  "success_threshold": 0.095,
+  "reward_relabel": "none",
+  "reward_config": null
+}
