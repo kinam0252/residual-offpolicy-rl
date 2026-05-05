@@ -126,24 +126,25 @@
 
 ---
 
-## Stand Cup — **45% SR** (ActionScaler version)
+## Stand Cup — **50% SR** (ActionScaler version)
 
 | Key | Value |
 |-----|-------|
-| **Best checkpoint** | `outputs/cup_rl_5291/checkpoints/best.pt` |
+| **Best checkpoint** | `outputs/cup_rl_6302/checkpoints/best.pt` |
 | **GR00T checkpoint** | `~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000` |
 | **Offline data** | `outputs/offline_cup_batch` (267,696 samples, 802 files) |
 | **action_scale** | 0.1 |
 | **action_l2_reg** | 1.0 |
 | **Code version** | per-task (구버전 cup script) |
 | **ActionScaler stats key** | `cup` |
+| **Reward type** | `dense_equal_bonus` |
 
 ### Cup Top 3 (ActionScaler=True only)
-| # | Dir | AS | L2 | Best SR | Last SR | W_max | Notes |
+| # | Dir | AS | L2 | Best SR | Last SR | Steps | Notes |
 |---|-----|----|----|---------|---------|-------|-------|
-| 🥇 | `cup_rl_5291` | 0.1 | 1.0 | **45.0%** | 20.0% | 2.605 | ✅ **BEST** |
-| 🥈 | `cup_rl_5466` | 0.1 | 1.0 | 45.0% | 20.0% | 6.117 | ✅ **2nd** |
-| 🥉 | `cup_rl_5286` | 0.1 | 1.0 | 40.0% | **35.0%** | 4.785 | ✅ **3rd** 가장 안정적 |
+| 🥇 | `cup_rl_6302` | 0.1 | 1.0 | **50.0%** | 25.0% | 106k/500k | ✅ **BEST** 학습 중 |
+| 🥈 | `cup_rl_5291` | 0.1 | 1.0 | 45.0% | 20.0% | done | ✅ **2nd** (이전 best) |
+| 🥉 | `cup_rl_5466` | 0.1 | 1.0 | 45.0% | 30.0% | 220k | ✅ **3rd** 학습 중 |
 
 ---
 

@@ -815,6 +815,11 @@ def main():
     _log(f"[CONFIG] offline_fraction={args.offline_fraction}, action_l2_reg={args.action_l2_reg}")
     _log(f"[CONFIG] chunk_sync={args.chunk_sync}, use_action_scaler={args.use_action_scaler}")
 
+    # normalize_base_action: when use_action_scaler is True, obs.base_action is normalized
+    # This flag is saved in checkpoint for eval/deploy compatibility checking
+    args.normalize_base_action = args.use_action_scaler
+    _log(f"[CONFIG] normalize_base_action={args.normalize_base_action}")
+
     # Seed
     random.seed(args.seed)
     np.random.seed(args.seed)
@@ -872,6 +877,7 @@ def main():
         grip_max=task_cfg.grip_max,
         use_gripper_latch=task_cfg.use_gripper_latch,
         camera_keys=task_cfg.camera_keys,
+        action_scaler=_action_scaler,
     )
     _log("Environment ready.")
 

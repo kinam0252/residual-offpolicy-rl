@@ -104,6 +104,8 @@ class MuJoCoResidualWrapperUnified:
         grip_max: float = 1.0,
         use_gripper_latch: bool = False,
         camera_keys: dict | None = None,
+        # ActionScaler for obs normalization
+        action_scaler=None,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -119,6 +121,7 @@ class MuJoCoResidualWrapperUnified:
         self.grip_min = grip_min
         self.grip_max = grip_max
         self.use_gripper_latch = use_gripper_latch
+        self.action_scaler = action_scaler  # for normalizing obs.base_action
 
         # ── Load GR00T policy ──
         self._skip_groot = str(
@@ -437,7 +440,11 @@ class MuJoCoResidualWrapperUnified:
     # ------------------------------------------------------------------
 
     def _augment_obs(self, raw_obs: dict[str, torch.Tensor], base_action: np.ndarray) -> dict[str, torch.Tensor]:
-        """Add observation.base_action (7D) to the observation dict."""
+        """Add observation.base_action (7D) to the observation dict.
+        
+        If action_scaler is set, pos+grip are normalized to [-1,1] and euler is zeroed
+        (matching offline data normalization for consistent actor input).
+        """
         out = dict(raw_obs)
         ba_7d = np.zeros((base_action.shape[0], 7), dtype=np.float32)
         ba_7d[:, :3] = base_action[:, :3]
@@ -448,7 +455,18 @@ class MuJoCoResidualWrapperUnified:
             safe_quats = quats[valid] / norms[valid]
             ba_7d[valid, 3:6] = Rotation.from_quat(safe_quats).as_euler("xyz")
         ba_7d[:, 6] = base_action[:, 7]
-        out["observation.base_action"] = torch.as_tensor(ba_7d, device=self.device, dtype=torch.float32)
+
+        if self.action_scaler is not None:
+            # Normalize pos+grip to [-1,1], zero euler (matches offline loading)
+            ba_t = torch.as_tensor(ba_7d, dtype=torch.float32)
+            pg = torch.cat([ba_t[:, :3], ba_t[:, 6:7]], dim=-1)
+            pg_norm = self.action_scaler.scale(pg)
+            ba_t[:, :3] = pg_norm[:, :3]
+            ba_t[:, 3:6] = 0.0
+            ba_t[:, 6] = pg_norm[:, 3]
+            out["observation.base_action"] = ba_t.to(self.device)
+        else:
+            out["observation.base_action"] = torch.as_tensor(ba_7d, device=self.device, dtype=torch.float32)
         return out
 
     # ------------------------------------------------------------------

@@ -112,6 +112,7 @@ def read_fp_pose(max_age_s=1.0):
 # ── Stack cube FP tracker shared-memory reader ───────────────────────
 _FP_STACK_SHM = "/dev/shm/fp_stack_cube_pose.json"
 _FP_STACK_REINIT = "/dev/shm/fp_stack_reinit"
+_FP_STACK_FILTERED_SHM = "/dev/shm/fp_stack_cube_filtered.json"
 
 def read_fp_stack_pose(max_age_s=2.0):
     """Read latest wooden cube pose from stack tracker via /dev/shm.
@@ -130,6 +131,20 @@ def read_fp_stack_pose(max_age_s=2.0):
         return pos, quat, age
     except (FileNotFoundError, KeyError, _json.JSONDecodeError):
         return None, None, None
+
+def write_fp_stack_filtered(pos, quat_wxyz, source="fp"):
+    """Write filtered cube pose for viewer to read."""
+    try:
+        data = {
+            "cube_pos": pos.tolist() if hasattr(pos, 'tolist') else list(pos),
+            "cube_quat_wxyz": quat_wxyz.tolist() if hasattr(quat_wxyz, 'tolist') else list(quat_wxyz),
+            "timestamp": time.time(),
+            "source": source,  # "fp", "eef_grasp", "init"
+        }
+        with open(_FP_STACK_FILTERED_SHM, "w") as f:
+            _json.dump(data, f)
+    except Exception:
+        pass
 
 def signal_fp_stack_reinit():
     """Signal the stack tracker to re-run SAM2 + FP register."""
@@ -165,6 +180,11 @@ def clear_traj_shm():
 CHECKPOINT_BASE_DIR = os.path.expanduser("~/kinam_dev/checkpoints")
 DEFAULT_CALIB = os.path.expanduser(
     "~/kinam_dev/Mujoco/preproc/data/calib_result_base.calib")
+
+# FP calibration correction: measured offset between FP-reported cube position
+# and actual position (from sim replay analysis, 2026-05-05).
+# FP reports cube ~37mm too far in +x due to camera extrinsic calibration error.
+FP_CALIB_OFFSET = np.array([-0.037, -0.004, 0.0], dtype=np.float32)
 
 # Task registry: each task has a description for GR00T and a results subdir
 TASKS = {
@@ -236,8 +256,8 @@ TASKS = {
         "desc": "stack white cube on green cube",
         "results_subdir": "stack_cube",
         "gripper_close_threshold": 0.03,  # raw meters output (~0.0=closed, ~0.04=open)
-        "max_steps": 600,
-        "gripper_latch": 5,
+        "max_steps": 1000,
+        "gripper_latch": False,
         "gripper_settle": 1.0,
         "gripper_raw": True,    # model outputs raw meters
         "init_pos": [0.4088, 0.0450, 0.2814],   # from stack_cube rosbag ep0
@@ -246,7 +266,7 @@ TASKS = {
         "as_mode": "wrapper",  # trained with per-task stack wrapper that has AS inside
         "rl_state_dim": 10,    # eef_pos(3)+eef_quat(4)+grip(2)+contact(1)
         "rl_object_state_dim": 10,  # white_cube(pos3+quat4=7) + green_pos(3) = 10D
-        "rl_action_scale": 0.05,  # from checkpoint: dn10_v2_a05_l01 (action_scale=0.05)
+        "rl_action_scale": 0.1,  # fallback; actual value read from checkpoint (sp5=0.1, dn10/dn7=0.05)
         "residual_pos_scale": 0.02,
         "residual_rot_scale": 0.05,
         "residual_grip_scale": 0.004,
@@ -316,6 +336,12 @@ _RL_BEST_SR = {
         "hard_s1L2_s77": 35.0, "hard_s1L2_s99": 80.0,
         "normal_s1L2_s2": 100.0, "normal_v2_noL2": 95.0,
     },
+    # Stack cube (1-level, rl_sim_name="" → lookup by variant directly)
+    "": {
+        "sp5_v2_sparse_best": 65.0,
+        "dn10_v2_a05_l01": 60.0,
+        "dn7_v2_drawer_best": 60.0,
+    },
 }
 
 
@@ -328,6 +354,14 @@ def _rl_action_scale(variant):
         if p in ("s1L2", "noL2") or p.startswith("v2"):
             return 1.0
     return 0.2
+
+
+# variant → (SR, action_scale) for 1-level checkpoints (stack etc.)
+_RL_BEST_INFO = {
+    "sp5_v2_sparse_best": {"sr": 65.0, "action_scale": 0.1},
+    "dn10_v2_a05_l01":    {"sr": 60.0, "action_scale": 0.05},
+    "dn7_v2_drawer_best": {"sr": 60.0, "action_scale": 0.05},
+}
 
 
 def _rl_variant_desc(variant, rl_sim_name=None, task_key=None):
@@ -346,19 +380,24 @@ def _rl_variant_desc(variant, rl_sim_name=None, task_key=None):
         elif p.startswith("s") and p[1:].isdigit():
             tags.append(f"seed={p[1:]}")
 
-    a_scale = _rl_action_scale(variant)
-    # Task-level override for display
-    if task_key and "rl_action_scale" in TASKS.get(task_key, {}):
-        a_scale = TASKS[task_key]["rl_action_scale"]
+    # action_scale: prefer known info, then name parsing
+    info = _RL_BEST_INFO.get(variant)
+    if info and "action_scale" in info:
+        a_scale = info["action_scale"]
+    else:
+        a_scale = _rl_action_scale(variant)
     desc = f"{diff}, a={a_scale}"
     if tags:
         desc += ", " + ", ".join(tags)
 
     # Append sim SR if available
-    if rl_sim_name and rl_sim_name in _RL_BEST_SR:
+    sr = None
+    if info and "sr" in info:
+        sr = info["sr"]
+    elif rl_sim_name and rl_sim_name in _RL_BEST_SR:
         sr = _RL_BEST_SR[rl_sim_name].get(variant)
-        if sr is not None:
-            desc += f" | SR={sr:.0f}%"
+    if sr is not None:
+        desc += f" | SR={sr:.0f}%"
 
     return desc
 
@@ -484,12 +523,13 @@ def discover_and_select_checkpoints(ckpt_dir=CHECKPOINT_BASE_DIR,
                 best_pt = os.path.join(rl_dir, "checkpoints", "best.pt")
                 if os.path.exists(best_pt):
                     variant = rl_sim_name  # the dir name IS the variant
+                    sr = _RL_BEST_SR.get("", {}).get(variant, -1)
                     rl_options.append({
                         "path": best_pt,
                         "label": variant,
                         "variant": variant,
                         "rl_sim_name": "",
-                        "sr": -1,
+                        "sr": sr,
                         "matched": False,
                         "action_scale": _rl_action_scale(variant),
                     })
@@ -505,11 +545,13 @@ def discover_and_select_checkpoints(ckpt_dir=CHECKPOINT_BASE_DIR,
     def _print_rl_list(options, start=0, end=None):
         if end is None:
             end = len(options)
+        medals = {0: "🥇", 1: "🥈", 2: "🥉"}
         for i in range(start, end):
             opt = options[i]
             desc = _rl_variant_desc(opt["variant"], opt["rl_sim_name"], task_key=task_key)
             tag = "*" if opt["matched"] else " "
-            print(f"  [{i+1:2d}]{tag} {opt['label']:38s} ({desc})")
+            rank = medals.get(i, "  ")
+            print(f"  [{i+1:2d}]{tag}{rank} {opt['label']:36s} ({desc})")
 
     if rl_options:
         print("\n" + "=" * 60)
@@ -638,9 +680,12 @@ def build_rl_state(task_key, real_ee_pos, real_ee_quat, gripper_width,
         gripper_raw = task_cfg.get("gripper_raw", False)
         if gripper_raw:
             gripper_qpos_2d = np.array([gripper_width, gripper_width], dtype=np.float32)
+            _close_thresh = task_cfg.get("gripper_close_threshold", 0.03)
         else:
             gripper_qpos_2d = np.array([gripper_width * 0.04, gripper_width * 0.04], dtype=np.float32)
-        contact_val = np.array([0.0], dtype=np.float32)
+            _close_thresh = task_cfg.get("gripper_close_threshold", 0.75)
+        # Contact: 1.0 if gripper closed (grasping), 0.0 if open
+        contact_val = np.array([1.0 if gripper_width < _close_thresh else 0.0], dtype=np.float32)
         state = np.concatenate([
             real_ee_pos.astype(np.float32),
             real_ee_quat.astype(np.float32),
@@ -1256,6 +1301,19 @@ class DebugLogger:
         os.makedirs(self._img_dir, exist_ok=True)
         self._step = 0
         print(f"  [DebugLogger] -> {path}", flush=True)
+
+    def log_event(self, event_type, msg="", **extra):
+        """Log a non-step event (e.g. sensor stale, estop, safety)."""
+        if self._fh is None:
+            return
+        entry = {
+            "event": event_type,
+            "time": time.time(),
+            "msg": msg,
+        }
+        entry.update(extra)
+        self._fh.write(_json.dumps(entry) + "\n")
+        self._fh.flush()
 
     def stop(self):
         if self._fh:
@@ -2022,10 +2080,8 @@ def run(node: InferenceNode, args):
     mode_tag = "residual" if args.residual_checkpoint else "base"
 
     results_base = os.path.join(args.out_dir, epoch_tag, mode_tag)
-    for diff in ("easy", "normal", "hard"):
-        for outcome in ("success", "fail"):
-            os.makedirs(os.path.join(results_base, diff, outcome), exist_ok=True)
-    os.makedirs(os.path.join(results_base, "extra"), exist_ok=True)
+    for outcome in ("success", "fail", "extra"):
+        os.makedirs(os.path.join(results_base, outcome), exist_ok=True)
 
     session_tag = datetime.now().strftime("%Y%m%d_%H%M%S")
     session_dir = os.path.join(results_base, f"_staging_{session_tag}")
@@ -2112,12 +2168,14 @@ def run(node: InferenceNode, args):
             if stats_path and os.path.exists(stats_path):
                 # Prefer action_scale from checkpoint over CLI default
                 _as_scale = ckpt_args_raw.get("action_scale", args.residual_action_scale)
-                # no_clamp: use CLI flag only (checkpoint value unreliable —
-                # Stack/Lift/Drawer train with clamp, only Cup uses no_clamp)
+                # Auto-detect no_clamp from checkpoint (all Stack/Cup checkpoints use True)
                 _no_clamp = args.action_scaler_no_clamp
+                if not _no_clamp:
+                    _no_clamp = ckpt_args_raw.get("no_action_clamp", False)
                 deploy_action_scaler = DeployActionScaler.from_json(
                     stats_path, task_key, action_scale=_as_scale,
                     no_clamp=_no_clamp)
+                args.no_action_clamp = _no_clamp
                 print(f"  [ActionScaler] Loaded from {stats_path} (task={task_key}, "
                       f"scale={_as_scale}, no_clamp={_no_clamp})")
             else:
@@ -2157,6 +2215,8 @@ def run(node: InferenceNode, args):
         else:
             print(f"  Object state (fixed): pos={cube_pos_init.tolist()}, "
                   f"quat_wxyz={cube_quat_wxyz_init.tolist()}")
+        print(f"  FP calib correction: {'ON' if args.fp_calib_correction else 'OFF'}"
+              f" (offset={FP_CALIB_OFFSET.tolist()})")
     else:
         cube_pos_init = np.zeros(3, dtype=np.float32)
         cube_quat_wxyz_init = np.array([1,0,0,0], dtype=np.float32)
@@ -2207,12 +2267,22 @@ def run(node: InferenceNode, args):
         if "white" in _stack_detected_cubes:
             w = _stack_detected_cubes["white"]
             cube_pos_init = np.array(w["pos"], dtype=np.float32)
+            if args.fp_calib_correction:
+                cube_pos_init += FP_CALIB_OFFSET
+                print(f"  [Stack] FP calib correction applied: {FP_CALIB_OFFSET.tolist()}")
             cube_quat_wxyz_init = np.array(w["quat_wxyz"], dtype=np.float32)
             print(f"  [Stack] Wooden cube pos updated: {cube_pos_init.tolist()}")
         if "green" in _stack_detected_cubes:
             g = _stack_detected_cubes["green"]
-            args.cube_b_pos = g["pos"]
+            g_pos = np.array(g["pos"], dtype=np.float32)
+            if args.fp_calib_correction:
+                g_pos += FP_CALIB_OFFSET
+            args.cube_b_pos = g_pos.tolist()
             print(f"  [Stack] Green cube pos updated: {args.cube_b_pos}")
+            _g_offset = task_cfg.get("green_cube_state_offset", [0, 0, 0])
+            if any(v != 0 for v in _g_offset):
+                _g_pos_rl = (g_pos + np.array(_g_offset, dtype=np.float32)).tolist()
+                print(f"  [Stack] ⚠ Green cube STATE OFFSET applied: {_g_offset} → RL sees {_g_pos_rl}")
         if not _stack_detected_cubes:
             print("  [Stack] Detection failed — using CLI defaults for cube positions")
 
@@ -2252,54 +2322,38 @@ def run(node: InferenceNode, args):
                 [_viewer_python, _stack_viewer_script, "--calib", args.calib],
                 env=_sv_env,
                 stdout=_sv_logf, stderr=subprocess.STDOUT,
+                start_new_session=True,
             )
             args._stack_viewer_logf = _sv_logf
             print(f"  [Stack] Viewer PID={args._stack_viewer_proc.pid}")
             print(f"  [Stack] Viewer log: {_sv_log}")
 
-        # Launch FP tracker subprocess for continuous wooden cube tracking
+        # FP tracker: Launch live tracker subprocess for wooden cube
         _prev_tracker = getattr(args, '_stack_tracker_proc', None)
-        if _prev_tracker is not None:
+        if _prev_tracker is not None and _prev_tracker.poll() is None:
+            _prev_tracker.terminate()
             try:
-                _prev_tracker.terminate()
-                _prev_tracker.wait(timeout=5)
+                _prev_tracker.wait(timeout=3)
             except Exception:
-                pass
-            _prev_tlogf = getattr(args, '_stack_tracker_logf', None)
-            if _prev_tlogf:
-                try:
-                    _prev_tlogf.close()
-                except Exception:
-                    pass
-
-        _tracker_script = os.path.join(os.path.dirname(__file__),
-                                       "fp_tracker_stack.py")
-        if os.path.exists(_tracker_script) and _stack_detected_cubes.get("white"):
-            print("  [Stack] Launching FP tracker for wooden cube...")
-            _tr_env = os.environ.copy()
-            _ros_lib2 = "/opt/ros/humble/lib:/opt/ros/humble/lib/x86_64-linux-gnu"
-            _ros_py2 = "/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages"
-            _ld = _tr_env.get("LD_LIBRARY_PATH", "")
-            if _ros_lib2 not in _ld:
-                _tr_env["LD_LIBRARY_PATH"] = _ros_lib2 + ":" + _ld if _ld else _ros_lib2
-            _pp = _tr_env.get("PYTHONPATH", "")
-            if _ros_py2 not in _pp:
-                _tr_env["PYTHONPATH"] = _ros_py2 + ":" + _pp if _pp else _ros_py2
-            _tr_log = os.path.join(os.path.dirname(args.out_dir),
-                                   "stack_tracker.log")
-            _tr_logf = open(_tr_log, "w")
-            args._stack_tracker_proc = subprocess.Popen(
-                [FP_VENV_PYTHON, _tracker_script,
-                 "--mesh", FP_CUBE_4CM_MESH,
-                 "--calib", args.calib],
-                env=_tr_env,
-                stdout=_tr_logf, stderr=subprocess.STDOUT,
-            )
-            args._stack_tracker_logf = _tr_logf
-            print(f"  [Stack] Tracker PID={args._stack_tracker_proc.pid}")
-            print(f"  [Stack] Tracker log: {_tr_log}")
-            # Wait a moment for tracker to initialize
-            time.sleep(2.0)
+                _prev_tracker.kill()
+        _tracker_script = os.path.join(os.path.dirname(__file__), "fp_tracker_stack.py")
+        _fp_venv_python = os.path.expanduser("~/kinam_dev/FoundationPose/venv/bin/python3")
+        _tracker_log = os.path.join(os.path.dirname(__file__), "fp_tracker_stack.log")
+        _tracker_logf = open(_tracker_log, "w")
+        _tracker_env = os.environ.copy()
+        _tracker_env["LD_LIBRARY_PATH"] = "/opt/ros/humble/lib:/opt/ros/humble/lib/x86_64-linux-gnu:" + _tracker_env.get("LD_LIBRARY_PATH", "")
+        _tracker_env["PYTHONPATH"] = "/opt/ros/humble/lib/python3.10/site-packages:/opt/ros/humble/local/lib/python3.10/dist-packages"
+        _tracker_cmd = [
+            _fp_venv_python, _tracker_script,
+            "--mesh", os.path.expanduser("~/kinam_dev/FoundationPose/box_4x4x4cm.obj"),
+            "--calib", args.calib,
+        ]
+        args._stack_tracker_proc = subprocess.Popen(
+            _tracker_cmd, env=_tracker_env,
+            stdout=_tracker_logf, stderr=subprocess.STDOUT)
+        args._stack_tracker_logf = _tracker_logf
+        print(f"  [Stack] FP Tracker launched PID={args._stack_tracker_proc.pid}")
+        print(f"  [Stack] Tracker log: {_tracker_log}")
 
         return _stack_detected_cubes
 
@@ -2416,6 +2470,7 @@ def run(node: InferenceNode, args):
     def emergency_stop(reason=""):
         nonlocal running, executing, estopped
         safety.record("estop", reason)
+        debug_log.log_event("emergency_stop", msg=reason, step=step_count)
         print(f"\n!!! EMERGENCY STOP: {reason} !!!", flush=True)
         node.send_stop()
         time.sleep(0.3)
@@ -2570,36 +2625,14 @@ def run(node: InferenceNode, args):
                 return
 
         # Ask difficulty for success/fail
-        difficulty = None
-        if classification in ("success", "fail"):
-            print("  +--------------------------------------+")
-            print("  |  Difficulty:                         |")
-            print("  |    [e] = easy                        |")
-            print("  |    [n] = normal                      |")
-            print("  |    [h] = hard                        |")
-            print("  +--------------------------------------+", flush=True)
-            while difficulty is None:
-                rclpy.spin_once(node, timeout_sec=0.01)
-                k = keys.get_key()
-                if k == "e":
-                    difficulty = "easy"
-                elif k == "n":
-                    difficulty = "normal"
-                elif k == "h":
-                    difficulty = "hard"
-
-        # Build destination path: results_base / difficulty / classification /
+        # Build destination path: results_base / classification /
         _rb = trial_results_base if trial_results_base else results_base
-        if difficulty:
-            dst_base = os.path.join(_rb, difficulty, classification)
-        else:
-            dst_base = os.path.join(_rb, classification)
+        dst_base = os.path.join(_rb, classification)
         os.makedirs(dst_base, exist_ok=True)
         trial_name = f"trial_{session_tag}_{trial_num}"
         dst = os.path.join(dst_base, trial_name)
         os.rename(trial_dir, dst)
-        label = f"{difficulty}/{classification}" if difficulty else classification
-        print(f"  -> {label.upper()}: {dst}", flush=True)
+        print(f"  -> {classification.upper()}: {dst}", flush=True)
         trial_dir = None
 
     # ── Initial slow move to init pose ──
@@ -2776,6 +2809,34 @@ def run(node: InferenceNode, args):
                 trial_results_base = os.path.join(args.out_dir, epoch_tag, cur_mode_tag)
                 trial_dir = os.path.join(trial_results_base, f"_staging_{session_tag}", f"trial_{trial_num}")
                 os.makedirs(trial_dir, exist_ok=True)
+
+                # Save trial metadata (checkpoint info, settings)
+                _trial_meta = {
+                    "trial_num": trial_num,
+                    "mode": "residual" if use_residual_this_trial else "base",
+                    "task": task_key,
+                    "groot_checkpoint": getattr(args, "groot_checkpoint", None),
+                    "epoch_tag": epoch_tag,
+                }
+                if use_residual_this_trial and getattr(args, "residual_checkpoint", None):
+                    _rl_path = args.residual_checkpoint
+                    _trial_meta["residual_checkpoint"] = _rl_path
+                    _trial_meta["residual_variant"] = os.path.basename(
+                        os.path.dirname(os.path.dirname(_rl_path)))
+                    _trial_meta["residual_action_scale"] = getattr(
+                        args, "residual_action_scale", None)
+                    _trial_meta["no_action_clamp"] = getattr(
+                        args, "no_action_clamp", False)
+                # Save green cube state offset if set
+                _gc_offset = task_cfg.get("green_cube_state_offset", [0, 0, 0])
+                if any(v != 0 for v in _gc_offset):
+                    _trial_meta["green_cube_state_offset"] = _gc_offset
+                if task_key == "stack_cube":
+                    _trial_meta["place_residual_mask"] = True
+                _meta_path = os.path.join(trial_dir, "trial_meta.json")
+                with open(_meta_path, "w") as _mf:
+                    _json.dump(_trial_meta, _mf, indent=2)
+
                 mode_label = "RESIDUAL RL" if use_residual_this_trial else "BASE ONLY"
                 running = True
                 estopped = False
@@ -2785,6 +2846,9 @@ def run(node: InferenceNode, args):
                 gripper_latched = False
                 gripper_open_streak = 0
                 gripper_latch_time = 0.0
+                _fp_prev_pos = None  # FP jump filter: previous accepted position
+                _fp_prev_quat = None
+                args._place_mask_logged = False  # reset place-mask log flag
                 # Reset cup latch state for new trial
                 if cup_latch_state is not None:
                     cup_latch_state["latched"] = False
@@ -2802,9 +2866,14 @@ def run(node: InferenceNode, args):
                     prev_grip = 0
                     time.sleep(0.5)
                 # Reset sensor timestamps after any blocking ops (FP detection etc.)
-                # Spin a few times to receive fresh sensor data first
-                for _ in range(10):
+                # Spin until at least one fresh sensor update arrives
+                _reset_deadline = time.time() + 2.0
+                while time.time() < _reset_deadline:
                     rclpy.spin_once(node, timeout_sec=0.05)
+                    # Check if sensors have fresh data
+                    if all(node._sensor_ts.get(k, 0) > time.time() - 0.5
+                           for k in ("base_rgb", "wrist_rgb", "ee_pose")):
+                        break
                 node.reset_sensor_timestamps()
                 print(f">>> Trial {trial_num} [{mode_label}] started! -> {trial_dir}",
                       flush=True)
@@ -2823,6 +2892,8 @@ def run(node: InferenceNode, args):
             stale = node.check_staleness(sensor_timeout)
             if stale:
                 safety.record("sensor_stale_stop", f"Stale: {stale}")
+                debug_log.log_event("sensor_stale", msg=f"Stale: {stale}",
+                                    step=step_count, sensors=stale)
                 emergency_stop(f"Sensor stale: {stale}")
                 continue
 
@@ -2894,23 +2965,67 @@ def run(node: InferenceNode, args):
                     for k in range(len(pred_pos)):
                         # v2: Task-aware state construction via build_rl_state
                         if task_key == "stack_cube":
-                            # Live tracking for wooden cube via fp_tracker_stack
-                            _fp_pos, _fp_quat, _fp_age = read_fp_stack_pose(max_age_s=2.0)
-                            if _fp_pos is not None:
-                                _cube_pos = _fp_pos
-                                _cube_quat = _fp_quat
-                                if _fp_age > 1.0:
-                                    print(f"  [FP-stack] pose stale: {_fp_age:.1f}s", flush=True)
-                            else:
-                                _cube_pos = cube_pos_init
+                            # White cube tracking:
+                            #   1) When gripper open → live FP tracker (fallback to init)
+                            #   2) When gripper closes → switch to EEF-based tracking
+                            _grip_closed = gripper_width < 0.03
+                            if _grip_closed:
+                                # Cube is grasped → track via EEF position
+                                _cube_pos = real_ee_pos.astype(np.float32).copy()
+                                _cube_pos[2] -= 0.02  # cube center ~2cm below EEF
                                 _cube_quat = cube_quat_wxyz_init
+                                _src = "eef_grasp"
+                            else:
+                                # Live FP tracker → fallback to init if unavailable
+                                fp_pos, fp_quat, fp_age = read_fp_stack_pose(max_age_s=2.0)
+                                if fp_pos is not None:
+                                    _fp_candidate = np.array(fp_pos, dtype=np.float32)
+                                    if args.fp_calib_correction:
+                                        _fp_candidate = _fp_candidate + FP_CALIB_OFFSET
+                                    # Jump filter: reject if moved > 5cm from previous
+                                    _FP_JUMP_THRESH = 0.05
+                                    if _fp_prev_pos is not None:
+                                        _fp_jump = np.linalg.norm(_fp_candidate - _fp_prev_pos)
+                                        if _fp_jump > _FP_JUMP_THRESH:
+                                            print(f"  [FP] JUMP rejected: {_fp_jump*100:.1f}cm", flush=True)
+                                            _cube_pos = _fp_prev_pos
+                                            _cube_quat = _fp_prev_quat
+                                            _src = "fp_jump_reject"
+                                        else:
+                                            _cube_pos = _fp_candidate
+                                            _cube_quat = fp_quat
+                                            _fp_prev_pos = _cube_pos.copy()
+                                            _fp_prev_quat = _cube_quat
+                                            _src = "fp_live"
+                                    else:
+                                        # First reading — accept unconditionally
+                                        _cube_pos = _fp_candidate
+                                        _cube_quat = fp_quat
+                                        _fp_prev_pos = _cube_pos.copy()
+                                        _fp_prev_quat = _cube_quat
+                                        _src = "fp_live"
+                                else:
+                                    _cube_pos = cube_pos_init
+                                    _cube_quat = cube_quat_wxyz_init
+                                    _src = "init_fixed"
+                            # Green cube: always fixed at initial detection
+                            # (cube_b_pos set below in obj_data)
+                            # Write RAW (uncorrected) pose for viewer — viewer uses same
+                            # calib for projection, so raw pos aligns correctly on image.
+                            _viewer_pos = (_cube_pos - FP_CALIB_OFFSET
+                                           if args.fp_calib_correction else _cube_pos)
+                            write_fp_stack_filtered(_viewer_pos, _cube_quat, source=_src)
                         elif use_fp:
                             fp_pos, fp_quat, fp_age = read_fp_pose(fp_max_age)
                             if fp_pos is not None:
-                                _cube_pos = fp_pos
+                                _cube_pos = np.array(fp_pos, dtype=np.float32)
+                                if args.fp_calib_correction:
+                                    _cube_pos = _cube_pos + FP_CALIB_OFFSET
                                 _cube_quat = fp_quat
                                 if fp_age > _FP_STALE_WARN_S:
                                     print(f"  [FP] pose stale: {fp_age:.1f}s", flush=True)
+                                    debug_log.log_event("fp_stale", msg=f"FP pose stale: {fp_age:.1f}s",
+                                                        step=step_count, age_s=round(fp_age, 2))
                             else:
                                 _cube_pos = cube_pos_init
                                 _cube_quat = cube_quat_wxyz_init
@@ -2919,11 +3034,16 @@ def run(node: InferenceNode, args):
                             _cube_quat = cube_quat_wxyz_init
                         _bowl_pos = bowl_pos_init if bowl_pos_init is not None else np.array([0.42, 0.03, 0.0], dtype=np.float32)
 
+                        # Apply green cube state offset for stack_cube residual
+                        _green_pos_raw = np.array(getattr(args, 'cube_b_pos', [0.45, -0.06, 0.02]), dtype=np.float32)
+                        _green_offset = np.array(task_cfg.get("green_cube_state_offset", [0, 0, 0]), dtype=np.float32)
+                        _green_pos_rl = _green_pos_raw + _green_offset  # offset applied to RL state only
+
                         obj_data = {
                             "cube_pos": _cube_pos, "cube_quat_wxyz": _cube_quat,
                             "bowl_pos": _bowl_pos,
-                            # Stack: cube_b defaults (override with FP if available)
-                            "cube_b_pos": np.array(getattr(args, 'cube_b_pos', [0.45, -0.06, 0.02]), dtype=np.float32),
+                            # Stack: cube_b with offset for residual policy
+                            "cube_b_pos": _green_pos_rl,
                             "cube_b_quat_wxyz": getattr(args, 'cube_b_quat_wxyz', np.array([1,0,0,0], dtype=np.float32)),
                             # Cup: same as cube for now
                             "cup_pos": _cube_pos, "cup_quat_wxyz": _cube_quat,
@@ -2939,14 +3059,19 @@ def run(node: InferenceNode, args):
 
                         # Log object state (first waypoint only per step)
                         if k == 0:
-                            _obj_state_log.append({
+                            _log_entry = {
                                 "step": step_count,
                                 "time": time.time(),
                                 "cube_pos": _cube_pos.tolist() if hasattr(_cube_pos, 'tolist') else list(_cube_pos),
                                 "cube_quat_wxyz": _cube_quat.tolist() if hasattr(_cube_quat, 'tolist') else list(_cube_quat),
                                 "cube_b_pos": obj_data["cube_b_pos"].tolist(),
                                 "rl_state": rl_state.tolist(),
-                            })
+                            }
+                            # Record green offset if applied
+                            if np.any(_green_offset != 0):
+                                _log_entry["cube_b_pos_raw"] = _green_pos_raw.tolist()
+                                _log_entry["green_cube_state_offset"] = _green_offset.tolist()
+                            _obj_state_log.append(_log_entry)
 
                         # Base action 7D: pos(3) + euler(3) + grip(1)
                         ba_7d = build_base_action_7d(pred_pos[k], pred_quat[k], pred_grip[k])
@@ -2970,7 +3095,18 @@ def run(node: InferenceNode, args):
                         ba_t = torch.as_tensor(ba_7d_input, device=residual_device, dtype=torch.float32).unsqueeze(0)
                         residual_7d = residual_actor(s_t, ba_t).squeeze(0).cpu().numpy()
 
+                        # Save raw residual BEFORE masking (for analysis)
                         step_residuals.append(residual_7d.copy())
+
+                        # ── Place-phase residual mask (stack_cube only) ──
+                        # When gripper closed, zero out residual position
+                        # because policy consistently pushes AWAY from target
+                        if (task_key == "stack_cube"
+                            and gripper_width < task_cfg.get("gripper_close_threshold", 0.03)):
+                            residual_7d[:3] = 0.0  # mask pos residual
+                            if k == 0 and not getattr(args, '_place_mask_logged', False):
+                                print(f"  [Stack] Residual pos MASKED (gripper closed)")
+                                args._place_mask_logged = True
 
                         # Track if this waypoint's residual will be skipped
                         _res_thresh = task_cfg.get("residual_threshold", None)
@@ -3420,6 +3556,9 @@ def main():
         help="Disable live FoundationPose tracking (default: enabled)")
     res_grp.add_argument("--fp-max-age", type=float, default=2.0,
         help="Max age (seconds) for FP pose before falling back to fixed pose")
+    res_grp.add_argument("--no-fp-calib-correction", dest="fp_calib_correction",
+        action="store_false", default=True,
+        help="Disable FP calibration offset correction (default: correction ON)")
 
     vis_grp = ap.add_argument_group("Visualisation")
     vis_grp.add_argument("--viewer", dest="viewer", action="store_true", default=False,

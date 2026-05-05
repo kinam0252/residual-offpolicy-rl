@@ -267,6 +267,19 @@ def main():
     _log(f"  checkpoint_dir: {checkpoint_dir}")
     _log(f"  output_dir: {output_dir}")
 
+    # -- Build ActionScaler for obs normalization --
+    _action_scaler = None
+    if args.use_action_scaler and args.action_scaler_min is not None and args.action_scaler_max is not None:
+        from resfit.rl_finetuning.off_policy.rl.action_scaler import ActionScaler
+        _action_scaler = ActionScaler(
+            action_min=torch.tensor(args.action_scaler_min, dtype=torch.float32),
+            action_max=torch.tensor(args.action_scaler_max, dtype=torch.float32),
+            action_scale=args.action_scale,
+            device="cpu",
+            no_clamp=args.no_action_clamp,
+        )
+        _log(f"  ActionScaler loaded (normalize_base_action=True)")
+
     # -- Create environment --
     num_envs = args.eval_num_envs
     _log(f"Creating eval environment ({num_envs} envs)...")
@@ -290,6 +303,7 @@ def main():
         grip_max=task_cfg.grip_max,
         use_gripper_latch=task_cfg.use_gripper_latch,
         camera_keys=task_cfg.camera_keys,
+        action_scaler=_action_scaler,
     )
     _log("Eval environment ready.")
 
