@@ -95,17 +95,19 @@ def _log(msg: str) -> None:
 # ActionScaler helpers
 # ══════════════════════════════════════════════════════════════════
 
-def _to_replay_action_7d(combined_8d: torch.Tensor, residual_7d: torch.Tensor,
-                         action_scaler) -> torch.Tensor:
-    """Convert 8D combined (pos3+quat4+grip1) to 7D replay (norm_pos3+euler3+norm_grip1)."""
-    n = combined_8d.shape[0]
-    pg = torch.cat([combined_8d[:, :3], combined_8d[:, 7:8]], dim=-1)
-    pg_norm = action_scaler.scale(pg)
-    out = torch.zeros(n, 7, device=combined_8d.device, dtype=combined_8d.dtype)
-    out[:, :3] = pg_norm[:, :3]
-    out[:, 3:6] = residual_7d[:, 3:6]
-    out[:, 6] = pg_norm[:, 3]
-    return out
+def _to_replay_action_7d(obs_base_action: torch.Tensor, residual_7d: torch.Tensor) -> torch.Tensor:
+    """Compute buffer action = clamp(base_norm + residual, -1, 1).
+    
+    This matches exactly what critic target and actor loss compute,
+    ensuring the critic trains on the same distribution it evaluates.
+    
+    Args:
+        obs_base_action: normalized 7D base action from obs [norm_pos3, 0_euler3, norm_grip1]
+        residual_7d: actor output (or noise) in [-1,1] range
+    Returns:
+        7D combined action for replay buffer
+    """
+    return torch.clamp(obs_base_action + residual_7d, -1.0, 1.0)
 
 
 def _compute_action_stats_from_offline(data_dir: str) -> dict:
@@ -250,10 +252,11 @@ def _load_offline_data(
         else:
             reward_t = torch.from_numpy(data["reward"].astype(np.float32)).clamp(0.0, 1.0)
 
-        # Action for replay
+        # Action for replay: offline has no residual, so action = base_norm (= base + 0)
+        # This is consistent with online: action = clamp(base_norm + residual)
         if action_scaler is not None:
             action_t = ba_t.clone()
-            action_t[:, 3:6] = 0.0
+            action_t[:, 3:6] = 0.0  # euler=0 since offline has no rotation residual
         else:
             action_t = torch.from_numpy(data["action"].astype(np.float32))
 
@@ -1110,7 +1113,7 @@ def main():
         next_obs, reward, terminated, truncated, info = env.step(noise)
         done = terminated | truncated
 
-        _replay_action = _to_replay_action_7d(info["scaled_action"], noise, _action_scaler) if _action_scaler else noise
+        _replay_action = _to_replay_action_7d(obs["observation.base_action"], noise)
         reward_clamped = reward.clamp(0.0, 1.0)
 
         # Skip stale chunk_sync transitions; use terminated for Q-bootstrap
@@ -1189,7 +1192,7 @@ def main():
 
         # Store transition
         # Use terminated (not done) for Q-bootstrap: truncated episodes should still bootstrap
-        _replay_action = _to_replay_action_7d(info["scaled_action"], residual_action, _action_scaler) if _action_scaler else residual_action
+        _replay_action = _to_replay_action_7d(obs["observation.base_action"], residual_action)
         # Clamp online reward to [0,1] to match offline (prevents Q-value instability)
         reward_clamped = reward.clamp(0.0, 1.0)
 
