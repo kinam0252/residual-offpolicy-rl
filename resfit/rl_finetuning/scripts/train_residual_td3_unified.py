@@ -1262,10 +1262,28 @@ def main():
                 sr = result.get("eval/success_rate", 0.0)
                 if _wb is not None and _wb.run is not None:
                     _wb.log(result)
+                eval_step = result.get("eval/step", 0)
+                eval_ckpt = checkpoint_dir / f"eval_request_step{eval_step}.pt"
                 if sr >= best_success:
                     best_success = sr
-                    torch.save({"model": agent.state_dict(), "args": vars(args)},
-                               checkpoint_dir / "best.pt")
+                    # Load weights from the eval request checkpoint (not current agent)
+                    if eval_ckpt.exists():
+                        _best_data = torch.load(eval_ckpt, map_location="cpu", weights_only=False)
+                        torch.save({"model": _best_data["model"], "args": vars(args),
+                                    "eval_step": eval_step, "success_rate": sr},
+                                   checkpoint_dir / "best.pt")
+                    else:
+                        # Fallback: use current weights (shouldn't happen normally)
+                        torch.save({"model": agent.state_dict(), "args": vars(args)},
+                                   checkpoint_dir / "best.pt")
+                # Cleanup: delete eval request files older than this one
+                for old_req in checkpoint_dir.glob("eval_request_step*.pt"):
+                    old_step = int(old_req.stem.split("step")[1])
+                    if old_step < eval_step:
+                        try:
+                            old_req.unlink()
+                        except Exception:
+                            pass
 
         # ── Checkpoint ──
         if args.checkpoint_interval > 0 and global_step > 0 and global_step % args.checkpoint_interval == 0:

@@ -457,11 +457,8 @@ def main():
             for f in new_requests:
                 s = int(f.stem.split("step")[1])
                 processed_steps.add(s)
-            for req_f in new_requests:
-                try:
-                    req_f.unlink()
-                except Exception:
-                    pass
+            # Don't delete eval_request files — train uses them for best.pt
+            # They accumulate but are small (~30MB each). Train cleans up old ones.
 
         except Exception as e:
             _log(f"  ERROR evaluating step {step}: {e}")
