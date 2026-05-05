@@ -287,10 +287,13 @@ def _load_offline_data(
 def _add_transitions(
     obs, next_obs, actions, reward, done,
     device, image_keys, lowdim_keys, num_envs, online_rb,
+    store_mask=None,
 ):
     obs_keys = set(image_keys) | set(lowdim_keys)
     rgb_keys = [k for k in image_keys if "depth" not in k]
     for i in range(num_envs):
+        if store_mask is not None and not store_mask[i]:
+            continue
         curr_obs_i = {k: v[i] for k, v in obs.items() if k in obs_keys}
         next_obs_i = {k: v[i] for k, v in next_obs.items() if k in obs_keys}
         to_uint8(curr_obs_i, rgb_keys)
@@ -1052,11 +1055,19 @@ def main():
 
         _replay_action = _to_replay_action_7d(info["scaled_action"], noise, _action_scaler) if _action_scaler else noise
         reward_clamped = reward.clamp(0.0, 1.0)
+
+        # Skip stale chunk_sync transitions; use terminated for Q-bootstrap
+        if args.chunk_sync and done.any():
+            store_mask = ~done.bool()
+        else:
+            store_mask = None
+
         _add_transitions(
             obs=obs, next_obs=next_obs, actions=_replay_action,
-            reward=reward_clamped, done=done, device=device,
+            reward=reward_clamped, done=terminated, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,
+            store_mask=store_mask,
         )
         warmup_transitions += num_envs
         obs = next_obs
@@ -1120,16 +1131,26 @@ def main():
             ep_step_counter[done_mask] = 0
 
         # Store transition
+        # Use terminated (not done) for Q-bootstrap: truncated episodes should still bootstrap
         _replay_action = _to_replay_action_7d(info["scaled_action"], residual_action, _action_scaler) if _action_scaler else residual_action
         # Clamp online reward to [0,1] to match offline (prevents Q-value instability)
         reward_clamped = reward.clamp(0.0, 1.0)
+
+        # Skip transitions where chunk_sync has stale base actions (env just reset)
+        if args.chunk_sync and done.any():
+            store_mask = ~done.bool()
+        else:
+            store_mask = torch.ones(num_envs, dtype=torch.bool, device=device)
+
         _t0 = time.perf_counter()
-        _add_transitions(
-            obs=obs, next_obs=next_obs, actions=_replay_action,
-            reward=reward_clamped, done=done, device=device,
-            image_keys=image_keys, lowdim_keys=lowdim_keys,
-            num_envs=num_envs, online_rb=online_rb,
-        )
+        if store_mask.any():
+            _add_transitions(
+                obs=obs, next_obs=next_obs, actions=_replay_action,
+                reward=reward_clamped, done=terminated, device=device,
+                image_keys=image_keys, lowdim_keys=lowdim_keys,
+                num_envs=num_envs, online_rb=online_rb,
+                store_mask=store_mask,
+            )
         _timers["buffer_store"].append(time.perf_counter() - _t0)
         obs = next_obs
 

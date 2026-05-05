@@ -177,6 +177,8 @@ LIFT_CONFIG = TaskConfig(
     groot_checkpoint_hint="~/DATA/INTERN/training/gr00t_sim_66ep/checkpoint-300000",
     supports_asymmetric_critic=True,
     rl_image_keys=["observation.images.front", "observation.images.wrist"],
+    object_state_dim=7,
+    extra_lowdim_keys=["observation.object_state"],
 )
 
 STACK_CONFIG = TaskConfig(
