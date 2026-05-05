@@ -856,6 +856,12 @@ def main():
             no_clamp=args.no_action_clamp,
         )
         _log(f"ActionScaler created (scale={args.action_scale}, no_clamp={args.no_action_clamp})")
+    else:
+        raise ValueError(
+            "--use_action_scaler is required for unified training. "
+            "Without it, obs.base_action normalization is inconsistent between "
+            "offline (normalized) and online (raw), causing critic/actor mismatch."
+        )
 
     # ── Wrap with residual + GR00T ──
     _log("Creating unified residual wrapper...")
@@ -951,6 +957,7 @@ def main():
             "reward_config": getattr(args, 'reward_config', None),
             "use_action_scaler": args.use_action_scaler,
             "action_scale": args.action_scale if args.use_action_scaler else None,
+            "normalize_base_action": getattr(args, 'normalize_base_action', False),
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key, sort_keys=True).encode()).hexdigest()[:16]
         _cache_dir = Path(__file__).resolve().parents[3] / "buffer_cache" / f"offline_{args.task}_{_cache_hash}"
@@ -1044,9 +1051,10 @@ def main():
         done = terminated | truncated
 
         _replay_action = _to_replay_action_7d(info["scaled_action"], noise, _action_scaler) if _action_scaler else noise
+        reward_clamped = reward.clamp(0.0, 1.0)
         _add_transitions(
             obs=obs, next_obs=next_obs, actions=_replay_action,
-            reward=reward, done=done, device=device,
+            reward=reward_clamped, done=done, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,
         )
@@ -1113,10 +1121,12 @@ def main():
 
         # Store transition
         _replay_action = _to_replay_action_7d(info["scaled_action"], residual_action, _action_scaler) if _action_scaler else residual_action
+        # Clamp online reward to [0,1] to match offline (prevents Q-value instability)
+        reward_clamped = reward.clamp(0.0, 1.0)
         _t0 = time.perf_counter()
         _add_transitions(
             obs=obs, next_obs=next_obs, actions=_replay_action,
-            reward=reward, done=done, device=device,
+            reward=reward_clamped, done=done, device=device,
             image_keys=image_keys, lowdim_keys=lowdim_keys,
             num_envs=num_envs, online_rb=online_rb,
         )

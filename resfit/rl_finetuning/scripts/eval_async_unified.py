@@ -163,6 +163,18 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
         ), num_envs
 
     elif task_cfg.name == "pnp":
+        # Auto-detect camera calibration (same as train)
+        _calib_path = getattr(args, 'calib_path', None)
+        _use_calibrated_wrist = getattr(args, 'use_calibrated_wrist', False)
+        if _calib_path is None and hasattr(args, 'groot_checkpoint'):
+            ckpt_lower = args.groot_checkpoint.lower()
+            if "66ep" in ckpt_lower or "100ep" in ckpt_lower:
+                from pathlib import Path as _P
+                _calib_66ep = str(_P(__file__).resolve().parents[4] / "Mujoco_Franka" / "config" / "camera_info_66ep.yaml")
+                if _P(_calib_66ep).exists():
+                    _calib_path = _calib_66ep
+                    _use_calibrated_wrist = True
+
         return VecEnvClass(
             num_envs=num_envs,
             cube_positions=[[0.45, -0.05, 0.02]] * num_envs,
@@ -170,6 +182,9 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
             reward_type=args.reward_type,
             device=args.device,
             rl_img_size=84,
+            scene_xml=getattr(args, 'scene_xml', None),
+            calib_path=_calib_path,
+            use_calibrated_wrist=_use_calibrated_wrist,
             episode_positions_file=getattr(args, 'episode_positions_file', None),
         ), num_envs
 
@@ -180,6 +195,8 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
             max_episode_steps=args.max_episode_steps,
             reward_type=args.reward_type,
             device=args.device,
+            scene_xml=getattr(args, 'scene_xml', None),
+            episode_positions_file=getattr(args, 'episode_positions_file', None),
         ), num_envs
 
     elif task_cfg.name == "stack":
@@ -188,6 +205,8 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
             max_episode_steps=args.max_episode_steps,
             reward_type=args.reward_type,
             device=args.device,
+            scene_xml=getattr(args, 'scene_xml', None),
+            episode_positions_file=getattr(args, 'episode_positions_file', None),
         ), num_envs
 
     elif task_cfg.name == "drawer":
@@ -197,6 +216,7 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
             reward_type=args.reward_type,
             device=args.device,
             rl_img_size=84,
+            scene_xml=getattr(args, 'scene_xml', None),
         ), num_envs
 
     else:
@@ -270,7 +290,7 @@ def main():
     # -- Build ActionScaler for obs normalization --
     _action_scaler = None
     if args.use_action_scaler and args.action_scaler_min is not None and args.action_scaler_max is not None:
-        from resfit.rl_finetuning.off_policy.rl.action_scaler import ActionScaler
+        from resfit.rl_finetuning.utils.normalization import ActionScaler
         _action_scaler = ActionScaler(
             action_min=torch.tensor(args.action_scaler_min, dtype=torch.float32),
             action_max=torch.tensor(args.action_scaler_max, dtype=torch.float32),
