@@ -225,13 +225,24 @@ class SubprocVecEnvMixin:
                 env = envs[global_idx]
                 env["data"].qpos[:] = qpos
                 env["data"].qvel[:] = qvel
+                if isinstance(extra, dict):
+                    # Sync bowl position (model.body_pos, not in qpos)
+                    if "bowl_pos" in extra and "bowl_body_id" in env:
+                        bid = env["bowl_body_id"]
+                        if bid >= 0:
+                            env["model"].body_pos[bid] = extra["bowl_pos"]
+                    # Sync cube/bowl init positions for bookkeeping
+                    if "cube_pos_init" in extra:
+                        env["cube_pos_init"] = extra["cube_pos_init"]
+                    if "bowl_pos_init" in extra:
+                        env["bowl_pos_init"] = extra["bowl_pos_init"]
+                    # Sync grasp state
+                    if "grasp_state" in env:
+                        gs_keys = {"grasped", "contact_count"}
+                        gs_update = {k: v for k, v in extra.items() if k in gs_keys}
+                        if gs_update:
+                            env["grasp_state"].update(gs_update)
                 mujoco.mj_forward(env["model"], env["data"])
-                if isinstance(extra, dict) and "grasp_state" in env:
-                    env["grasp_state"].update(extra)
-                elif isinstance(extra, dict):
-                    for k, v in extra.items():
-                        if k in env:
-                            env[k] = v
 
     def _close_workers(self) -> None:
         """Gracefully shut down all worker processes."""

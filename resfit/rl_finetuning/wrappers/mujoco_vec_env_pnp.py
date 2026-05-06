@@ -734,8 +734,15 @@ def _pnp_env_worker_loop(pipe, init_kwargs):
             elif cmd[0] == "get_qpos_all":
                 all_data = []
                 for env in envs:
+                    extra = dict(env["grasp_state"])
+                    # Include bowl position so main process can sync model.body_pos
+                    bowl_id = env.get("bowl_body_id", -1)
+                    if bowl_id >= 0:
+                        extra["bowl_pos"] = env["model"].body_pos[bowl_id].copy()
+                    extra["cube_pos_init"] = env.get("cube_pos_init", _np.zeros(3))
+                    extra["bowl_pos_init"] = env.get("bowl_pos_init", _np.zeros(3))
                     all_data.append((env["data"].qpos.copy(), env["data"].qvel.copy(),
-                                     dict(env["grasp_state"])))
+                                     extra))
                 pipe.send(all_data)
             elif cmd[0] == "close":
                 pipe.send(None)
@@ -1132,6 +1139,11 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
         if self._parallel:
             self._sync_qpos_all(self._envs, self.num_envs)
             self._needs_qpos_sync = False
+            # Update initial_cube_z from synced qpos
+            for i in range(self.num_envs):
+                qa = self._envs[i]["cube_qposadr"]
+                if qa is not None:
+                    self._initial_cube_z[i] = self._envs[i]["data"].qpos[qa + 2]
 
         obs_dict = self._build_obs_dict()
         return obs_dict, {}
@@ -1145,6 +1157,10 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
         if self._parallel:
             self._sync_qpos_all(self._envs, self.num_envs)
             self._needs_qpos_sync = False
+            for eid in env_ids:
+                qa = self._envs[eid]["cube_qposadr"]
+                if qa is not None:
+                    self._initial_cube_z[eid] = self._envs[eid]["data"].qpos[qa + 2]
 
     def step(
         self, actions: torch.Tensor, render_mode: str = "full",
@@ -1406,9 +1422,28 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
     # ------------------------------------------------------------------
 
     def _reset_single_env(self, env_idx: int) -> None:
-        """Reset a single environment to initial state."""
+        """Reset a single environment to initial state.
+
+        In parallel mode, workers already set cube/bowl positions during their
+        reset, so we skip position randomization here and let _sync_qpos_all
+        (+ bowl sync) bring the authoritative state back.
+        """
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
+
+        # In parallel mode, skip physics state changes — workers own the
+        # authoritative (model, data).  We only reset main-process bookkeeping
+        # (grasp_state, step_count, weld, ctrl) here; qpos/qvel and bowl_pos
+        # are synced from workers afterwards.
+        if self._parallel:
+            self._step_counts[env_idx] = 0
+            self._last_actions[env_idx] = 0.0
+            env["grasp_state"] = {"grasped": False, "contact_count": 0}
+            weld_id = env.get("weld_eq_id", -1)
+            if weld_id >= 0:
+                env["model"].eq_active0[weld_id] = 0
+                env["data"].eq_active[weld_id] = 0
+            return
 
         # Reset robot to home pose
         for i, jid in enumerate(ids["jnt_ids"]):
