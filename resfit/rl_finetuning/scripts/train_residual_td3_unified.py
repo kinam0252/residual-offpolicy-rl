@@ -816,10 +816,30 @@ def parse_args():
         p.error("--groot_checkpoint is required (either via CLI or --config JSON)")
 
     # Unified positions_file → episode_positions_file / eval_positions_file mapping
-    if args.positions_file and not args.episode_positions_file:
-        args.episode_positions_file = args.positions_file
-    if args.positions_file and not args.eval_positions_file:
-        args.eval_positions_file = args.positions_file
+    # Slice: first train_positions entries for train, remaining for eval
+    if args.positions_file:
+        import json as _json_pos
+        with open(args.positions_file) as f:
+            all_positions = _json_pos.load(f)
+        n_train = getattr(args, 'train_positions', None) or len(all_positions)
+        train_slice = all_positions[:n_train]
+        eval_slice = all_positions[n_train:]
+        if not eval_slice:
+            eval_slice = all_positions  # fallback: use all if no eval split
+
+        # Write sliced files to output_dir
+        _out = Path(getattr(args, 'output_dir', 'outputs/tmp_rl'))
+        _out.mkdir(parents=True, exist_ok=True)
+        if not args.episode_positions_file:
+            _train_path = _out / "train_positions.json"
+            with open(_train_path, "w") as f:
+                _json_pos.dump(train_slice, f)
+            args.episode_positions_file = str(_train_path)
+        if not args.eval_positions_file:
+            _eval_path = _out / "eval_positions.json"
+            with open(_eval_path, "w") as f:
+                _json_pos.dump(eval_slice, f)
+            args.eval_positions_file = str(_eval_path)
 
     return args
 
