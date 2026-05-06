@@ -721,6 +721,7 @@ class MuJoCoVecEnv(SubprocVecEnvMixin):
             self._parallel_reset_all(self.num_envs)
             for i in range(self.num_envs):
                 self._reset_single_env(i)
+            self._sync_qpos_all(self._envs, self.num_envs)
         else:
             for i in range(self.num_envs):
                 self._reset_single_env(i)
@@ -735,8 +736,13 @@ class MuJoCoVecEnv(SubprocVecEnvMixin):
         """Reset specific environments (auto-reset on done)."""
         if getattr(self, "_parallel", False):
             self._parallel_reset_envs(env_ids)
-        for eid in env_ids:
-            self._reset_single_env(eid)
+            for eid in env_ids:
+                self._reset_single_env(eid)
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
+        else:
+            for eid in env_ids:
+                self._reset_single_env(eid)
 
     def step(
         self, actions: torch.Tensor, render_mode: str = "full",

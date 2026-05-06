@@ -982,6 +982,8 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
             # Also reset main-process render mirrors
             for i in range(self.num_envs):
                 self._reset_single_env(i)
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
         else:
             for i in range(self.num_envs):
                 self._reset_single_env(i)
@@ -994,6 +996,8 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
             for eid in env_ids:
                 self._reset_single_env(eid)
                 self._step_counts[eid] = 0
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
         else:
             for i in env_ids:
                 self._reset_single_env(i)

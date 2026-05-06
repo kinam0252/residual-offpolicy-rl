@@ -461,12 +461,6 @@ def _pnp_env_worker_loop(pipe, init_kwargs):
             return False
         if cube_pos[2] > BOWL_HEIGHT + 0.05:
             return False
-        cube_jnt_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, "cube_joint")
-        if cube_jnt_id >= 0:
-            cube_dofadr = model.jnt_dofadr[cube_jnt_id]
-            cube_vel = data.qvel[cube_dofadr:cube_dofadr + 6]
-            if _np.linalg.norm(cube_vel[:3]) > CUBE_SETTLED_VEL:
-                return False
         return True
 
     def _compute_reward(env):
@@ -1134,6 +1128,10 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
             self._parallel_reset_all(self.num_envs)
         for i in range(self.num_envs):
             self._reset_single_env(i)
+        # Sync main-process mirrors from workers so positions match
+        if self._parallel:
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
 
         obs_dict = self._build_obs_dict()
         return obs_dict, {}
@@ -1144,6 +1142,9 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
             self._parallel_reset_envs(env_ids)
         for eid in env_ids:
             self._reset_single_env(eid)
+        if self._parallel:
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
 
     def step(
         self, actions: torch.Tensor, render_mode: str = "full",
@@ -1764,15 +1765,6 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
         # Check cube is low (near table / bowl surface)
         if cube_pos[2] > BOWL_HEIGHT + 0.05:
             return False
-
-        # Check cube has low velocity (settled, not bouncing/flying)
-        cube_jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "cube_joint")
-        if cube_jnt_id >= 0:
-            cube_dofadr = model.jnt_dofadr[cube_jnt_id]
-            cube_vel = data.qvel[cube_dofadr:cube_dofadr + 6]
-            cube_linvel = np.linalg.norm(cube_vel[:3])
-            if cube_linvel > CUBE_SETTLED_VEL:
-                return False
 
         return True
 

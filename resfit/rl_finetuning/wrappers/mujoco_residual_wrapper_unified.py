@@ -102,7 +102,7 @@ class MuJoCoResidualWrapperUnified:
         torch_compile: bool = False,
         chunk_sync: bool = False,
         async_prefetch: bool = True,
-        render_parallel: bool = True,
+        render_parallel: bool = False,
         # Task-specific
         grip_min: float = 0.0,
         grip_max: float = 1.0,
@@ -396,7 +396,7 @@ class MuJoCoResidualWrapperUnified:
         model, data, ids = env["model"], env["data"], env["ids"]
         if hasattr(self.vec_env, '_parallel') and self.vec_env._parallel:
             if hasattr(self.vec_env, '_needs_qpos_sync') and self.vec_env._needs_qpos_sync:
-                self.vec_env._sync_qpos_from_workers()
+                self.vec_env._sync_qpos_all(self.vec_env._envs, self.vec_env.num_envs)
                 self.vec_env._needs_qpos_sync = False
         tcp_pos, tcp_R = _gtp(model, data, ids["hand_id"])
         eef_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat()
@@ -425,7 +425,7 @@ class MuJoCoResidualWrapperUnified:
         if (hasattr(self.vec_env, '_parallel') and self.vec_env._parallel
                 and hasattr(self.vec_env, '_needs_qpos_sync')
                 and self.vec_env._needs_qpos_sync):
-            self.vec_env._sync_qpos_from_workers()
+            self.vec_env._sync_qpos_all(self.vec_env._envs, self.vec_env.num_envs)
             self.vec_env._needs_qpos_sync = False
 
         if self.policy is None:

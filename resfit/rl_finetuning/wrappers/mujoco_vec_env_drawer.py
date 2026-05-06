@@ -963,6 +963,9 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
             self._parallel_reset_all(self.num_envs)
         for i in range(self.num_envs):
             self._reset_single_env(i)
+        if self._parallel:
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
         return self._build_obs_dict(), {}
 
     def reset_envs(self, env_ids: list[int]) -> None:
@@ -970,6 +973,9 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
             self._parallel_reset_envs(env_ids)
         for eid in env_ids:
             self._reset_single_env(eid)
+        if self._parallel:
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
 
     def step(
         self, actions: torch.Tensor, render_mode: str = "full",
