@@ -28,6 +28,7 @@ submit_task() {
 set -e
 . /home/nas_main/kinamkim/.venvs/groot/bin/activate
 export MUJOCO_GL=egl
+export MUJOCO_EGL_DEVICE_ID=\${CUDA_VISIBLE_DEVICES%%,*}
 NV=\$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia
 export LD_LIBRARY_PATH=\$HOME/.local/lib:\$HOME/lib-compat:\$NV/cuda_runtime/lib:\$NV/cublas/lib:\$NV/cudnn/lib:\$NV/cufft/lib:\$NV/cusolver/lib:\$NV/cusparse/lib:\$NV/nvjitlink/lib:\$NV/cuda_nvrtc/lib:\$NV/nccl/lib:\$HOME/.local/lib/gl:\${LD_LIBRARY_PATH:-}
 export PYTHONUNBUFFERED=1
