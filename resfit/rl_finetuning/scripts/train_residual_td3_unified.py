@@ -967,6 +967,8 @@ def main():
     cfg.agent.actor_lr = args.actor_lr
     cfg.agent.critic_lr = args.critic_lr
     cfg.agent.actor.action_scale = args.action_scale
+    # Bound target noise clip to actor output range (prevents critic OOD evaluation)
+    cfg.agent.stddev_clip = args.action_scale
     cfg.agent.actor.action_l2_reg_weight = args.action_l2_reg
     cfg.agent.actor.hidden_dim = args.actor_hidden_dim
     cfg.agent.critic.hidden_dim = args.critic_hidden_dim

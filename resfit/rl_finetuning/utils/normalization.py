@@ -74,7 +74,10 @@ class ActionScaler:
         action_half_range = torch.maximum(action_half_range, min_half_range)
 
         # Expand the range by action_scale factor
-        expanded_half_range = action_half_range * (1 + action_scale)
+        # Use 2*action_scale to ensure headroom > actor output range:
+        # Actor outputs in [-action_scale, +action_scale], base occupies [-1/(1+2s), +1/(1+2s)]
+        # So headroom = 2s/(1+2s) > s for any s > 0, preventing boundary saturation.
+        expanded_half_range = action_half_range * (1 + 2 * action_scale)
 
         # Store the final limits
         self._limits = self.Limits(
