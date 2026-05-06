@@ -607,7 +607,6 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
     """
 
     CAMERA_MAP = {
-        "front": "observation.images.front",
         "cam_base": "observation.images.back",
         "cam_wrist": "observation.images.wrist",
     }
@@ -697,11 +696,7 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
                 low=0, high=255,
                 shape=(num_envs, 3, rl_img_size, rl_img_size), dtype=np.uint8,
             )
-        for depth_key in ["observation.depth.front", "observation.depth.wrist"]:
-            obs_spaces[depth_key] = gym.spaces.Box(
-                low=0.0, high=1.0,
-                shape=(num_envs, 1, rl_img_size, rl_img_size), dtype=np.float32,
-            )
+        # Depth observation spaces (removed – not used by RL critic/actor)
         # Object state: white_cube(7) + green_cube(3) = 10D
         obs_spaces["observation.object_state"] = gym.spaces.Box(
             low=-np.inf, high=np.inf,
@@ -803,16 +798,8 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
         opt_wrist.geomgroup[4] = 0
 
         # Persistent renderers
-        _rs = self.rl_img_size
         renderer_base = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
         renderer_wrist = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
-        renderer_front = mujoco.Renderer(model, height=_rs, width=_rs)
-
-        # Depth renderers
-        depth_renderer_front = mujoco.Renderer(model, height=_rs, width=_rs)
-        depth_renderer_front.enable_depth_rendering()
-        depth_renderer_wrist = mujoco.Renderer(model, height=_rs, width=_rs)
-        depth_renderer_wrist.enable_depth_rendering()
 
         # White cube (freejoint)
         white_jnt_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, "white_cube_joint")
@@ -892,9 +879,6 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
             "n_substeps": n_substeps,
             "renderer_base": renderer_base,
             "renderer_wrist": renderer_wrist,
-            "renderer_front": renderer_front,
-            "depth_renderer_front": depth_renderer_front,
-            "depth_renderer_wrist": depth_renderer_wrist,
             "cam_base_id": cam_base_id,
             "cam_wrist_id": cam_wrist_id,
             "front_cam_id": front_cam_id,
@@ -1462,10 +1446,6 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
 
     def _build_obs_dict(self, render_mode: str = "full") -> dict[str, torch.Tensor]:
         images: dict[str, list[np.ndarray]] = {k: [] for k in self.CAMERA_MAP.values()}
-        depth_images: dict[str, list[np.ndarray]] = {
-            "observation.depth.front": [],
-            "observation.depth.wrist": [],
-        }
 
         if self._parallel and hasattr(self, '_par_states'):
             # Use cached states from parallel step (already computed by workers)
@@ -1475,16 +1455,9 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
             for i in range(self.num_envs):
                 if render_mode == "full":
                     self._render_cameras(i, images)
-                    self._render_depth(i, depth_images)
-                elif render_mode == "rl_only":
-                    for key in images:
-                        images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
-                    self._render_depth(i, depth_images)
                 else:
                     for key in images:
                         images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
-                    for key in depth_images:
-                        depth_images[key].append(np.zeros((1, self.rl_img_size, self.rl_img_size), dtype=np.float32))
         else:
             # Sequential path: compute states from main-process model/data
             states = []
@@ -1514,16 +1487,9 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
                 # Images
                 if render_mode == "full":
                     self._render_cameras(i, images)
-                    self._render_depth(i, depth_images)
-                elif render_mode == "rl_only":
-                    for key in images:
-                        images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
-                    self._render_depth(i, depth_images)
                 else:
                     for key in images:
                         images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
-                    for key in depth_images:
-                        depth_images[key].append(np.zeros((1, self.rl_img_size, self.rl_img_size), dtype=np.float32))
 
                 # Object state: white_cube(7) + green_cube_pos(3)
                 qa = env["white_qposadr"]
@@ -1538,8 +1504,6 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
         out["observation.state"] = torch.as_tensor(np.stack(states), device=self.device, dtype=torch.float32)
         for key, frames in images.items():
             out[key] = torch.as_tensor(np.stack(frames), device=self.device, dtype=torch.uint8)
-        for key, frames in depth_images.items():
-            out[key] = torch.as_tensor(np.stack(frames), device=self.device, dtype=torch.float32)
         out["observation.object_state"] = torch.as_tensor(np.stack(object_states), device=self.device, dtype=torch.float32)
         return out
 
@@ -1547,7 +1511,6 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
         env = self._envs[env_idx]
         data = env["data"]
         camera_config = [
-            ("front", env["renderer_front"], env["front_cam_id"], None),
             ("cam_base", env["renderer_base"], env["cam_base_id"], env["opt_base"]),
             ("cam_wrist", env["renderer_wrist"], env["cam_wrist_id"], env["opt_wrist"]),
         ]
@@ -1564,37 +1527,6 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
                 img_rgb = cv2.resize(img_rgb, (self.rl_img_size, self.rl_img_size), interpolation=cv2.INTER_LINEAR)
             images_out[resfit_key].append(np.transpose(img_rgb, (2, 0, 1)))
 
-    def _render_depth(
-        self,
-        env_idx: int,
-        depth_out: dict[str, list[np.ndarray]],
-    ) -> None:
-        """Render depth for front and wrist cameras, normalize to [0,1]."""
-        env = self._envs[env_idx]
-        data = env["data"]
-
-        depth_config = [
-            ("front", env["depth_renderer_front"], env["front_cam_id"], None),
-            ("wrist", env["depth_renderer_wrist"], env["cam_wrist_id"], env["opt_wrist"]),
-        ]
-
-        for cam_name, renderer, cam_id, opt in depth_config:
-            key = f"observation.depth.{cam_name}"
-            if cam_id >= 0:
-                kw = {"scene_option": opt} if opt else {}
-                renderer.update_scene(data, camera=cam_id, **kw)
-                depth_raw = renderer.render().copy()
-            else:
-                depth_raw = np.zeros((self.rl_img_size, self.rl_img_size), dtype=np.float32)
-
-            norm = self._depth_norm.get(cam_name, {"min": 0.0, "max": 1.0})
-            d_min, d_max = norm["min"], norm["max"]
-            depth_raw = np.clip(depth_raw, d_min, d_max)
-            depth_raw = (depth_raw - d_min) / max(d_max - d_min, 1e-6)
-            depth_raw = np.nan_to_num(depth_raw, nan=0.0, posinf=1.0, neginf=0.0)
-
-            depth_out[key].append(depth_raw[np.newaxis].astype(np.float32))
-
     # ------------------------------------------------------------------
     # Convenience
     # ------------------------------------------------------------------
@@ -1607,7 +1539,7 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
                   size: tuple[int, int] = (360, 640)) -> np.ndarray:
         env = self._envs[env_id]
         cam_map = {
-            "front": (env["renderer_front"], env["front_cam_id"], None),
+            "front": (env["renderer_base"], env["cam_base_id"], env["opt_base"]),
             "back": (env["renderer_base"], env["cam_base_id"], env["opt_base"]),
             "wrist": (env["renderer_wrist"], env["cam_wrist_id"], env["opt_wrist"]),
         }
@@ -1634,8 +1566,7 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
             self._close_workers()
 
         for env in self._envs:
-            for key in ("renderer_base", "renderer_wrist", "renderer_front",
-                        "depth_renderer_front", "depth_renderer_wrist"):
+            for key in ("renderer_base", "renderer_wrist"):
                 renderer = env.get(key)
                 if renderer is not None:
                     try:
