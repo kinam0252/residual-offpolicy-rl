@@ -1228,7 +1228,7 @@ def main():
         store_mask = None
 
         _t0 = time.perf_counter()
-        if store_mask.any():
+        if store_mask is None or store_mask.any():
             _add_transitions(
                 obs=obs, next_obs=next_obs, actions=_replay_action,
                 reward=reward_clamped, done=terminated, device=device,
