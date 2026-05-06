@@ -40,7 +40,7 @@ export OMP_NUM_THREADS=1
 export MKL_NUM_THREADS=1
 export PYTHONPATH=${REPO}:\${PYTHONPATH:-}
 cd ${REPO}
-python3 scripts/rollout_base_policy_video.py \
+python3 scripts/workloads/rollout_base_policy_video.py \
     --task ${TASK} \
     --groot_checkpoint ${CKPT} \
     --video_dir ${VIDEO_BASE}/${TASK} \
