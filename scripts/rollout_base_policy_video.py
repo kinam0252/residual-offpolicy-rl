@@ -173,12 +173,18 @@ def create_env(task, groot_checkpoint, device, num_envs=2, max_episode_steps=500
 
     elif task == "pnp":
         pos_file = str(repo_root / "configs" / "pnp_66ep_positions.json")
+        with open(pos_file) as f:
+            pnp_positions = json.load(f)
         scene_xml = os.path.expanduser(
             "~/Repos/Intern/Mujoco_Franka/mujoco_menagerie/franka_fr3/fr3_with_hand.xml"
         )
+        # Use first N positions from file for deterministic init
+        cube_pos = [p["cube_pos"] for p in pnp_positions[:num_envs]]
+        bowl_pos = [p["bowl_pos"] for p in pnp_positions[:num_envs]]
         mujoco_env = VecEnvClass(
             num_envs=num_envs,
-            cube_positions=[[0.42, -0.03, 0.02]] * num_envs,
+            cube_positions=cube_pos,
+            bowl_positions=bowl_pos,
             scene_xml=scene_xml,
             episode_positions_file=pos_file,
             max_episode_steps=max_episode_steps,
