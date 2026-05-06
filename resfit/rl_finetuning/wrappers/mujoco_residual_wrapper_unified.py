@@ -27,6 +27,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from concurrent.futures import ThreadPoolExecutor
+
 import gymnasium as gym
 import numpy as np
 import torch
@@ -99,6 +101,8 @@ class MuJoCoResidualWrapperUnified:
         ema_alpha: float = 0.0,
         torch_compile: bool = False,
         chunk_sync: bool = False,
+        async_prefetch: bool = True,
+        render_parallel: bool = True,
         # Task-specific
         grip_min: float = 0.0,
         grip_max: float = 1.0,
@@ -175,6 +179,12 @@ class MuJoCoResidualWrapperUnified:
         self._chunk_sync = chunk_sync
         self._global_chunk_step: int = self.open_loop_horizon
 
+        # Async prefetch state
+        self._async_prefetch = async_prefetch and chunk_sync
+        self._async_groot_future = None
+        self._render_pool = ThreadPoolExecutor(max_workers=min(self.num_envs, 8)) if render_parallel else None
+        self._async_pool = ThreadPoolExecutor(max_workers=1) if self._async_prefetch else None
+
         # Observation space
         spaces = dict(vec_env.observation_space.spaces)
         spaces["observation.base_action"] = gym.spaces.Box(
@@ -196,6 +206,13 @@ class MuJoCoResidualWrapperUnified:
     # ------------------------------------------------------------------
 
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
+        # Drain pending async prefetch (discard result)
+        if self._async_groot_future is not None:
+            try:
+                self._async_groot_future.result()
+            except Exception:
+                pass
+            self._async_groot_future = None
         raw_obs, info = self.vec_env.reset(**kwargs)
         self._cached_chunks = [None] * self.num_envs
         self._chunk_idx = [self.open_loop_horizon] * self.num_envs
@@ -251,8 +268,17 @@ class MuJoCoResidualWrapperUnified:
                 self._ema_quat[eid] = None
                 self._grip_latched[eid] = False
                 self._grip_open_count[eid] = 0
+            # Drain pending async — done envs invalidate the prefetched result
+            if self._async_groot_future is not None:
+                try:
+                    self._async_groot_future.result()
+                except Exception:
+                    pass
+                self._async_groot_future = None
             self.vec_env.reset_envs(done_ids)
             raw_obs = self.vec_env._build_obs_dict(render_mode="rl_only")
+            if self._chunk_sync:
+                self._global_chunk_step = self.open_loop_horizon
 
         next_base_action = self._get_base_actions()
         if done.any():
@@ -261,6 +287,15 @@ class MuJoCoResidualWrapperUnified:
 
         self._last_obs = raw_obs
         augmented_obs = self._augment_obs(raw_obs, next_base_action)
+
+        # Start async prefetch one step BEFORE the boundary so GR00T runs
+        # during the training loop (agent.update, agent.act) between step() calls.
+        # Renders state from this step — 1 physics step ahead of sync baseline.
+        if (self._async_prefetch and self._chunk_sync
+                and self._global_chunk_step == self.open_loop_horizon - 1
+                and self._async_groot_future is None):
+            self._start_async_prefetch()
+
         return augmented_obs, reward, terminated, truncated, info
 
     # ------------------------------------------------------------------
@@ -316,8 +351,18 @@ class MuJoCoResidualWrapperUnified:
         actions = np.zeros((self.num_envs, 8), dtype=np.float32)
 
         if self._global_chunk_step >= self.open_loop_horizon:
-            all_ids = list(range(self.num_envs))
-            self._query_groot_batch(all_ids)
+            if self._async_groot_future is not None:
+                # Pick up async result and apply atomically on main thread
+                prefetched = self._async_groot_future.result()
+                self._async_groot_future = None
+                if prefetched is not None:
+                    for eid, chunk in prefetched.items():
+                        self._cached_chunks[eid] = chunk
+                        self._chunk_idx[eid] = 0
+            else:
+                # No async result — run synchronously (first call or async disabled)
+                all_ids = list(range(self.num_envs))
+                self._query_groot_batch(all_ids)
             self._global_chunk_step = 0
 
         for i in range(self.num_envs):
@@ -332,6 +377,17 @@ class MuJoCoResidualWrapperUnified:
 
         self._held_base_action = actions.copy()
         return actions
+
+    def _start_async_prefetch(self) -> None:
+        """Start GR00T render+inference async in background thread.
+        Uses _query_groot_batch_core which returns results without mutating state.
+        """
+        if self._async_groot_future is not None:
+            return  # already running
+        all_ids = list(range(self.num_envs))
+        self._async_groot_future = self._async_pool.submit(
+            self._query_groot_batch_core, all_ids
+        )
 
     def _get_current_pose(self, env_idx: int) -> np.ndarray:
         """Get current EEF pose as 8D action (hold position)."""
@@ -353,23 +409,46 @@ class MuJoCoResidualWrapperUnified:
         return pose
 
     def _query_groot_batch(self, env_ids: list[int]) -> None:
+        """Run GR00T inference and write results directly to cached_chunks."""
+        results = self._query_groot_batch_core(env_ids)
+        if results is not None:
+            for eid, chunk in results.items():
+                self._cached_chunks[eid] = chunk
+                self._chunk_idx[eid] = 0
+
+    def _query_groot_batch_core(self, env_ids: list[int]) -> dict | None:
+        """Core GR00T render+inference. Returns {eid: chunk_dict} without mutating state."""
         if not env_ids:
-            return
+            return None
+
+        # Pre-sync qpos before parallel rendering to avoid race on _sync_qpos_all
+        if (hasattr(self.vec_env, '_parallel') and self.vec_env._parallel
+                and hasattr(self.vec_env, '_needs_qpos_sync')
+                and self.vec_env._needs_qpos_sync):
+            self.vec_env._sync_qpos_from_workers()
+            self.vec_env._needs_qpos_sync = False
+
         if self.policy is None:
+            results = {}
             for eid in env_ids:
                 groot_obs = self.vec_env.get_groot_obs(eid, self.task_description)
                 pos = groot_obs["state"]["proprio.eef_pos"][0, 0]
                 quat = groot_obs["state"]["proprio.eef_quat"][0, 0]
                 gw = groot_obs["state"]["proprio.gripper_width"][0, 0]
-                self._cached_chunks[eid] = {
+                results[eid] = {
                     "eef_pos": np.tile(pos, (self.action_horizon, 1)),
                     "eef_quat": np.tile(quat, (self.action_horizon, 1)),
                     "gripper_width": np.tile(gw, (self.action_horizon, 1)),
                 }
-                self._chunk_idx[eid] = 0
-            return
+            return results
 
-        per_env_obs = [self.vec_env.get_groot_obs(eid, self.task_description) for eid in env_ids]
+        # Render all envs — parallel or sequential
+        if self._render_pool is not None and len(env_ids) > 1:
+            def _render_one(eid):
+                return self.vec_env.get_groot_obs(eid, self.task_description)
+            per_env_obs = list(self._render_pool.map(_render_one, env_ids))
+        else:
+            per_env_obs = [self.vec_env.get_groot_obs(eid, self.task_description) for eid in env_ids]
         batched_obs = {"video": {}, "state": {}, "language": {}}
         for vk in per_env_obs[0]["video"]:
             batched_obs["video"][vk] = np.concatenate([o["video"][vk] for o in per_env_obs], axis=0)
@@ -383,23 +462,23 @@ class MuJoCoResidualWrapperUnified:
         except Exception as e:
             import warnings
             warnings.warn(f"GR00T inference failed: {e}. Using zero actions for {len(env_ids)} envs.")
-            # Fallback: zero base actions (residual-only control)
             horizon = self.open_loop_horizon
+            results = {}
             for eid in env_ids:
-                self._cached_chunks[eid] = {
+                results[eid] = {
                     "eef_pos": np.zeros((horizon, 3), dtype=np.float32),
                     "eef_quat": np.tile(np.array([1, 0, 0, 0], dtype=np.float32), (horizon, 1)),
                     "gripper_width": np.zeros((horizon, 1), dtype=np.float32),
                 }
-                self._chunk_idx[eid] = 0
-            return
+            return results
+        results = {}
         for bi, eid in enumerate(env_ids):
-            self._cached_chunks[eid] = {
+            results[eid] = {
                 "eef_pos": np.asarray(action_result["action.eef_pos"][bi], dtype=np.float32),
                 "eef_quat": np.asarray(action_result["action.eef_quat"][bi], dtype=np.float32),
                 "gripper_width": np.asarray(action_result["action.gripper_width"][bi], dtype=np.float32),
             }
-            self._chunk_idx[eid] = 0
+        return results
 
     # ------------------------------------------------------------------
     # Action combining
@@ -488,6 +567,15 @@ class MuJoCoResidualWrapperUnified:
     # ------------------------------------------------------------------
 
     def close(self):
+        if self._async_groot_future is not None:
+            self._async_groot_future.result()
+            self._async_groot_future = None
+        if self._async_pool is not None:
+            self._async_pool.shutdown(wait=False)
+            self._async_pool = None
+        if self._render_pool is not None:
+            self._render_pool.shutdown(wait=False)
+            self._render_pool = None
         self.vec_env.close()
 
     def reset_envs(self, env_ids: list[int]):
