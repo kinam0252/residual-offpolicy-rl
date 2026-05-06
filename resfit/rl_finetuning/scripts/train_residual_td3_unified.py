@@ -1186,7 +1186,7 @@ def main():
     ep_cum_reward = torch.zeros(num_envs, device=device)
     ep_step_counter = torch.zeros(num_envs, device=device, dtype=torch.long)
 
-    while global_step <= args.total_timesteps:
+    while global_step < args.total_timesteps:
         frac = min(global_step / max(args.total_timesteps, 1), 1.0)
         stddev = args.stddev_max + (args.stddev_min - args.stddev_max) * frac
 
