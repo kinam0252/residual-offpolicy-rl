@@ -79,6 +79,38 @@ export LD_LIBRARY_PATH=$HOME/lib-compat:${LD_LIBRARY_PATH:-}
 
 ---
 
+## EGL_BAD_ACCESS (RL Training 크래시)
+
+**증상**: Critic warmup 후 `env.reset()` 또는 training loop 중 `renderer.render()` 에서:
+```
+EGLError(err = EGL_BAD_ACCESS, baseOperation = eglMakeCurrent, ...)
+```
+
+**원인**: `async_prefetch=True` (기본값)이 background thread에서 GR00T render+inference를 실행.
+EGL context는 **thread-affine** — 한 thread에서 `eglMakeCurrent()` 하면 다른 thread에서 같은 display 접근 시 `EGL_BAD_ACCESS`.
+
+추가로 critic warmup의 heavy CUDA 연산 (CUBLAS matmul, backprop)이 EGL display state를 corrupt할 수 있음.
+
+**해결** (commit `a56017a`, 2026-05-06):
+```python
+# train_residual_td3_unified.py & eval_async_unified.py:
+env = MuJoCoResidualWrapperUnified(..., async_prefetch=False)
+
+# critic warmup 후 (train script에 이미 적용):
+env.vec_env.rebuild_renderers()  # 새로운 EGL context 생성
+```
+
+**SLURM script**:
+```bash
+export MUJOCO_EGL_DEVICE_ID=${CUDA_VISIBLE_DEVICES%%,*}  # GPU 매칭
+```
+
+**확인 방법**: 3분 이내 crash → `async_prefetch` 문제 의심. Job 로그에 `Rebuilding EGL renderers` 출력 후에도 crash → 다른 원인.
+
+**이력**: Job 8560 (성공)에는 `async_prefetch` 기능 자체가 없었음. 이후 추가되면서 모든 RL training이 crash.
+
+---
+
 ## SLURM 환경 변수 템플릿
 
 모든 SLURM 잡에 필요한 최소 환경 설정:
