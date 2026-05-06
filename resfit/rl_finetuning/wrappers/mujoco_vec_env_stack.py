@@ -1102,7 +1102,7 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
     # ------------------------------------------------------------------
 
     def get_groot_obs(self, env_idx: int,
-                      task_str: str = "pick up the white cube and stack it on the green cube") -> dict:
+                      task_str: str = "Pick up the white cube and stack it on top of the green cube.") -> dict:
         """Build GR00T-format observation. Gripper is in RAW METERS."""
         # Lazy sync from workers if parallel mode has pending state
         if self._parallel and self._needs_qpos_sync:

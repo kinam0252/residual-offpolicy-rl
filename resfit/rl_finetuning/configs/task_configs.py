@@ -87,7 +87,7 @@ class TaskConfig:
 
 CUP_CONFIG = TaskConfig(
     name="cup",
-    task_description="Pick up the cup and stand it upright.",
+    task_description="Pick up the cup lying on its side and stand it upright.",
     vec_env_module="resfit.rl_finetuning.wrappers.mujoco_vec_env_cup",
     vec_env_class="MuJoCoVecEnvCup",
     grip_min=0.0,
@@ -151,7 +151,7 @@ PNP_CONFIG = TaskConfig(
 
 LIFT_CONFIG = TaskConfig(
     name="lift",
-    task_description="Pick up the red cube and lift it.",
+    task_description="lift the wooden block",
     vec_env_module="resfit.rl_finetuning.wrappers.mujoco_vec_env",
     vec_env_class="MuJoCoVecEnv",
     grip_min=0.0,
@@ -183,7 +183,7 @@ LIFT_CONFIG = TaskConfig(
 
 STACK_CONFIG = TaskConfig(
     name="stack",
-    task_description="Pick up the green cube and stack it on the white cube.",
+    task_description="Pick up the white cube and stack it on top of the green cube.",
     vec_env_module="resfit.rl_finetuning.wrappers.mujoco_vec_env_stack",
     vec_env_class="MuJoCoVecEnvStack",
     grip_min=0.0,
@@ -213,7 +213,7 @@ STACK_CONFIG = TaskConfig(
 
 DRAWER_CONFIG = TaskConfig(
     name="drawer",
-    task_description="Close the open drawer by pushing it.",
+    task_description="Close the drawer",
     vec_env_module="resfit.rl_finetuning.wrappers.mujoco_vec_env_drawer",
     vec_env_class="MuJoCoVecEnvDrawer",
     grip_min=0.0,

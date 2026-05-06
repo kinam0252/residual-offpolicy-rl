@@ -14,8 +14,8 @@ submit_task() {
     local CKPT=$2
 
     sbatch --parsable \
-        --partition=sub \
-        --qos=core-on-sub \
+        --partition=core \
+        --qos=core-extra \
         --gres=gpu:1 \
         --mem=80G \
         --cpus-per-task=4 \

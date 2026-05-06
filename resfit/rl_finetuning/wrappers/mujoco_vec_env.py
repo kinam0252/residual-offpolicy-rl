@@ -821,7 +821,7 @@ class MuJoCoVecEnv(SubprocVecEnvMixin):
     # GR00T observation (separate from RL obs)
     # ------------------------------------------------------------------
 
-    def get_groot_obs(self, env_idx: int, task_str: str = "lift the cube") -> dict:
+    def get_groot_obs(self, env_idx: int, task_str: str = "lift the wooden block") -> dict:
         """Build GR00T-format observation for a single environment.
 
         Returns the exact dict layout expected by ``Gr00tPolicy.get_action()``.
