@@ -33,10 +33,11 @@ import cv2
 import gymnasium as gym
 import mujoco
 import time
-from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
+
+from .subproc_vec_env import SubprocVecEnvMixin
 
 # ── Import Mujoco_Franka utilities ──
 _MUJOCO_FRANKA_SRC = str(Path(__file__).resolve().parents[4] / "Mujoco_Franka" / "src")
@@ -93,7 +94,361 @@ WRIST_CAM_MJ_QUAT = _wrist_cam_mj_quat()
 WRIST_CAM_MJ_POS = np.array([-0.08, 0.0, 0.0])
 
 
-class MuJoCoVecEnv:
+def _lift_env_worker_loop(pipe, init_kwargs):
+    """Worker process for Lift environment: physics-only, no renderers."""
+    import os
+
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["MUJOCO_GL"] = "osmesa"
+
+    import mujoco as _mj
+    import numpy as _np
+    from scipy.spatial.transform import Rotation as _Rot
+
+    from utils import (
+        HOME_QPOS as _HOME_QPOS,
+        get_model_ids as _get_model_ids,
+        get_tcp_pose as _get_tcp_pose,
+        load_calib as _load_calib,
+        make_model_with_cube as _make_model_with_cube,
+        solve_ik as _solve_ik,
+    )
+
+    num_local_envs = init_kwargs["num_local_envs"]
+    cube_positions = init_kwargs["cube_positions"]
+    cube_quat_wxyz = init_kwargs["cube_quat_wxyz"]
+    random_cube_range = init_kwargs["random_cube_range"]
+    cube_base_pos = _np.array(init_kwargs["cube_base_pos"], dtype=_np.float64)
+    scene_xml = init_kwargs["scene_xml"]
+    calib_path = init_kwargs["calib_path"]
+    use_calibrated_wrist = init_kwargs["use_calibrated_wrist"]
+    cube_size = tuple(init_kwargs["cube_size"])
+    reward_type = init_kwargs["reward_type"]
+    max_episode_steps = init_kwargs["max_episode_steps"]
+    success_threshold = init_kwargs["success_threshold"]
+    success_lift_threshold = init_kwargs["success_lift_threshold"]
+
+    T_base_cam = _load_calib(calib_path)
+
+    envs = []
+    for i in range(num_local_envs):
+        cube_pos = _np.array(cube_positions[i], dtype=_np.float64)
+        model = _make_model_with_cube(
+            T_base_cam,
+            cube_pos=cube_pos,
+            cube_quat_wxyz=cube_quat_wxyz,
+            cube_size=cube_size,
+            scene_xml=scene_xml,
+        )
+        data = _mj.MjData(model)
+        ids = _get_model_ids(model)
+
+        cam_wrist_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_CAMERA, "cam_wrist")
+        if not use_calibrated_wrist and cam_wrist_id >= 0:
+            model.cam_quat[cam_wrist_id] = WRIST_CAM_MJ_QUAT
+            model.cam_pos[cam_wrist_id] = WRIST_CAM_MJ_POS
+
+        hide_body_ids = []
+        for bname in ("hand", "fr3_link6", "fr3_link7"):
+            bid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_BODY, bname)
+            if bid >= 0:
+                hide_body_ids.append(bid)
+        for gi in range(model.ngeom):
+            if model.geom_bodyid[gi] in hide_body_ids and model.geom_group[gi] == 2:
+                model.geom_group[gi] = 4
+
+        cube_jnt_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, "cube_joint")
+        cube_qposadr = model.jnt_qposadr[cube_jnt_id] if cube_jnt_id >= 0 else None
+        cube_geom_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_GEOM, "cube_geom")
+
+        finger_geom_ids = []
+        for name in (
+            "finger_left_pad",
+            "finger_right_pad",
+            "finger_left",
+            "finger_right",
+            "left_finger_pad",
+            "right_finger_pad",
+        ):
+            gid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_GEOM, name)
+            if gid >= 0:
+                finger_geom_ids.append(gid)
+        if not finger_geom_ids:
+            for gid in range(model.ngeom):
+                name = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_GEOM, gid)
+                if name and "finger" in name.lower():
+                    finger_geom_ids.append(gid)
+
+        if cube_qposadr is not None:
+            data.qpos[cube_qposadr:cube_qposadr + 3] = cube_pos
+            data.qpos[cube_qposadr + 3:cube_qposadr + 7] = cube_quat_wxyz
+
+        for ji, jid in enumerate(ids["jnt_ids"]):
+            data.qpos[model.jnt_qposadr[jid]] = _HOME_QPOS[ji]
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = 0.04
+        _mj.mj_forward(model, data)
+
+        envs.append({
+            "model": model,
+            "data": data,
+            "ids": ids,
+            "cube_qposadr": cube_qposadr,
+            "cube_pos_init": cube_pos.copy(),
+            "cube_geom_id": cube_geom_id,
+            "finger_geom_ids": finger_geom_ids,
+            "grasp_state": {"grasped": False, "T_cube_in_tcp": None},
+            "initial_cube_z": float(cube_pos[2]) if cube_pos.shape[0] >= 3 else 0.0,
+            "step_count": 0,
+            "last_action": _np.zeros(8, dtype=_np.float32),
+        })
+
+    def _get_contacts(env):
+        data = env["data"]
+        cube_geom_id = env["cube_geom_id"]
+        finger_geom_ids = env["finger_geom_ids"]
+        if cube_geom_id < 0 or not finger_geom_ids:
+            finger_id = env["ids"]["finger_ids"][0]
+            if finger_id >= 0:
+                gw = data.qpos[env["model"].jnt_qposadr[finger_id]] / 0.04
+                c = 1.0 if gw < GRIPPER_CLOSE_THRESHOLD else 0.0
+                return _np.array([c, c, c], dtype=_np.float32)
+            return _np.zeros(3, dtype=_np.float32)
+
+        left_contact = 0.0
+        right_contact = 0.0
+        for ci in range(data.ncon):
+            contact = data.contact[ci]
+            g1, g2 = contact.geom1, contact.geom2
+            if cube_geom_id in (g1, g2):
+                other = g2 if g1 == cube_geom_id else g1
+                if other in finger_geom_ids:
+                    idx = finger_geom_ids.index(other)
+                    if idx % 2 == 0:
+                        left_contact = 1.0
+                    else:
+                        right_contact = 1.0
+        any_contact = max(left_contact, right_contact)
+        return _np.array([left_contact, right_contact, any_contact], dtype=_np.float32)
+
+    def _apply_action(env, target_pos, target_quat_xyzw, gripper_width):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        qn = _np.linalg.norm(target_quat_xyzw)
+        if qn > 1e-6:
+            target_quat_xyzw = target_quat_xyzw / qn
+
+        _solve_ik(model, data, ids["hand_id"], ids["jnt_ids"], target_pos, target_quat_xyzw, max_iter=50)
+
+        finger_pos = _np.clip(gripper_width, 0.0, 1.0) * 0.04
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = finger_pos
+
+        cube_qposadr = env["cube_qposadr"]
+        grasp_state = env["grasp_state"]
+        if cube_qposadr is not None:
+            if not grasp_state["grasped"] and gripper_width < GRIPPER_CLOSE_THRESHOLD:
+                tcp_pos_now, tcp_R_now = _get_tcp_pose(model, data, ids["hand_id"])
+                T_tcp = _np.eye(4)
+                T_tcp[:3, :3] = tcp_R_now
+                T_tcp[:3, 3] = tcp_pos_now
+
+                cube_pos_now = data.qpos[cube_qposadr:cube_qposadr + 3].copy()
+                cube_qw = data.qpos[cube_qposadr + 3:cube_qposadr + 7].copy()
+                cube_q_xyzw = [cube_qw[1], cube_qw[2], cube_qw[3], cube_qw[0]]
+                T_cube = _np.eye(4)
+                T_cube[:3, :3] = _Rot.from_quat(cube_q_xyzw).as_matrix()
+                T_cube[:3, 3] = cube_pos_now
+
+                grasp_state["grasped"] = True
+                grasp_state["T_cube_in_tcp"] = _np.linalg.inv(T_tcp) @ T_cube
+
+            if grasp_state["grasped"]:
+                tcp_pos_now, tcp_R_now = _get_tcp_pose(model, data, ids["hand_id"])
+                T_tcp = _np.eye(4)
+                T_tcp[:3, :3] = tcp_R_now
+                T_tcp[:3, 3] = tcp_pos_now
+                T_cube = T_tcp @ grasp_state["T_cube_in_tcp"]
+
+                data.qpos[cube_qposadr:cube_qposadr + 3] = T_cube[:3, 3]
+                q_c = _Rot.from_matrix(T_cube[:3, :3]).as_quat()
+                data.qpos[cube_qposadr + 3:cube_qposadr + 7] = [q_c[3], q_c[0], q_c[1], q_c[2]]
+
+        _mj.mj_forward(model, data)
+        env["last_action"] = _np.concatenate([
+            _np.asarray(target_pos, dtype=_np.float32),
+            _np.asarray(target_quat_xyzw, dtype=_np.float32),
+            _np.array([gripper_width], dtype=_np.float32),
+        ])
+
+    def _compute_reward(env, reward_type, success_threshold):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        cube_qposadr = env["cube_qposadr"]
+        if cube_qposadr is None:
+            return 0.0
+
+        cube_z = data.qpos[cube_qposadr + 2]
+        lift_delta = cube_z - env["initial_cube_z"]
+
+        if reward_type == "sparse":
+            return 1.0 if lift_delta >= success_threshold else 0.0
+
+        if reward_type == "dense":
+            tcp_pos, _ = _get_tcp_pose(model, data, ids["hand_id"])
+            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
+            finger_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            grasped = float(env["grasp_state"]["grasped"])
+
+            distance_reward = (1.0 - _np.tanh(finger_cube_dist / 0.1)) * 1.0
+            contact_reward = grasped * 2.0
+            height_reward = float(lift_delta > 0.005) * _np.tanh(lift_delta / 0.1) * 100.0 * grasped
+            success_reward = float(lift_delta >= success_threshold) * 100.0 * grasped
+            return float(distance_reward + contact_reward + height_reward + success_reward)
+
+        if reward_type == "dense_clipped":
+            tcp_pos, _ = _get_tcp_pose(model, data, ids["hand_id"])
+            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
+            finger_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            grasped = float(env["grasp_state"]["grasped"])
+
+            distance_reward = (1.0 - _np.tanh(finger_cube_dist / 0.1)) * 0.1
+            contact_reward = grasped * 0.2
+            height_reward = float(lift_delta > 0.005) * _np.tanh(lift_delta / 0.1) * 0.5 * grasped
+            success_reward = float(lift_delta >= success_threshold) * 1.0 * grasped
+            return float(_np.clip(distance_reward + contact_reward + height_reward + success_reward, 0.0, 1.0))
+
+        return float(_np.clip(lift_delta * 100.0, 0.0, 1.0))
+
+    def _is_success(env, success_lift_threshold):
+        cube_qposadr = env["cube_qposadr"]
+        if cube_qposadr is None or not env["grasp_state"]["grasped"]:
+            return False
+        cube_z = env["data"].qpos[cube_qposadr + 2]
+        lift_delta = cube_z - env["initial_cube_z"]
+        return lift_delta >= success_lift_threshold
+
+    def _build_state(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        tcp_pos, tcp_R = _get_tcp_pose(model, data, ids["hand_id"])
+        eef_quat_xyzw = _Rot.from_matrix(tcp_R).as_quat()
+        grip = []
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                grip.append(data.qpos[model.jnt_qposadr[fid]])
+            else:
+                grip.append(0.04)
+        contacts = _get_contacts(env)
+        return _np.concatenate([
+            tcp_pos.astype(_np.float32),
+            eef_quat_xyzw.astype(_np.float32),
+            _np.array(grip, dtype=_np.float32),
+            _np.array([contacts[2]], dtype=_np.float32),
+        ])
+
+    def _get_object_state(env):
+        qa = env["cube_qposadr"]
+        if qa is not None:
+            pos = env["data"].qpos[qa:qa + 3].copy()
+            quat_wxyz = env["data"].qpos[qa + 3:qa + 7].copy()
+            return _np.concatenate([pos, quat_wxyz]).astype(_np.float32)
+        return _np.zeros(7, dtype=_np.float32)
+
+    def _reset_env(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        for ji, jid in enumerate(ids["jnt_ids"]):
+            data.qpos[model.jnt_qposadr[jid]] = _HOME_QPOS[ji]
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = 0.04
+
+        cube_qposadr = env["cube_qposadr"]
+        if cube_qposadr is not None:
+            if random_cube_range is not None:
+                dx = _np.random.uniform(random_cube_range["dx"][0], random_cube_range["dx"][1])
+                dy = _np.random.uniform(random_cube_range["dy"][0], random_cube_range["dy"][1])
+                cube_pos = cube_base_pos.copy()
+                cube_pos[0] += dx
+                cube_pos[1] += dy
+                env["cube_pos_init"] = cube_pos
+                yaw_lo, yaw_hi = random_cube_range.get("yaw", (0, 0))
+                yaw = _np.random.uniform(yaw_lo, yaw_hi)
+                q_xyzw = _Rot.from_euler("z", _np.radians(yaw)).as_quat()
+                cube_quat = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+                data.qpos[cube_qposadr + 3:cube_qposadr + 7] = cube_quat
+            else:
+                data.qpos[cube_qposadr + 3:cube_qposadr + 7] = cube_quat_wxyz
+            data.qpos[cube_qposadr:cube_qposadr + 3] = env["cube_pos_init"]
+
+        data.qvel[:] = 0.0
+        _mj.mj_forward(model, data)
+
+        env["initial_cube_z"] = float(data.qpos[cube_qposadr + 2]) if cube_qposadr is not None else 0.0
+        env["step_count"] = 0
+        env["last_action"] = _np.zeros(8, dtype=_np.float32)
+        env["grasp_state"] = {"grasped": False, "T_cube_in_tcp": None}
+
+    pipe.send("ready")
+
+    while True:
+        cmd = pipe.recv()
+        op = cmd[0]
+
+        if op == "step_batch":
+            batch_results = []
+            for local_idx, pos3, quat4_xyzw, grip_w in cmd[1]:
+                env = envs[local_idx]
+                _apply_action(env, _np.asarray(pos3), _np.asarray(quat4_xyzw), float(grip_w))
+                env["step_count"] += 1
+                reward = _compute_reward(env, reward_type, success_threshold)
+                terminated = _is_success(env, success_lift_threshold)
+                truncated = env["step_count"] >= max_episode_steps
+                batch_results.append((
+                    _build_state(env),
+                    _get_object_state(env),
+                    reward,
+                    terminated,
+                    truncated,
+                    bool(env["grasp_state"]["grasped"]),
+                ))
+            pipe.send(batch_results)
+
+        elif op == "reset_batch":
+            for local_idx in cmd[1]:
+                _reset_env(envs[local_idx])
+            pipe.send("ok")
+
+        elif op == "get_qpos":
+            env = envs[cmd[1]]
+            pipe.send((
+                env["data"].qpos.copy(),
+                env["data"].qvel.copy(),
+                {
+                    "grasped": bool(env["grasp_state"]["grasped"]),
+                    "T_cube_in_tcp": env["grasp_state"]["T_cube_in_tcp"],
+                },
+            ))
+
+        elif op == "get_qpos_all":
+            pipe.send([
+                (
+                    env["data"].qpos.copy(),
+                    env["data"].qvel.copy(),
+                    {
+                        "grasped": bool(env["grasp_state"]["grasped"]),
+                        "T_cube_in_tcp": env["grasp_state"]["T_cube_in_tcp"],
+                    },
+                )
+                for env in envs
+            ])
+
+        elif op == "close":
+            pipe.send(None)
+            break
+
+
+class MuJoCoVecEnv(SubprocVecEnvMixin):
     """Vectorised MuJoCo environment for Franka FR3 cube-lift.
 
     Manages *N* independent ``(MjModel, MjData)`` pairs and persistent
@@ -123,6 +478,8 @@ class MuJoCoVecEnv:
         success_threshold: float = LIFT_REWARD_THRESHOLD_M,
         success_lift_threshold: float = LIFT_SUCCESS_THRESHOLD_M,
         reward_type: str = "sparse",
+        parallel_envs: bool = True,
+        num_workers: int = 8,
         device: str = "cuda:0",
         rl_img_size: int = RL_IMG_SIZE,
         groot_img_size: int = 256,
@@ -212,6 +569,34 @@ class MuJoCoVecEnv:
         # Joint scaling constants (for observation construction)
         self._joint_mid = (JOINT_UPPER + JOINT_LOWER) / 2.0
         self._joint_half_range = (JOINT_UPPER - JOINT_LOWER) / 2.0
+
+        self._parallel = False
+        self._par_states = []
+        self._par_object_states = []
+        self._needs_qpos_sync = False
+        self._workers = []
+        self._worker_pipes = []
+        self._env_to_worker = {}
+        if parallel_envs and num_envs > 1:
+            def _make_worker_kwargs(env_indices):
+                return {
+                    "cube_positions": [cube_positions[i].tolist() for i in env_indices],
+                    "cube_quat_wxyz": list(self._cube_quat_wxyz),
+                    "random_cube_range": self._random_cube_range,
+                    "cube_base_pos": self._cube_base_pos.tolist(),
+                    "scene_xml": scene_xml,
+                    "calib_path": calib_path,
+                    "use_calibrated_wrist": use_calibrated_wrist,
+                    "cube_size": tuple(self.cube_size),
+                    "reward_type": self.reward_type,
+                    "max_episode_steps": self.max_episode_steps,
+                    "success_threshold": self.success_threshold,
+                    "success_lift_threshold": self.success_lift_threshold,
+                }
+
+            self._init_parallel(num_envs, num_workers, _lift_env_worker_loop, _make_worker_kwargs)
+            for pipe in self._worker_pipes:
+                pipe.recv()
 
     # ------------------------------------------------------------------
     # Environment creation
@@ -332,14 +717,24 @@ class MuJoCoVecEnv:
 
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
         """Reset all environments and return observation dict."""
-        for i in range(self.num_envs):
-            self._reset_single_env(i)
+        if getattr(self, "_parallel", False):
+            self._parallel_reset_all(self.num_envs)
+            for i in range(self.num_envs):
+                self._reset_single_env(i)
+        else:
+            for i in range(self.num_envs):
+                self._reset_single_env(i)
 
+        self._par_states = []
+        self._par_object_states = []
+        self._needs_qpos_sync = False
         obs_dict = self._build_obs_dict()
         return obs_dict, {}
 
     def reset_envs(self, env_ids: list[int]) -> None:
         """Reset specific environments (auto-reset on done)."""
+        if getattr(self, "_parallel", False):
+            self._parallel_reset_envs(env_ids)
         for eid in env_ids:
             self._reset_single_env(eid)
 
@@ -362,20 +757,33 @@ class MuJoCoVecEnv:
         truncated = np.zeros(self.num_envs, dtype=bool)
 
         _t_ik = time.time()
-        def _step_single_env(i):
-            action = actions_np[i]
-            self._apply_action(i, action[:3], action[3:7], float(action[7]))
-            self._step_counts[i] += 1
-            self._last_actions[i] = action
-            rewards[i] = self._compute_reward(i)
-            if self._is_success(i):
-                terminated[i] = True
-            if self._step_counts[i] >= self.max_episode_steps:
-                truncated[i] = True
-
-        if self.num_envs > 1 and hasattr(self, "_thread_pool"):
-            list(self._thread_pool.map(_step_single_env, range(self.num_envs)))
+        if getattr(self, "_parallel", False):
+            results = self._parallel_step(actions_np, self.num_envs)
+            self._needs_qpos_sync = True
+            self._par_states = []
+            self._par_object_states = []
+            for i, res in enumerate(results):
+                state, obj_state, reward, terminated_b, truncated_b, grasped = res
+                rewards[i] = reward
+                terminated[i] = terminated_b
+                truncated[i] = truncated_b
+                self._par_states.append(state)
+                self._par_object_states.append(obj_state)
+                self._envs[i]["grasp_state"]["grasped"] = grasped
+                self._step_counts[i] += 1
+                self._last_actions[i] = actions_np[i]
         else:
+            def _step_single_env(i):
+                action = actions_np[i]
+                self._apply_action(i, action[:3], action[3:7], float(action[7]))
+                self._step_counts[i] += 1
+                self._last_actions[i] = action
+                rewards[i] = self._compute_reward(i)
+                if self._is_success(i):
+                    terminated[i] = True
+                if self._step_counts[i] >= self.max_episode_steps:
+                    truncated[i] = True
+
             for i in range(self.num_envs):
                 _step_single_env(i)
         _dt_ik = time.time() - _t_ik
@@ -412,6 +820,10 @@ class MuJoCoVecEnv:
 
         Returns the exact dict layout expected by ``Gr00tPolicy.get_action()``.
         """
+        if getattr(self, "_parallel", False) and getattr(self, "_needs_qpos_sync", False):
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
+
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
@@ -703,6 +1115,10 @@ class MuJoCoVecEnv:
             "rl_only" - skip RGB cameras, only render depth (for RL training steps)
             "none" - skip all rendering (state-only obs)
         """
+        if getattr(self, "_parallel", False) and getattr(self, "_needs_qpos_sync", False):
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
+
         states = []
         images: dict[str, list[np.ndarray]] = {k: [] for k in self.CAMERA_MAP.values()}
         depth_images: dict[str, list[np.ndarray]] = {
@@ -717,8 +1133,11 @@ class MuJoCoVecEnv:
             env = self._envs[i]
             model, data, ids = env["model"], env["data"], env["ids"]
 
-            # ── State (34D) ──
-            state = self._build_state(i)
+            # ── State (10D) ──
+            if getattr(self, "_parallel", False) and hasattr(self, "_par_states") and self._par_states:
+                state = self._par_states[i]
+            else:
+                state = self._build_state(i)
             states.append(state)
 
             # ── Raw joint pos / gripper ──
@@ -750,7 +1169,10 @@ class MuJoCoVecEnv:
                     depth_images[key].append(np.zeros((1, self.rl_img_size, self.rl_img_size), dtype=np.float32))
 
             # ── Object state (cube pose: pos3 + quat_wxyz4) ──
-            object_states.append(self._get_object_state(i))
+            if getattr(self, "_parallel", False) and hasattr(self, "_par_object_states") and self._par_object_states:
+                object_states.append(self._par_object_states[i])
+            else:
+                object_states.append(self._get_object_state(i))
 
         out: dict[str, torch.Tensor] = {}
 
@@ -925,6 +1347,9 @@ class MuJoCoVecEnv:
 
     def close(self) -> None:
         """Release renderers."""
+        if getattr(self, "_parallel", False):
+            self._close_workers()
+
         for env in self._envs:
             for key in ("renderer_base", "renderer_wrist", "renderer_front",
                         "depth_renderer_front", "depth_renderer_wrist"):
