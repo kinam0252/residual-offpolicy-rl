@@ -155,7 +155,7 @@ def create_env(task, groot_checkpoint, device, num_envs=2, max_episode_steps=500
     if task == "lift":
         mujoco_env = VecEnvClass(
             num_envs=num_envs,
-            cube_positions=[[0.5, 0.0, 0.46]] * num_envs,
+            cube_positions=[[0.45, -0.05, 0.02]] * num_envs,
             max_episode_steps=max_episode_steps,
             reward_type="dense",
             device=device,
@@ -178,7 +178,7 @@ def create_env(task, groot_checkpoint, device, num_envs=2, max_episode_steps=500
         )
         mujoco_env = VecEnvClass(
             num_envs=num_envs,
-            cube_positions=[[0.5, 0.0, 0.46]] * num_envs,
+            cube_positions=[[0.42, -0.03, 0.02]] * num_envs,
             scene_xml=scene_xml,
             episode_positions_file=pos_file,
             max_episode_steps=max_episode_steps,
@@ -249,7 +249,7 @@ def main():
     # Default camera per task
     camera = args.camera
     if camera is None:
-        camera = {"lift": "front", "pnp": "front", "stack": "front"}.get(args.task, "back")
+        camera = "back"  # cam_base for all tasks
 
     print(f"Task: {args.task}, GR00T: {args.groot_checkpoint}")
     print(f"Envs: {args.num_envs}, Episodes: {args.num_episodes}, Camera: {camera}")
