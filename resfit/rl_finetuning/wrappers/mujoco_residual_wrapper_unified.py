@@ -378,7 +378,21 @@ class MuJoCoResidualWrapperUnified:
         for lk in per_env_obs[0]["language"]:
             batched_obs["language"][lk] = [o["language"][lk][0] for o in per_env_obs]
 
-        action_result, _info = self.policy.get_action(batched_obs)
+        try:
+            action_result, _info = self.policy.get_action(batched_obs)
+        except Exception as e:
+            import warnings
+            warnings.warn(f"GR00T inference failed: {e}. Using zero actions for {len(env_ids)} envs.")
+            # Fallback: zero base actions (residual-only control)
+            horizon = self.open_loop_horizon
+            for eid in env_ids:
+                self._cached_chunks[eid] = {
+                    "eef_pos": np.zeros((horizon, 3), dtype=np.float32),
+                    "eef_quat": np.tile(np.array([1, 0, 0, 0], dtype=np.float32), (horizon, 1)),
+                    "gripper_width": np.zeros((horizon, 1), dtype=np.float32),
+                }
+                self._chunk_idx[eid] = 0
+            return
         for bi, eid in enumerate(env_ids):
             self._cached_chunks[eid] = {
                 "eef_pos": np.asarray(action_result["action.eef_pos"][bi], dtype=np.float32),

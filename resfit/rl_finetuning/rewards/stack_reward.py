@@ -105,7 +105,7 @@ def _compute_stage(stage_cfg: dict, features: dict[str, np.ndarray]) -> np.ndarr
         values = np.where(mask, weight, 0.0)
     elif stage_type == "tanh_decay":
         feature_key = stage_cfg["feature"]
-        scale = stage_cfg["scale"]
+        scale = max(stage_cfg["scale"], 1e-8)  # guard against division by zero
         dist = features[feature_key].astype(np.float64)
         raw = (1.0 - np.tanh(dist / scale)) * weight
         values = np.where(mask, raw, 0.0)

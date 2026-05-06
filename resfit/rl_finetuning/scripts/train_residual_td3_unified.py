@@ -1143,11 +1143,11 @@ def main():
         _replay_action = _to_replay_action_7d(obs["observation.base_action"], noise)
         reward_clamped = reward.clamp(0.0, 1.0)
 
-        # Skip stale chunk_sync transitions; use terminated for Q-bootstrap
-        if args.chunk_sync and done.any():
-            store_mask = ~done.bool()
-        else:
-            store_mask = None
+        # chunk_sync: after auto-reset, next_obs.base_action may be zeroed/stale.
+        # But done transitions are safe: terminated=True → no bootstrap, reward is valid.
+        # Only future concern is the FIRST step post-reset, but wrapper already clears
+        # chunk cache and triggers fresh inference, so no transitions need to be dropped.
+        store_mask = None
 
         _add_transitions(
             obs=obs, next_obs=next_obs, actions=_replay_action,
@@ -1223,11 +1223,9 @@ def main():
         # Clamp online reward to [0,1] to match offline (prevents Q-value instability)
         reward_clamped = reward.clamp(0.0, 1.0)
 
-        # Skip transitions where chunk_sync has stale base actions (env just reset)
-        if args.chunk_sync and done.any():
-            store_mask = ~done.bool()
-        else:
-            store_mask = torch.ones(num_envs, dtype=torch.bool, device=device)
+        # chunk_sync: wrapper already clears chunk cache on done and zeros next_base_action.
+        # Done transitions are safe (terminated=True → no bootstrap). No need to drop.
+        store_mask = None
 
         _t0 = time.perf_counter()
         if store_mask.any():
