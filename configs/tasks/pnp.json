@@ -21,6 +21,6 @@
 
   "scene_xml": "~/Repos/Intern/Mujoco_Franka/mujoco_menagerie/franka_fr3/fr3_with_hand.xml",
   "success_threshold": 0.095,
-  "reward_relabel": "none",
+  "offline_reward_relabel": "none",
   "reward_config": null
 }

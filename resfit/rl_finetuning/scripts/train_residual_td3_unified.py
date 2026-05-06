@@ -415,23 +415,25 @@ class AsyncEvaluator:
         result_files = sorted(self._results_dir.glob("eval_step*.json"))
         if not result_files:
             return None
-        latest = result_files[-1]
-        try:
-            with open(latest) as f:
-                data = _json_mod.load(f)
-            for rf in result_files:
-                try:
-                    rf.rename(rf.with_suffix(".done"))
-                except Exception:
-                    pass
-            step = data.get("eval/step", 0)
-            sr = data.get("eval/success_rate", 0.0)
-            _log(f"[AsyncEval] Results: step={step} SR={sr:.2%}")
-            if sr > self._best_success:
-                self._best_success = sr
-            return data
-        except Exception:
-            return None
+        # Process ALL pending results to avoid losing earlier high-SR results
+        best_data = None
+        best_sr = -1.0
+        for rf in result_files:
+            try:
+                with open(rf) as f:
+                    data = _json_mod.load(f)
+                sr = data.get("eval/success_rate", 0.0)
+                step = data.get("eval/step", 0)
+                _log(f"[AsyncEval] Results: step={step} SR={sr:.2%}")
+                if sr > best_sr:
+                    best_sr = sr
+                    best_data = data
+                rf.rename(rf.with_suffix(".done"))
+            except Exception:
+                pass
+        if best_data is not None and best_sr > self._best_success:
+            self._best_success = best_sr
+        return best_data
 
     def is_alive(self) -> bool:
         return self._proc is not None and self._proc.poll() is None

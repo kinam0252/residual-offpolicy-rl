@@ -21,6 +21,6 @@
 
   "scene_xml": null,
   "success_threshold": 0.03,
-  "reward_relabel": "computed",
+  "offline_reward_relabel": "computed",
   "reward_config": "configs/reward_stack.yaml"
 }

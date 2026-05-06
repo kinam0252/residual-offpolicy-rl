@@ -21,6 +21,6 @@
 
   "scene_xml": null,
   "success_threshold": 0.01,
-  "reward_relabel": "none",
+  "offline_reward_relabel": "none",
   "reward_config": null
 }
