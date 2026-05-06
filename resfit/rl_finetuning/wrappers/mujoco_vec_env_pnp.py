@@ -33,7 +33,6 @@ import cv2
 import gymnasium as gym
 import mujoco
 import time
-from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 from scipy.spatial.transform import Rotation
@@ -198,10 +197,567 @@ def _make_model_with_cube_and_bowl(T_base_cam, cube_pos, bowl_pos,
 
 
 # ====================================================================
+# PnP worker loop (top-level, picklable for multiprocessing.spawn)
+# ====================================================================
+
+def _pnp_env_worker_loop(pipe, init_kwargs):
+    """Worker process for PnP environment: physics-only, no renderers.
+
+    Protocol (via pipe):
+      recv: ("step_batch", [(local_idx, pos3, quat4, grip), ...])
+      send: [(state_10d, obj_state_10d, reward, terminated, truncated, grasped), ...]
+
+      recv: ("reset_batch", [local_idx, ...])
+      send: "ok"
+
+      recv: ("get_qpos", local_idx)
+      send: (qpos_copy, qvel_copy, grasp_state_dict)
+
+      recv: ("get_qpos_all",)
+      send: [(qpos, qvel, grasp_state_dict), ...]
+
+      recv: ("close",)
+      send: None  (then exit)
+    """
+    import os
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    os.environ['MUJOCO_GL'] = 'osmesa'
+
+    import mujoco as _mj
+    import numpy as _np
+    from scipy.spatial.transform import Rotation as _Rot
+
+    from utils import (
+        HOME_QPOS as _HOME_QPOS,
+        get_model_ids as _get_model_ids,
+        get_tcp_pose as _get_tcp_pose,
+        solve_ik as _solve_ik,
+        load_calib as _load_calib,
+        _wrist_cam_xml as _wrist_cam_xml_fn,
+        _bind_wrist_cam as _bind_wrist_cam_fn,
+    )
+
+    # Unpack init kwargs
+    num_local_envs = init_kwargs["num_local_envs"]
+    cube_positions = init_kwargs["cube_positions"]
+    bowl_positions = init_kwargs["bowl_positions"]
+    cube_quat_wxyz = init_kwargs["cube_quat_wxyz"]
+    cube_size = tuple(init_kwargs["cube_size"])
+    scene_xml = init_kwargs["scene_xml"]
+    calib_path = init_kwargs["calib_path"]
+    reward_type = init_kwargs["reward_type"]
+    max_episode_steps = init_kwargs["max_episode_steps"]
+    success_threshold = init_kwargs["success_threshold"]
+    episode_positions = init_kwargs.get("episode_positions")
+    random_cube_range = init_kwargs.get("random_cube_range")
+    random_bowl_range = init_kwargs.get("random_bowl_range")
+    cube_base_pos = _np.array(init_kwargs.get("cube_base_pos", [0.42, -0.03, 0.02]))
+    bowl_base_pos = _np.array(init_kwargs.get("bowl_base_pos", DEFAULT_BOWL_POS))
+
+    T_base_cam = _load_calib(calib_path)
+
+    # Build environments (physics only, no renderers)
+    envs = []
+    for i in range(num_local_envs):
+        model = _make_model_with_cube_and_bowl(
+            T_base_cam,
+            cube_pos=_np.array(cube_positions[i]),
+            bowl_pos=_np.array(bowl_positions[i]),
+            cube_quat_wxyz=cube_quat_wxyz,
+            cube_size=cube_size,
+            bowl_radius=BOWL_RADIUS,
+            use_calibrated_wrist=False,
+            scene_xml=scene_xml,
+        )
+        _bind_wrist_cam_fn(model)
+        data = _mj.MjData(model)
+        ids = _get_model_ids(model)
+
+        cube_jnt_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, "cube_joint")
+        cube_qposadr = model.jnt_qposadr[cube_jnt_id] if cube_jnt_id >= 0 else None
+        cube_geom_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_GEOM, "cube_geom")
+        weld_eq_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_EQUALITY, "cube_grasp")
+        bowl_body_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_BODY, "bowl")
+
+        # Finger geom IDs
+        finger_geom_ids = []
+        for body_name in ("left_finger", "right_finger"):
+            bid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_BODY, body_name)
+            if bid < 0:
+                continue
+            for gid in range(model.ngeom):
+                if model.geom_bodyid[gid] == bid and model.geom_group[gid] == 3:
+                    finger_geom_ids.append(gid)
+        if not finger_geom_ids:
+            for gid in range(model.ngeom):
+                name = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_GEOM, gid)
+                if name and "finger" in name.lower():
+                    finger_geom_ids.append(gid)
+
+        # Actuator IDs
+        arm_actuator_ids = []
+        for jid in ids["jnt_ids"]:
+            jname = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_JOINT, jid)
+            aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, jname)
+            arm_actuator_ids.append(aid)
+
+        # Set high friction + kp on fingers (same as main process)
+        for gid in finger_geom_ids:
+            model.geom_friction[gid] = [5.0, 0.5, 0.1]
+            model.geom_condim[gid] = 6
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                model.actuator_gainprm[aid, 0] = 5000.0
+                model.actuator_biasprm[aid, 1] = -5000.0
+                model.actuator_ctrlrange[aid] = [-0.01, 0.04]
+        for fname in ("finger_joint1", "finger_joint2"):
+            jid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, fname)
+            if jid >= 0:
+                model.jnt_range[jid] = [-0.01, 0.04]
+
+        finger_actuator_ids = []
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                finger_actuator_ids.append(aid)
+
+        # Init robot pose
+        if cube_qposadr is not None:
+            data.qpos[cube_qposadr:cube_qposadr + 3] = cube_positions[i]
+            data.qpos[cube_qposadr + 3:cube_qposadr + 7] = cube_quat_wxyz
+        for ji, jid in enumerate(ids["jnt_ids"]):
+            data.qpos[model.jnt_qposadr[jid]] = _HOME_QPOS[ji]
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = 0.04
+        _mj.mj_forward(model, data)
+
+        envs.append({
+            "model": model,
+            "data": data,
+            "ids": ids,
+            "cube_qposadr": cube_qposadr,
+            "cube_geom_id": cube_geom_id,
+            "weld_eq_id": weld_eq_id,
+            "bowl_body_id": bowl_body_id,
+            "finger_geom_ids": finger_geom_ids,
+            "arm_actuator_ids": arm_actuator_ids,
+            "finger_actuator_ids": finger_actuator_ids,
+            "cube_pos_init": _np.array(cube_positions[i], dtype=_np.float64),
+            "bowl_pos_init": _np.array(bowl_positions[i], dtype=_np.float64),
+            "grasp_state": {"grasped": False, "contact_count": 0},
+            "initial_cube_z": float(cube_positions[i][2]) if len(cube_positions[i]) >= 3 else 0.0,
+            "step_count": 0,
+        })
+
+    # ── Helper functions (worker-local) ──
+
+    def _get_contacts(env):
+        data = env["data"]
+        cube_geom_id = env["cube_geom_id"]
+        finger_geom_ids = env["finger_geom_ids"]
+        if cube_geom_id < 0 or not finger_geom_ids:
+            finger_id = env["ids"]["finger_ids"][0]
+            if finger_id >= 0:
+                gw = data.qpos[env["model"].jnt_qposadr[finger_id]] / 0.04
+                c = 1.0 if gw < GRIPPER_CLOSE_THRESHOLD else 0.0
+                return _np.array([c, c, c], dtype=_np.float32)
+            return _np.zeros(3, dtype=_np.float32)
+        left_contact = 0.0
+        right_contact = 0.0
+        for ci in range(data.ncon):
+            c = data.contact[ci]
+            g1, g2 = c.geom1, c.geom2
+            if cube_geom_id in (g1, g2):
+                other = g2 if g1 == cube_geom_id else g1
+                if other in finger_geom_ids:
+                    idx = finger_geom_ids.index(other)
+                    if idx % 2 == 0:
+                        left_contact = 1.0
+                    else:
+                        right_contact = 1.0
+        both_contact = min(left_contact, right_contact)
+        return _np.array([left_contact, right_contact, both_contact], dtype=_np.float32)
+
+    def _update_grasp(env, gripper_width):
+        model, data = env["model"], env["data"]
+        gs = env["grasp_state"]
+        contacts = _get_contacts(env)
+        any_contact = contacts[2] > 0.5
+        gripper_closing = gripper_width < GRIPPER_CLOSE_THRESHOLD
+
+        if gripper_closing and any_contact:
+            gs["contact_count"] = min(gs["contact_count"] + 1, 10)
+        else:
+            gs["contact_count"] = max(gs["contact_count"] - 2, 0)
+
+        was_grasped = gs["grasped"]
+        if was_grasped and gripper_closing:
+            gs["grasped"] = True
+        else:
+            gs["grasped"] = (gs["contact_count"] >= GRASP_CONTACT_THRESHOLD and gripper_closing)
+
+        weld_id = env.get("weld_eq_id", -1)
+        if weld_id >= 0:
+            if gs["grasped"] and not was_grasped:
+                hand_id = env["ids"]["hand_id"]
+                cube_body_id = model.geom_bodyid[env["cube_geom_id"]]
+                hand_pos = data.xpos[hand_id].copy()
+                hand_mat = data.xmat[hand_id].reshape(3, 3).copy()
+                cube_pos = data.xpos[cube_body_id].copy()
+                cube_mat = data.xmat[cube_body_id].reshape(3, 3).copy()
+                rel_pos = hand_mat.T @ (cube_pos - hand_pos)
+                rel_mat = hand_mat.T @ cube_mat
+                rel_quat = _np.zeros(4)
+                _mj.mju_mat2Quat(rel_quat, rel_mat.flatten())
+                model.eq_data[weld_id, 3:6] = rel_pos
+                model.eq_data[weld_id, 6:10] = rel_quat
+                model.eq_active0[weld_id] = 1
+                data.eq_active[weld_id] = 1
+            elif not gs["grasped"] and was_grasped:
+                model.eq_active0[weld_id] = 0
+                data.eq_active[weld_id] = 0
+
+    def _apply_action(env, target_pos, target_quat_xyzw, gripper_width):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        qn = _np.linalg.norm(target_quat_xyzw)
+        if qn > 1e-6:
+            target_quat_xyzw = target_quat_xyzw / qn
+        qpos_save = data.qpos.copy()
+        qvel_save = data.qvel.copy()
+        _solve_ik(model, data, ids["hand_id"], ids["jnt_ids"],
+                  target_pos, target_quat_xyzw, max_iter=50)
+        target_joint_pos = _np.array([
+            data.qpos[model.jnt_qposadr[jid]] for jid in ids["jnt_ids"]
+        ])
+        data.qpos[:] = qpos_save
+        data.qvel[:] = qvel_save
+        _mj.mj_forward(model, data)
+        for aid, tq in zip(env["arm_actuator_ids"], target_joint_pos):
+            if aid >= 0:
+                data.ctrl[aid] = tq
+        finger_target = _np.clip(gripper_width, 0.0, 1.0) * 0.04 - 0.010
+        finger_target = max(finger_target, -0.01)
+        for aid in env["finger_actuator_ids"]:
+            data.ctrl[aid] = finger_target
+        for _ in range(PHYSICS_SUBSTEPS):
+            _mj.mj_step(model, data)
+        _update_grasp(env, gripper_width)
+
+    def _is_success(env):
+        model, data = env["model"], env["data"]
+        qa = env["cube_qposadr"]
+        bowl_body_id = env["bowl_body_id"]
+        if qa is None:
+            return False
+        cube_pos = data.qpos[qa:qa + 3].copy()
+        if bowl_body_id >= 0:
+            bowl_pos = model.body_pos[bowl_body_id].copy()
+        else:
+            bowl_pos = _np.array(DEFAULT_BOWL_POS)
+        if float(_np.linalg.norm(cube_pos[:2] - bowl_pos[:2])) > success_threshold:
+            return False
+        if cube_pos[2] > BOWL_HEIGHT + 0.05:
+            return False
+        cube_jnt_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, "cube_joint")
+        if cube_jnt_id >= 0:
+            cube_dofadr = model.jnt_dofadr[cube_jnt_id]
+            cube_vel = data.qvel[cube_dofadr:cube_dofadr + 6]
+            if _np.linalg.norm(cube_vel[:3]) > CUBE_SETTLED_VEL:
+                return False
+        return True
+
+    def _compute_reward(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        qa = env["cube_qposadr"]
+        bowl_body_id = env["bowl_body_id"]
+        if qa is None:
+            return 0.0
+        cube_pos = data.qpos[qa:qa + 3].copy()
+        tcp_pos, tcp_R = _get_tcp_pose(model, data, ids["hand_id"])
+        grasped = env["grasp_state"]["grasped"]
+        if bowl_body_id >= 0:
+            bowl_pos = model.body_pos[bowl_body_id].copy()
+        else:
+            bowl_pos = _np.array(DEFAULT_BOWL_POS)
+
+        if reward_type == "sparse":
+            return 1.0 if _is_success(env) else 0.0
+
+        elif reward_type == "dense_clipped":
+            tcp_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(_np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+            approach_reward = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.05
+            grasp_reward = 0.1 if grasped else 0.0
+            lift_delta = cube_pos[2] - env["initial_cube_z"]
+            lift_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                lift_reward = _np.tanh(lift_delta / 0.1) * 0.1
+            transport_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                transport_reward = (1.0 - _np.tanh(cube_bowl_xy / 0.1)) * 0.15
+            place_reward = 0.6 if _is_success(env) else 0.0
+            total = approach_reward + grasp_reward + lift_reward + transport_reward + place_reward
+            return float(_np.clip(total, 0.0, 1.0))
+
+        elif reward_type == "dense_v2":
+            tcp_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(_np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+            if not grasped:
+                distance_reward = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.1
+                contact_reward = 0.0
+                transport_reward = 0.0
+                success_reward = 0.0
+            else:
+                distance_reward = 0.1
+                contact_reward = 0.2
+                transport_reward = (1.0 - _np.tanh(cube_bowl_xy / 0.1)) * 0.5
+                success_reward = 1.0 if _is_success(env) else 0.0
+            total = distance_reward + contact_reward + transport_reward + success_reward
+            return float(_np.clip(total, 0.0, 1.0))
+
+        elif reward_type == "dense_v3":
+            tcp_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(_np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+            cube_quat_wxyz = data.qpos[qa + 3:qa + 7]
+            cube_R = _Rot.from_quat([cube_quat_wxyz[1], cube_quat_wxyz[2],
+                                      cube_quat_wxyz[3], cube_quat_wxyz[0]]).as_matrix()
+            grip_dir = tcp_R[:2, 1]
+            cube_dir = cube_R[:2, 1]
+            grip_dir_n = grip_dir / (_np.linalg.norm(grip_dir) + 1e-8)
+            cube_dir_n = cube_dir / (_np.linalg.norm(cube_dir) + 1e-8)
+            cos_align = abs(float(_np.dot(grip_dir_n, cube_dir_n)))
+            approach_reward = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.15
+            proximity = max(0.0, 1.0 - tcp_cube_dist / 0.15)
+            alignment_reward = cos_align * proximity * 0.10
+            grasp_reward = 0.10 if grasped else 0.0
+            lift_delta = cube_pos[2] - env["initial_cube_z"]
+            lift_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                lift_reward = _np.tanh(lift_delta / 0.1) * 0.10
+            transport_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                transport_reward = (1.0 - _np.tanh(cube_bowl_xy / 0.1)) * 0.30
+            success_reward = 0.25 if _is_success(env) else 0.0
+            total = (approach_reward + alignment_reward + grasp_reward +
+                     lift_reward + transport_reward + success_reward)
+            return float(_np.clip(total, 0.0, 1.0))
+
+        elif reward_type == "dense_v4":
+            tcp_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(_np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+            cube_quat_wxyz = data.qpos[qa + 3:qa + 7]
+            cube_R = _Rot.from_quat([cube_quat_wxyz[1], cube_quat_wxyz[2],
+                                      cube_quat_wxyz[3], cube_quat_wxyz[0]]).as_matrix()
+            grip_dir = tcp_R[:2, 1]
+            cube_dir = cube_R[:2, 1]
+            grip_dir_n = grip_dir / (_np.linalg.norm(grip_dir) + 1e-8)
+            cube_dir_n = cube_dir / (_np.linalg.norm(cube_dir) + 1e-8)
+            cos_align = abs(float(_np.dot(grip_dir_n, cube_dir_n)))
+            approach_reward = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.20
+            proximity = max(0.0, 1.0 - tcp_cube_dist / 0.15)
+            alignment_reward = cos_align * proximity * 0.10
+            grasp_reward = 0.20 if grasped else 0.0
+            lift_delta = cube_pos[2] - env["initial_cube_z"]
+            transport_reward = 0.0
+            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
+                transport_reward = (1.0 - _np.tanh(cube_bowl_xy / 0.1)) * 0.20
+            success_reward = 0.30 if _is_success(env) else 0.0
+            total = (approach_reward + alignment_reward + grasp_reward +
+                     transport_reward + success_reward)
+            return float(_np.clip(total, 0.0, 1.0))
+
+        elif reward_type == "dense":
+            tcp_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+            cube_bowl_xy = float(_np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
+            distance_reward = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 1.0
+            contact_reward = float(grasped) * 2.0
+            transport_reward = 0.0
+            if grasped:
+                transport_reward = (1.0 - _np.tanh(cube_bowl_xy / 0.1)) * 5.0
+            success_reward = 100.0 if _is_success(env) else 0.0
+            return float(distance_reward + contact_reward + transport_reward + success_reward)
+
+        return 0.0
+
+    def _build_state(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        tcp_pos, tcp_R = _get_tcp_pose(model, data, ids["hand_id"])
+        eef_quat_xyzw = _Rot.from_matrix(tcp_R).as_quat()
+        grip = []
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                grip.append(data.qpos[model.jnt_qposadr[fid]])
+            else:
+                grip.append(0.04)
+        contact_force = 1.0 if env["grasp_state"]["grasped"] else 0.0
+        return _np.concatenate([
+            tcp_pos.astype(_np.float32),
+            eef_quat_xyzw.astype(_np.float32),
+            _np.array(grip, dtype=_np.float32),
+            _np.array([contact_force], dtype=_np.float32),
+        ])
+
+    def _get_object_state(env):
+        qa = env["cube_qposadr"]
+        bowl_body_id = env["bowl_body_id"]
+        cube_state = _np.zeros(7, dtype=_np.float32)
+        if qa is not None:
+            cube_state[:3] = env["data"].qpos[qa:qa + 3]
+            cube_state[3:7] = env["data"].qpos[qa + 3:qa + 7]
+        if bowl_body_id >= 0:
+            bowl_pos = env["model"].body_pos[bowl_body_id].copy().astype(_np.float32)
+        else:
+            bowl_pos = _np.array(DEFAULT_BOWL_POS, dtype=_np.float32)
+        return _np.concatenate([cube_state, bowl_pos])
+
+    def _reset_env(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        for ji, jid in enumerate(ids["jnt_ids"]):
+            data.qpos[model.jnt_qposadr[jid]] = _HOME_QPOS[ji]
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = 0.04
+        qa = env["cube_qposadr"]
+        bowl_body_id = env["bowl_body_id"]
+
+        if episode_positions is not None:
+            ep = episode_positions[_np.random.randint(len(episode_positions))]
+            cube_pos = _np.array(ep["cube_pos"], dtype=_np.float64)
+            bowl_pos = _np.array(ep["bowl_pos"], dtype=_np.float64)
+            env["cube_pos_init"] = cube_pos.copy()
+            env["bowl_pos_init"] = bowl_pos.copy()
+            if qa is not None:
+                data.qpos[qa:qa + 3] = cube_pos
+                if "cube_yaw_deg" in ep:
+                    yaw = _np.radians(ep["cube_yaw_deg"])
+                else:
+                    yaw = _np.random.uniform(-_np.pi, _np.pi)
+                q_xyzw = _Rot.from_euler("z", yaw).as_quat()
+                data.qpos[qa + 3:qa + 7] = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+            if bowl_body_id >= 0:
+                model.body_pos[bowl_body_id] = bowl_pos
+
+        elif random_cube_range is not None:
+            if isinstance(random_cube_range, list):
+                rng = random_cube_range[_np.random.randint(len(random_cube_range))]
+            else:
+                rng = random_cube_range
+            if rng is None:
+                if qa is not None:
+                    data.qpos[qa:qa + 3] = env["cube_pos_init"]
+                    data.qpos[qa + 3:qa + 7] = cube_quat_wxyz
+                if bowl_body_id >= 0:
+                    model.body_pos[bowl_body_id] = env["bowl_pos_init"]
+            else:
+                for _attempt in range(50):
+                    dx = _np.random.uniform(rng["dx"][0], rng["dx"][1])
+                    dy = _np.random.uniform(rng["dy"][0], rng["dy"][1])
+                    cp = cube_base_pos.copy()
+                    cp[0] += dx
+                    cp[1] += dy
+                    bp = bowl_base_pos.copy()
+                    if random_bowl_range is not None:
+                        _brng = random_bowl_range
+                        if isinstance(_brng, list):
+                            _brng = _brng[_np.random.randint(len(_brng))]
+                        if _brng is not None:
+                            bp[0] += _np.random.uniform(_brng["dx"][0], _brng["dx"][1])
+                            bp[1] += _np.random.uniform(_brng["dy"][0], _brng["dy"][1])
+                    if _np.linalg.norm(cp[:2] - bp[:2]) > success_threshold:
+                        break
+                env["cube_pos_init"] = cp
+                if qa is not None:
+                    data.qpos[qa:qa + 3] = cp
+                    yaw_lo, yaw_hi = rng.get("yaw", (0, 0))
+                    yaw = _np.random.uniform(yaw_lo, yaw_hi)
+                    q_xyzw = _Rot.from_euler("z", _np.radians(yaw)).as_quat()
+                    data.qpos[qa + 3:qa + 7] = [q_xyzw[3], q_xyzw[0], q_xyzw[1], q_xyzw[2]]
+                env["bowl_pos_init"] = bp
+                if bowl_body_id >= 0:
+                    model.body_pos[bowl_body_id] = bp
+        else:
+            if qa is not None:
+                data.qpos[qa:qa + 3] = env["cube_pos_init"]
+                data.qpos[qa + 3:qa + 7] = cube_quat_wxyz
+            if bowl_body_id >= 0:
+                model.body_pos[bowl_body_id] = env["bowl_pos_init"]
+
+        data.qvel[:] = 0.0
+        _mj.mj_forward(model, data)
+        if qa is not None:
+            env["initial_cube_z"] = float(data.qpos[qa + 2])
+        else:
+            env["initial_cube_z"] = 0.0
+        env["step_count"] = 0
+        env["grasp_state"] = {"grasped": False, "contact_count": 0}
+        weld_id = env.get("weld_eq_id", -1)
+        if weld_id >= 0:
+            model.eq_active0[weld_id] = 0
+            data.eq_active[weld_id] = 0
+        for aid, jid in zip(env["arm_actuator_ids"], ids["jnt_ids"]):
+            if aid >= 0:
+                data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid]]
+        for aid in env["finger_actuator_ids"]:
+            data.ctrl[aid] = 0.04
+
+    # Initial reset
+    for env in envs:
+        _reset_env(env)
+
+    pipe.send("ready")
+
+    # ── Command loop ──
+    try:
+        while True:
+            cmd = pipe.recv()
+            if cmd[0] == "step_batch":
+                results = []
+                for item in cmd[1]:
+                    local_idx, pos3, quat4, grip = item
+                    env = envs[local_idx]
+                    _apply_action(env, pos3, quat4, grip)
+                    env["step_count"] += 1
+                    reward = _compute_reward(env)
+                    term = _is_success(env)
+                    trunc = env["step_count"] >= max_episode_steps
+                    state = _build_state(env)
+                    obj_state = _get_object_state(env)
+                    results.append((state, obj_state, reward, term, trunc,
+                                    env["grasp_state"]["grasped"]))
+                pipe.send(results)
+            elif cmd[0] == "reset_batch":
+                for local_idx in cmd[1]:
+                    _reset_env(envs[local_idx])
+                pipe.send("ok")
+            elif cmd[0] == "get_qpos":
+                _, local_idx = cmd
+                env = envs[local_idx]
+                pipe.send((env["data"].qpos.copy(), env["data"].qvel.copy(),
+                           dict(env["grasp_state"])))
+            elif cmd[0] == "get_qpos_all":
+                all_data = []
+                for env in envs:
+                    all_data.append((env["data"].qpos.copy(), env["data"].qvel.copy(),
+                                     dict(env["grasp_state"])))
+                pipe.send(all_data)
+            elif cmd[0] == "close":
+                pipe.send(None)
+                break
+    except (EOFError, BrokenPipeError):
+        pass
+
+
+# ====================================================================
 # PnP vectorised environment
 # ====================================================================
 
-class MuJoCoVecEnvPnP:
+from resfit.rl_finetuning.wrappers.subproc_vec_env import SubprocVecEnvMixin
+
+
+class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
     """Vectorised MuJoCo environment for Franka FR3 pick-and-place.
 
     Manages *N* independent ``(MjModel, MjData)`` pairs and persistent
@@ -244,6 +800,8 @@ class MuJoCoVecEnvPnP:
         rl_img_size: int = RL_IMG_SIZE,
         groot_img_size: int = 256,
         depth_norm: dict[str, dict[str, float]] | None = None,
+        parallel_envs: bool = True,
+        num_workers: int = 8,
     ):
         setup_egl()
 
@@ -310,11 +868,58 @@ class MuJoCoVecEnvPnP:
         self._cube_base_pos = np.array([0.42, -0.03, 0.02])
         self._bowl_base_pos = np.array(DEFAULT_BOWL_POS, dtype=np.float64)
 
-        # ── Create N environments ──
+        self._scene_xml = scene_xml
+        self._calib_path = calib_path
+
+        # ── Create N environments (main process — with renderers) ──
         self._envs: list[dict[str, Any]] = []
         for i in range(num_envs):
             env = self._init_single_env(cube_positions[i], bowl_positions[i], scene_xml)
             self._envs.append(env)
+
+        # ── Parallel env workers (SubprocVecEnv) ──
+        self._parallel = parallel_envs and num_envs > 1
+
+        if self._parallel:
+            def _make_worker_kwargs(env_indices: list[int]) -> dict:
+                return {
+                    "cube_positions": [cube_positions[gi].tolist() for gi in env_indices],
+                    "bowl_positions": [bowl_positions[gi].tolist() for gi in env_indices],
+                    "cube_quat_wxyz": self._cube_quat_wxyz,
+                    "cube_size": list(self.cube_size),
+                    "scene_xml": self._scene_xml,
+                    "calib_path": calib_path,
+                    "reward_type": reward_type,
+                    "max_episode_steps": max_episode_steps,
+                    "success_threshold": success_threshold,
+                    "episode_positions": self._episode_positions,
+                    "random_cube_range": self._random_cube_range,
+                    "random_bowl_range": self._random_bowl_range,
+                    "cube_base_pos": self._cube_base_pos.tolist(),
+                    "bowl_base_pos": self._bowl_base_pos.tolist(),
+                }
+
+            self._init_parallel(
+                num_envs=num_envs,
+                num_workers=num_workers,
+                worker_fn=_pnp_env_worker_loop,
+                init_kwargs_fn=_make_worker_kwargs,
+            )
+
+            # Wait for workers to be ready
+            for pipe in self._worker_pipes:
+                msg = pipe.recv()
+                assert msg == "ready", f"Worker init failed: {msg}"
+
+            # Cache for parallel step results
+            self._par_states = np.zeros((num_envs, 10), dtype=np.float32)
+            self._par_object_states = np.zeros((num_envs, 10), dtype=np.float32)
+        else:
+            self._workers = []
+            self._worker_pipes = []
+            self._env_to_worker = {}
+
+        self._needs_qpos_sync = False
 
         # ── Build gymnasium spaces ──
         self._state_dim = 10  # eef_pos(3)+eef_quat(4)+grip(2)+contact(1)
@@ -525,6 +1130,8 @@ class MuJoCoVecEnvPnP:
 
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
         """Reset all environments and return observation dict."""
+        if self._parallel:
+            self._parallel_reset_all(self.num_envs)
         for i in range(self.num_envs):
             self._reset_single_env(i)
 
@@ -533,6 +1140,8 @@ class MuJoCoVecEnvPnP:
 
     def reset_envs(self, env_ids: list[int]) -> None:
         """Reset specific environments (auto-reset on done)."""
+        if self._parallel:
+            self._parallel_reset_envs(env_ids)
         for eid in env_ids:
             self._reset_single_env(eid)
 
@@ -555,22 +1164,42 @@ class MuJoCoVecEnvPnP:
         truncated = np.zeros(self.num_envs, dtype=bool)
 
         _t_ik = time.time()
-        def _step_single_env(i):
-            action = actions_np[i]
-            self._apply_action(i, action[:3], action[3:7], float(action[7]))
-            self._step_counts[i] += 1
-            self._last_actions[i] = action
-            rewards[i] = self._compute_reward(i)
-            if self._is_success(i):
-                terminated[i] = True
-            if self._step_counts[i] >= self.max_episode_steps:
-                truncated[i] = True
 
-        if self.num_envs > 1 and hasattr(self, "_thread_pool"):
-            list(self._thread_pool.map(_step_single_env, range(self.num_envs)))
+        if self._parallel:
+            for i in range(self.num_envs):
+                self._last_actions[i] = actions_np[i]
+
+            all_results = self._parallel_step(actions_np, self.num_envs)
+            for i, result in enumerate(all_results):
+                state, obj_state, reward, term, trunc, grasped = result
+                self._step_counts[i] += 1
+                rewards[i] = reward
+                terminated[i] = term
+                truncated[i] = trunc
+                self._par_states[i] = state
+                self._par_object_states[i] = obj_state
+                self._envs[i]["grasp_state"]["grasped"] = grasped
+
+            if render_mode != "none":
+                self._sync_qpos_all(self._envs, self.num_envs)
+                self._needs_qpos_sync = False
+            else:
+                self._needs_qpos_sync = True
         else:
+            def _step_single_env(i):
+                action = actions_np[i]
+                self._apply_action(i, action[:3], action[3:7], float(action[7]))
+                self._step_counts[i] += 1
+                self._last_actions[i] = action
+                rewards[i] = self._compute_reward(i)
+                if self._is_success(i):
+                    terminated[i] = True
+                if self._step_counts[i] >= self.max_episode_steps:
+                    truncated[i] = True
+
             for i in range(self.num_envs):
                 _step_single_env(i)
+
         _dt_ik = time.time() - _t_ik
 
         # Build observations
@@ -603,6 +1232,11 @@ class MuJoCoVecEnvPnP:
     def get_groot_obs(self, env_idx: int,
                       task_str: str = "Pick up the red cube and place it onto the plate.") -> dict:
         """Build GR00T-format observation for a single environment."""
+        # Lazy sync from workers if parallel mode has pending state
+        if self._parallel and self._needs_qpos_sync:
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
+
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
@@ -1200,7 +1834,10 @@ class MuJoCoVecEnvPnP:
             model, data, ids = env["model"], env["data"], env["ids"]
 
             # ── State (10D) ──
-            state = self._build_state(i)
+            if self._parallel and hasattr(self, '_par_states'):
+                state = self._par_states[i]
+            else:
+                state = self._build_state(i)
             states.append(state)
 
             # ── Raw joint pos / gripper ──
@@ -1231,7 +1868,10 @@ class MuJoCoVecEnvPnP:
                     depth_images[key].append(np.zeros((1, self.rl_img_size, self.rl_img_size), dtype=np.float32))
 
             # ── Object state ──
-            object_states.append(self._get_object_state(i))
+            if self._parallel and hasattr(self, '_par_object_states'):
+                object_states.append(self._par_object_states[i])
+            else:
+                object_states.append(self._get_object_state(i))
 
         out: dict[str, torch.Tensor] = {}
 
@@ -1401,7 +2041,10 @@ class MuJoCoVecEnvPnP:
         return FPS
 
     def close(self) -> None:
-        """Release renderers."""
+        """Release workers and renderers."""
+        if self._parallel:
+            self._close_workers()
+
         for env in self._envs:
             for key in ("renderer_base", "renderer_wrist", "renderer_front",
                         "depth_renderer_front", "depth_renderer_wrist"):

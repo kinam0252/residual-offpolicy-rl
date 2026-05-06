@@ -349,7 +349,342 @@ def load_episode_mapping(path=None):
         return json.load(f)
 
 
-class MuJoCoVecEnvDrawer:
+# ====================================================================
+# Drawer worker loop (top-level, picklable for multiprocessing.spawn)
+# ====================================================================
+
+def _drawer_env_worker_loop(pipe, init_kwargs):
+    """Worker process for drawer environment: physics-only, no renderers.
+
+    Protocol:
+      recv: ("step_batch", [(local_idx, pos3, quat4, grip), ...])
+      send: [(state_8d, obj_state_5d, reward, terminated, truncated, drawer_qpos), ...]
+      recv: ("reset_batch", [local_idx, ...])  →  send: "ok"
+      recv: ("get_qpos", local_idx)  →  send: (qpos, qvel, {"drawer_qpos": float})
+      recv: ("get_qpos_all",)  →  send: [...]
+      recv: ("close",)  →  send: None
+    """
+    import os
+    os.environ['OMP_NUM_THREADS'] = '1'
+    os.environ['MKL_NUM_THREADS'] = '1'
+    os.environ['MUJOCO_GL'] = 'osmesa'
+
+    import mujoco as _mj
+    import numpy as _np
+    from scipy.spatial.transform import Rotation as _Rot
+
+    from utils import (
+        HOME_QPOS as _HOME_QPOS,
+        get_model_ids as _get_model_ids,
+        get_tcp_pose as _get_tcp_pose,
+        solve_ik as _solve_ik,
+        load_calib as _load_calib,
+        TCP_OFFSET as _TCP_OFFSET,
+        _bind_wrist_cam as _bind_wrist_cam_fn,
+        load_calib_wrist as _load_calib_wrist,
+    )
+
+    # Unpack init kwargs
+    num_local_envs = init_kwargs["num_local_envs"]
+    active_drawers = init_kwargs["active_drawers"]
+    cabinet_pos = _np.array(init_kwargs["cabinet_pos"])
+    cabinet_euler = _np.array(init_kwargs["cabinet_euler"])
+    scene_xml = init_kwargs["scene_xml"]
+    calib_path = init_kwargs["calib_path"]
+    reward_type = init_kwargs["reward_type"]
+    max_episode_steps = init_kwargs["max_episode_steps"]
+    contact_threshold = init_kwargs.get("contact_threshold", float("inf"))
+    contact_z_gate = init_kwargs.get("contact_z_gate", False)
+    face_hy = init_kwargs["face_hy"]
+    face_x_closed = init_kwargs["face_x_closed"]
+    drawer_face_centers = init_kwargs["drawer_face_centers"]
+    home_qpos = _np.array(init_kwargs["home_qpos"])
+
+    T_base_cam = _load_calib(calib_path)
+    _load_calib_wrist(calib_path)
+
+    # Build environments
+    envs = []
+    for i in range(num_local_envs):
+        ad = active_drawers[i]
+        model = make_model_with_cabinet(
+            T_base_cam,
+            cabinet_pos=cabinet_pos,
+            cabinet_euler=cabinet_euler,
+            scene_xml=scene_xml,
+        )
+        _bind_wrist_cam_fn(model)
+        data = _mj.MjData(model)
+        ids = _get_model_ids(model)
+
+        # Arm/finger actuator IDs
+        arm_actuator_ids = []
+        for jid in ids["jnt_ids"]:
+            jname = _mj.mj_id2name(model, _mj.mjtObj.mjOBJ_JOINT, jid)
+            aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, jname)
+            arm_actuator_ids.append(aid)
+        finger_actuator_ids = []
+        for fname in ("finger_joint1", "finger_joint2"):
+            aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, fname)
+            if aid >= 0:
+                finger_actuator_ids.append(aid)
+
+        # Disable original gripper actuator
+        orig_grip_aid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_ACTUATOR, "gripper")
+        if orig_grip_aid >= 0:
+            model.actuator_gainprm[orig_grip_aid, 0] = 0.0
+            model.actuator_biasprm[orig_grip_aid, :] = 0.0
+
+        for fname in ("finger_joint1", "finger_joint2"):
+            jid_f = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, fname)
+            if jid_f >= 0:
+                model.jnt_range[jid_f] = [-0.01, 0.04]
+        for aid in finger_actuator_ids:
+            model.actuator_gainprm[aid, 0] = 200.0
+            model.actuator_biasprm[aid, 1] = -200.0
+
+        cab_body_id = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_BODY, "cabinet")
+
+        # Set robot to home
+        for ji, jid in enumerate(ids["jnt_ids"]):
+            data.qpos[model.jnt_qposadr[jid]] = home_qpos[ji]
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = 0.0
+
+        # Open active drawer
+        set_drawer_pos(model, data, ad, DRAWER_SLIDE)
+        _mj.mj_forward(model, data)
+
+        n_substeps = int(round(1.0 / (FPS * model.opt.timestep)))
+        slot_h = DRAWER_SLOT_HEIGHT
+        dz = WALL_THICK + slot_h / 2 + ad * (slot_h + WALL_THICK)
+
+        envs.append({
+            "model": model,
+            "data": data,
+            "ids": ids,
+            "n_substeps": n_substeps,
+            "cab_body_id": cab_body_id,
+            "active_drawer": ad,
+            "arm_actuator_ids": arm_actuator_ids,
+            "finger_actuator_ids": finger_actuator_ids,
+            "drawer_z_center": dz,
+            "drawer_z_min": dz - slot_h / 2 - 0.02,
+            "drawer_z_max": dz + slot_h / 2 + 0.02,
+            "drawer_qpos": DRAWER_SLIDE,
+            "prev_drawer_qpos": DRAWER_SLIDE,
+            "step_count": 0,
+        })
+
+    # ── Helper functions ──
+
+    def _apply_action(env, target_pos, target_quat_xyzw, grip_raw):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        qn = _np.linalg.norm(target_quat_xyzw)
+        if qn > 1e-6:
+            target_quat_xyzw = target_quat_xyzw / qn
+        qpos_save = data.qpos.copy()
+        qvel_save = data.qvel.copy()
+        _solve_ik(model, data, ids["hand_id"], ids["jnt_ids"],
+                  target_pos, target_quat_xyzw, max_iter=50,
+                  q_ref=home_qpos)
+        target_joint_pos = _np.array([
+            data.qpos[model.jnt_qposadr[jid]] for jid in ids["jnt_ids"]
+        ])
+        data.qpos[:] = qpos_save
+        data.qvel[:] = qvel_save
+        _mj.mj_forward(model, data)
+        for aid, tq in zip(env["arm_actuator_ids"], target_joint_pos):
+            if aid >= 0:
+                data.ctrl[aid] = tq
+        for aid in env["finger_actuator_ids"]:
+            data.ctrl[aid] = 0.0
+        for _ in range(env["n_substeps"]):
+            for fid in ids["finger_ids"]:
+                if fid >= 0:
+                    data.qpos[model.jnt_qposadr[fid]] = 0.0
+                    data.qvel[model.jnt_dofadr[fid]] = 0.0
+            _mj.mj_step(model, data)
+
+    def _update_drawer_physics(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        ad = env["active_drawer"]
+        hand_pos = data.xpos[ids["hand_id"]]
+        hand_mat = data.xmat[ids["hand_id"]].reshape(3, 3)
+        tcp = hand_pos + hand_mat @ _TCP_OFFSET
+        cab_pos_w = data.xpos[env["cab_body_id"]]
+        cab_mat = data.xmat[env["cab_body_id"]].reshape(3, 3)
+        tcp_local = cab_mat.T @ (tcp - cab_pos_w)
+        y_ok = abs(tcp_local[1]) < face_hy + 0.03
+        z_ok = (tcp_local[2] > env["drawer_z_min"]) and (tcp_local[2] < env["drawer_z_max"])
+        if y_ok and z_ok:
+            if contact_threshold < float("inf"):
+                face_hz = DRAWER_SLOT_HEIGHT / 2 - DRAWER_GAP
+                dz = env["drawer_z_min"] + face_hz + DRAWER_GAP
+                y_norm = tcp_local[1] / face_hy if face_hy > 0 else 0.0
+                z_norm = (tcp_local[2] - dz) / face_hz if face_hz > 0 else 0.0
+                dm = DEMO_CONTACT_MEAN.get(ad)
+                if dm is not None:
+                    dist = _np.sqrt((y_norm - dm["y_norm"])**2 + (z_norm - dm["z_norm"])**2)
+                    if dist > contact_threshold:
+                        return
+            if contact_z_gate:
+                face_hz = DRAWER_SLOT_HEIGHT / 2 - DRAWER_GAP
+                dz = env["drawer_z_min"] + face_hz + DRAWER_GAP
+                z_norm = (tcp_local[2] - dz) / face_hz if face_hz > 0 else 0.0
+                zb = DEMO_CONTACT_Z_BOUNDS.get(ad)
+                if zb is not None:
+                    if z_norm < zb["z_min"] or z_norm > zb["z_max"]:
+                        return
+            face_x_now = face_x_closed + env["drawer_qpos"]
+            if tcp_local[0] > face_x_closed:
+                new_qpos = tcp_local[0] - face_x_closed
+                new_qpos = max(0.0, min(DRAWER_SLIDE, new_qpos))
+                if new_qpos < env["drawer_qpos"]:
+                    env["drawer_qpos"] = new_qpos
+                    set_drawer_pos(model, data, ad, new_qpos)
+
+    def _is_success(env):
+        return env["drawer_qpos"] < DRAWER_SLIDE * 0.1
+
+    def _compute_reward(env):
+        if reward_type == "sparse":
+            return 1.0 if _is_success(env) else 0.0
+        if reward_type == "dense_simple":
+            closed_frac = 1.0 - (env["drawer_qpos"] / DRAWER_SLIDE)
+            return float(_np.clip(closed_frac, 0.0, 1.0))
+        if reward_type == "delta":
+            delta_closed = (env["prev_drawer_qpos"] - env["drawer_qpos"]) / DRAWER_SLIDE
+            delta_reward = float(_np.clip(delta_closed, 0.0, 1.0))
+            success = 1.0 if _is_success(env) else 0.0
+            return delta_reward + success
+        # Dense staged
+        model, data, ids = env["model"], env["data"], env["ids"]
+        ad = env["active_drawer"]
+        hand_pos = data.xpos[ids["hand_id"]]
+        hand_mat = data.xmat[ids["hand_id"]].reshape(3, 3)
+        tcp = hand_pos + hand_mat @ _TCP_OFFSET
+        cab_pos_w = data.xpos[env["cab_body_id"]]
+        cab_mat = data.xmat[env["cab_body_id"]].reshape(3, 3)
+        tcp_local = cab_mat.T @ (tcp - cab_pos_w)
+        dm = DEMO_CONTACT_MEAN.get(ad)
+        face_hz = DRAWER_SLOT_HEIGHT / 2 - DRAWER_GAP
+        dz_center = env["drawer_z_min"] + face_hz + DRAWER_GAP
+        target_x = face_x_closed + env["drawer_qpos"]
+        target_y = dm["y_norm"] * face_hy if dm else 0.0
+        target_z = dz_center + dm["z_norm"] * face_hz if dm else dz_center
+        target_local = _np.array([target_x, target_y, target_z])
+        dist_to_target = float(_np.linalg.norm(tcp_local - target_local))
+        approach = (1.0 - _np.tanh(dist_to_target / 0.1)) * 0.25
+        y_ok = abs(tcp_local[1]) < face_hy + 0.03
+        z_ok = (tcp_local[2] > env["drawer_z_min"]) and (tcp_local[2] < env["drawer_z_max"])
+        contact = 0.0
+        if y_ok and z_ok and dm is not None:
+            y_norm = tcp_local[1] / face_hy if face_hy > 0 else 0.0
+            z_norm = (tcp_local[2] - dz_center) / face_hz if face_hz > 0 else 0.0
+            norm_dist = _np.sqrt((y_norm - dm["y_norm"])**2 + (z_norm - dm["z_norm"])**2)
+            if norm_dist <= 1.0:
+                contact = 0.25
+        closed_frac = 1.0 - (env["drawer_qpos"] / DRAWER_SLIDE)
+        push = float(_np.clip(closed_frac, 0.0, 1.0)) * 0.25
+        success = 0.25 if _is_success(env) else 0.0
+        return float(_np.clip(approach + contact + push + success, 0.0, 1.0))
+
+    def _build_state(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        tcp_pos, tcp_R = _get_tcp_pose(model, data, ids["hand_id"])
+        eef_quat_xyzw = _Rot.from_matrix(tcp_R).as_quat()
+        finger_id = ids["finger_ids"][0]
+        grip = max(0.0, float(data.qpos[model.jnt_qposadr[finger_id]])) if finger_id >= 0 else 0.04
+        return _np.concatenate([
+            tcp_pos.astype(_np.float32),
+            eef_quat_xyzw.astype(_np.float32),
+            _np.array([grip], dtype=_np.float32),
+        ])
+
+    def _get_object_state(env):
+        ad = env["active_drawer"]
+        fc = _np.array(drawer_face_centers[ad], dtype=_np.float32)
+        return _np.concatenate([
+            _np.array([env["drawer_qpos"], float(ad)], dtype=_np.float32),
+            fc,
+        ])
+
+    def _reset_env(env):
+        model, data, ids = env["model"], env["data"], env["ids"]
+        for ji, jid in enumerate(ids["jnt_ids"]):
+            data.qpos[model.jnt_qposadr[jid]] = home_qpos[ji]
+        for fid in ids["finger_ids"]:
+            if fid >= 0:
+                data.qpos[model.jnt_qposadr[fid]] = 0.0
+        for d in range(NUM_DRAWERS):
+            set_drawer_pos(model, data, d, 0.0)
+        set_drawer_pos(model, data, env["active_drawer"], DRAWER_SLIDE)
+        env["drawer_qpos"] = DRAWER_SLIDE
+        env["prev_drawer_qpos"] = DRAWER_SLIDE
+        data.qvel[:] = 0.0
+        _mj.mj_forward(model, data)
+        env["step_count"] = 0
+        for aid, jid in zip(env["arm_actuator_ids"], ids["jnt_ids"]):
+            if aid >= 0:
+                data.ctrl[aid] = data.qpos[model.jnt_qposadr[jid]]
+        for aid in env["finger_actuator_ids"]:
+            data.ctrl[aid] = 0.0
+
+    # Initial reset
+    for env in envs:
+        _reset_env(env)
+
+    pipe.send("ready")
+
+    # ── Command loop ──
+    try:
+        while True:
+            cmd = pipe.recv()
+            if cmd[0] == "step_batch":
+                results = []
+                for item in cmd[1]:
+                    local_idx, pos3, quat4, grip = item
+                    env = envs[local_idx]
+                    env["prev_drawer_qpos"] = env["drawer_qpos"]
+                    _apply_action(env, pos3, quat4, 0.0)
+                    _update_drawer_physics(env)
+                    env["step_count"] += 1
+                    reward = _compute_reward(env)
+                    term = _is_success(env)
+                    trunc = env["step_count"] >= max_episode_steps
+                    state = _build_state(env)
+                    obj_state = _get_object_state(env)
+                    results.append((state, obj_state, reward, term, trunc,
+                                    env["drawer_qpos"]))
+                pipe.send(results)
+            elif cmd[0] == "reset_batch":
+                for local_idx in cmd[1]:
+                    _reset_env(envs[local_idx])
+                pipe.send("ok")
+            elif cmd[0] == "get_qpos":
+                _, local_idx = cmd
+                env = envs[local_idx]
+                pipe.send((env["data"].qpos.copy(), env["data"].qvel.copy(),
+                           {"drawer_qpos": env["drawer_qpos"]}))
+            elif cmd[0] == "get_qpos_all":
+                all_data = []
+                for env in envs:
+                    all_data.append((env["data"].qpos.copy(), env["data"].qvel.copy(),
+                                     {"drawer_qpos": env["drawer_qpos"]}))
+                pipe.send(all_data)
+            elif cmd[0] == "close":
+                pipe.send(None)
+                break
+    except (EOFError, BrokenPipeError):
+        pass
+
+
+from resfit.rl_finetuning.wrappers.subproc_vec_env import SubprocVecEnvMixin
+
+
+class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
     """Vectorised MuJoCo environment for Franka FR3 close drawer.
 
     Each env has one active drawer that starts open (DRAWER_SLIDE).
@@ -379,6 +714,8 @@ class MuJoCoVecEnvDrawer:
         groot_img_size: int = 256,
         contact_threshold: float = float("inf"),
         contact_z_gate: bool = False,
+        parallel_envs: bool = True,
+        num_workers: int = 8,
     ):
         self.num_envs = num_envs
         self.max_episode_steps = max_episode_steps
@@ -428,6 +765,53 @@ class MuJoCoVecEnvDrawer:
         for i in range(num_envs):
             env = self._init_single_env(scene_xml, active_drawers[i])
             self._envs.append(env)
+
+        # ── Parallel env workers (SubprocVecEnv) ──
+        self._parallel = parallel_envs and num_envs > 1
+        self._scene_xml = scene_xml
+
+        if self._parallel:
+            # Convert face centers dict to serializable format
+            fc_serial = {k: v.tolist() for k, v in self._drawer_face_centers.items()}
+
+            def _make_worker_kwargs(env_indices: list[int]) -> dict:
+                return {
+                    "active_drawers": [active_drawers[gi] for gi in env_indices],
+                    "cabinet_pos": self._cabinet_pos.tolist(),
+                    "cabinet_euler": self._cabinet_euler.tolist(),
+                    "scene_xml": self._scene_xml,
+                    "calib_path": calib_file,
+                    "reward_type": reward_type,
+                    "max_episode_steps": max_episode_steps,
+                    "contact_threshold": contact_threshold,
+                    "contact_z_gate": contact_z_gate,
+                    "face_hy": self._face_hy,
+                    "face_x_closed": self._face_x_closed,
+                    "drawer_face_centers": fc_serial,
+                    "home_qpos": DRAWER_HOME_QPOS.tolist(),
+                }
+
+            self._init_parallel(
+                num_envs=num_envs,
+                num_workers=num_workers,
+                worker_fn=_drawer_env_worker_loop,
+                init_kwargs_fn=_make_worker_kwargs,
+            )
+
+            # Wait for workers to be ready
+            for pipe in self._worker_pipes:
+                msg = pipe.recv()
+                assert msg == "ready", f"Worker init failed: {msg}"
+
+            # Cache for parallel step results
+            self._par_states = np.zeros((num_envs, 8), dtype=np.float32)
+            self._par_object_states = np.zeros((num_envs, 5), dtype=np.float32)
+        else:
+            self._workers = []
+            self._worker_pipes = []
+            self._env_to_worker = {}
+
+        self._needs_qpos_sync = False
 
         # ── Gymnasium spaces ──
         # State: eef_pos(3) + eef_quat(4) + gripper_width(1) = 8D
@@ -575,11 +959,15 @@ class MuJoCoVecEnvDrawer:
     # ------------------------------------------------------------------
 
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
+        if self._parallel:
+            self._parallel_reset_all(self.num_envs)
         for i in range(self.num_envs):
             self._reset_single_env(i)
         return self._build_obs_dict(), {}
 
     def reset_envs(self, env_ids: list[int]) -> None:
+        if self._parallel:
+            self._parallel_reset_envs(env_ids)
         for eid in env_ids:
             self._reset_single_env(eid)
 
@@ -596,19 +984,39 @@ class MuJoCoVecEnvDrawer:
         terminated = np.zeros(self.num_envs, dtype=bool)
         truncated = np.zeros(self.num_envs, dtype=bool)
 
-        for i in range(self.num_envs):
-            action = actions_np[i]
-            # Close Drawer: gripper always closed (push task)
-            self._prev_drawer_qpos[i] = self._drawer_qpos[i]
-            self._apply_action(i, action[:3], action[3:7], 0.0)
-            self._update_drawer_physics(i)
-            self._step_counts[i] += 1
-            self._last_actions[i] = action
-            rewards[i] = self._compute_reward(i)
-            if self._is_success(i):
-                terminated[i] = True
-            if self._step_counts[i] >= self.max_episode_steps:
-                truncated[i] = True
+        if self._parallel:
+            for i in range(self.num_envs):
+                self._last_actions[i] = actions_np[i]
+
+            all_results = self._parallel_step(actions_np, self.num_envs)
+            for i, result in enumerate(all_results):
+                state, obj_state, reward, term, trunc, drawer_qpos = result
+                self._step_counts[i] += 1
+                rewards[i] = reward
+                terminated[i] = term
+                truncated[i] = trunc
+                self._par_states[i] = state
+                self._par_object_states[i] = obj_state
+                self._drawer_qpos[i] = drawer_qpos
+
+            if render_mode != "none":
+                self._sync_qpos_all(self._envs, self.num_envs)
+                self._needs_qpos_sync = False
+            else:
+                self._needs_qpos_sync = True
+        else:
+            for i in range(self.num_envs):
+                action = actions_np[i]
+                self._prev_drawer_qpos[i] = self._drawer_qpos[i]
+                self._apply_action(i, action[:3], action[3:7], 0.0)
+                self._update_drawer_physics(i)
+                self._step_counts[i] += 1
+                self._last_actions[i] = action
+                rewards[i] = self._compute_reward(i)
+                if self._is_success(i):
+                    terminated[i] = True
+                if self._step_counts[i] >= self.max_episode_steps:
+                    truncated[i] = True
 
         obs_dict = self._build_obs_dict(render_mode=render_mode)
         rewards_t = torch.as_tensor(rewards, device=self.device, dtype=torch.float32)
@@ -624,6 +1032,10 @@ class MuJoCoVecEnvDrawer:
     def get_groot_obs(self, env_idx: int,
                       task_str: str = "Close the drawer") -> dict:
         """Build GR00T-format observation. Gripper in RAW METERS."""
+        if self._parallel and self._needs_qpos_sync:
+            self._sync_qpos_all(self._envs, self.num_envs)
+            self._needs_qpos_sync = False
+
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
@@ -901,16 +1313,19 @@ class MuJoCoVecEnvDrawer:
             model, data, ids = env["model"], env["data"], env["ids"]
 
             # State: 8D = eef_pos(3) + eef_quat(4) + gripper(1)
-            tcp_pos, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
-            eef_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat()
-            finger_id = ids["finger_ids"][0]
-            grip = max(0.0, float(data.qpos[model.jnt_qposadr[finger_id]])) if finger_id >= 0 else GRIPPER_MAX_WIDTH
-            state = np.concatenate([
-                tcp_pos.astype(np.float32),
-                eef_quat_xyzw.astype(np.float32),
-                np.array([grip], dtype=np.float32),
-            ])
-            states.append(state)
+            if self._parallel and hasattr(self, '_par_states'):
+                states.append(self._par_states[i])
+            else:
+                tcp_pos, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
+                eef_quat_xyzw = Rotation.from_matrix(tcp_R).as_quat()
+                finger_id = ids["finger_ids"][0]
+                grip = max(0.0, float(data.qpos[model.jnt_qposadr[finger_id]])) if finger_id >= 0 else GRIPPER_MAX_WIDTH
+                state = np.concatenate([
+                    tcp_pos.astype(np.float32),
+                    eef_quat_xyzw.astype(np.float32),
+                    np.array([grip], dtype=np.float32),
+                ])
+                states.append(state)
 
             # Images (RGB only)
             if render_mode == "full":
@@ -919,12 +1334,15 @@ class MuJoCoVecEnvDrawer:
                 for key in images:
                     images[key].append(np.zeros((3, self.rl_img_size, self.rl_img_size), dtype=np.uint8))
 
-            # Object state: drawer_slide + active_drawer_idx + face_center_world(3)
-            face_center = self._drawer_face_centers[env["active_drawer"]]
-            object_states.append(np.concatenate([
-                np.array([self._drawer_qpos[i], float(env["active_drawer"])], dtype=np.float32),
-                face_center,
-            ]))
+            # Object state
+            if self._parallel and hasattr(self, '_par_object_states'):
+                object_states.append(self._par_object_states[i])
+            else:
+                face_center = self._drawer_face_centers[env["active_drawer"]]
+                object_states.append(np.concatenate([
+                    np.array([self._drawer_qpos[i], float(env["active_drawer"])], dtype=np.float32),
+                    face_center,
+                ]))
 
         obs = {
             "observation.state": torch.as_tensor(
@@ -964,6 +1382,8 @@ class MuJoCoVecEnvDrawer:
     # ------------------------------------------------------------------
 
     def close(self):
+        if self._parallel:
+            self._close_workers()
         for env in self._envs:
             for key in ("renderer_base", "renderer_wrist"):
                 if key in env:

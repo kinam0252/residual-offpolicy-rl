@@ -571,6 +571,12 @@ def _env_worker_loop(pipe, init_kwargs):
                 env = envs[local_idx]
                 pipe.send((env["data"].qpos.copy(), env["data"].qvel.copy(),
                            dict(env["grasp_state"])))
+            elif cmd[0] == "get_qpos_all":
+                all_data = []
+                for env in envs:
+                    all_data.append((env["data"].qpos.copy(), env["data"].qvel.copy(),
+                                     dict(env["grasp_state"])))
+                pipe.send(all_data)
             elif cmd[0] == "set_qpos":
                 _, local_idx, qpos, qvel, gs = cmd
                 env = envs[local_idx]
@@ -589,7 +595,10 @@ def _env_worker_loop(pipe, init_kwargs):
 
 
 
-class MuJoCoVecEnvStack:
+from resfit.rl_finetuning.wrappers.subproc_vec_env import SubprocVecEnvMixin
+
+
+class MuJoCoVecEnvStack(SubprocVecEnvMixin):
     """Vectorised MuJoCo environment for Franka FR3 cube stacking.
 
     White cube (freejoint) must be picked and placed on top of green cube (freejoint).
@@ -713,30 +722,10 @@ class MuJoCoVecEnvStack:
 
         # ── Parallel env workers (SubprocVecEnv) ──
         self._parallel = parallel_envs and num_envs > 1
-        self._workers = []
-        self._worker_pipes = []
-        self._env_to_worker = {}  # env_idx → (worker_idx, local_idx)
 
         if self._parallel:
-            import multiprocessing as mp
-            ctx = mp.get_context("spawn")
-
-            # Distribute envs across workers
-            actual_workers = min(num_workers, num_envs)
-            envs_per_worker = [[] for _ in range(actual_workers)]
-            for i in range(num_envs):
-                w = i % actual_workers
-                envs_per_worker[w].append(i)
-
-            for w_idx in range(actual_workers):
-                env_indices = envs_per_worker[w_idx]
-                n_local = len(env_indices)
-                for local_i, global_i in enumerate(env_indices):
-                    self._env_to_worker[global_i] = (w_idx, local_i)
-
-                parent_pipe, child_pipe = ctx.Pipe()
-                init_kwargs = {
-                    "num_local_envs": n_local,
+            def _make_worker_kwargs(env_indices: list[int]) -> dict:
+                return {
                     "white_positions": [self._white_positions[gi].tolist() for gi in env_indices],
                     "green_positions": [self._green_positions[gi].tolist() for gi in env_indices],
                     "white_quats": [self._white_quats[gi] if gi < len(self._white_quats) else [1, 0, 0, 0] for gi in env_indices],
@@ -747,15 +736,21 @@ class MuJoCoVecEnvStack:
                     "max_episode_steps": max_episode_steps,
                     "random_cube_range": random_cube_range,
                 }
-                proc = ctx.Process(target=_env_worker_loop, args=(child_pipe, init_kwargs), daemon=True)
-                proc.start()
-                child_pipe.close()
-                self._workers.append(proc)
-                self._worker_pipes.append(parent_pipe)
 
-            # Cache for parallel step results (state, object_state from workers)
+            self._init_parallel(
+                num_envs=num_envs,
+                num_workers=num_workers,
+                worker_fn=_env_worker_loop,
+                init_kwargs_fn=_make_worker_kwargs,
+            )
+
+            # Cache for parallel step results
             self._par_states = np.zeros((num_envs, 10), dtype=np.float32)
             self._par_object_states = np.zeros((num_envs, 10), dtype=np.float32)
+        else:
+            self._workers = []
+            self._worker_pipes = []
+            self._env_to_worker = {}
 
         self._needs_qpos_sync = False
 
@@ -1018,20 +1013,8 @@ class MuJoCoVecEnvStack:
 
     def reset(self, **kwargs) -> tuple[dict[str, torch.Tensor], dict]:
         if self._parallel:
-            # Send reset_batch to all workers
-            num_workers = len(self._worker_pipes)
-            worker_local_envs: list[list[int]] = [[] for _ in range(num_workers)]
-            for i in range(self.num_envs):
-                w_idx, local_idx = self._env_to_worker[i]
-                worker_local_envs[w_idx].append(local_idx)
-            for w_idx in range(num_workers):
-                if worker_local_envs[w_idx]:
-                    self._worker_pipes[w_idx].send(("reset_batch", worker_local_envs[w_idx]))
-            for w_idx in range(num_workers):
-                if worker_local_envs[w_idx]:
-                    self._worker_pipes[w_idx].recv()
+            self._parallel_reset_all(self.num_envs)
             self._step_counts[:] = 0
-            # Also reset main-process envs (for rendering consistency)
             for i in range(self.num_envs):
                 self._reset_single_env(i)
         else:
@@ -1041,46 +1024,13 @@ class MuJoCoVecEnvStack:
 
     def reset_envs(self, env_ids: list[int]) -> None:
         if self._parallel:
-            # Group by worker
-            num_workers = len(self._worker_pipes)
-            worker_resets: list[list[int]] = [[] for _ in range(num_workers)]
-            for eid in env_ids:
-                w_idx, local_idx = self._env_to_worker[eid]
-                worker_resets[w_idx].append(local_idx)
-            for w_idx in range(num_workers):
-                if worker_resets[w_idx]:
-                    self._worker_pipes[w_idx].send(("reset_batch", worker_resets[w_idx]))
-            for w_idx in range(num_workers):
-                if worker_resets[w_idx]:
-                    self._worker_pipes[w_idx].recv()
-            # Also reset main-process envs
+            self._parallel_reset_envs(env_ids)
             for eid in env_ids:
                 self._reset_single_env(eid)
                 self._step_counts[eid] = 0
         else:
             for eid in env_ids:
                 self._reset_single_env(eid)
-
-    def _sync_qpos_from_workers(self) -> None:
-        """Sync qpos/qvel from workers to main-process models (for rendering)."""
-        # Request qpos for all local envs per worker sequentially
-        num_workers = len(self._worker_pipes)
-        # Group by worker
-        worker_envs: list[list[int]] = [[] for _ in range(num_workers)]
-        for i in range(self.num_envs):
-            w_idx, _ = self._env_to_worker[i]
-            worker_envs[w_idx].append(i)
-
-        for w_idx in range(num_workers):
-            for global_i in worker_envs[w_idx]:
-                _, local_idx = self._env_to_worker[global_i]
-                self._worker_pipes[w_idx].send(("get_qpos", local_idx))
-                qpos, qvel, gs = self._worker_pipes[w_idx].recv()
-                env = self._envs[global_i]
-                env["data"].qpos[:] = qpos
-                env["data"].qvel[:] = qvel
-                env["grasp_state"] = gs
-                mujoco.mj_forward(env["model"], env["data"])
 
     def step(
         self, actions: torch.Tensor, render_mode: str = "full",
@@ -1100,45 +1050,22 @@ class MuJoCoVecEnvStack:
         truncated = np.zeros(self.num_envs, dtype=bool)
 
         if self._parallel:
-            # ── Parallel path: dispatch to workers via batch commands ──
-            # Group actions by worker
-            num_workers = len(self._worker_pipes)
-            worker_batches: list[list[tuple]] = [[] for _ in range(num_workers)]
-            worker_env_order: list[list[int]] = [[] for _ in range(num_workers)]
-
             for i in range(self.num_envs):
-                w_idx, local_idx = self._env_to_worker[i]
-                action = actions_np[i]
-                worker_batches[w_idx].append(
-                    (local_idx, action[:3].copy(), action[3:7].copy(), float(action[7]))
-                )
-                worker_env_order[w_idx].append(i)
-                self._last_actions[i] = action
+                self._last_actions[i] = actions_np[i]
 
-            # Send all batches
-            for w_idx in range(num_workers):
-                if worker_batches[w_idx]:
-                    self._worker_pipes[w_idx].send(("step_batch", worker_batches[w_idx]))
+            all_results = self._parallel_step(actions_np, self.num_envs)
+            for i, result in enumerate(all_results):
+                state, obj_state, reward, term, trunc, grasped = result
+                self._step_counts[i] += 1
+                rewards[i] = reward
+                terminated[i] = term
+                truncated[i] = trunc
+                self._par_states[i] = state
+                self._par_object_states[i] = obj_state
+                self._envs[i]["grasp_state"]["grasped"] = grasped
 
-            # Collect results
-            for w_idx in range(num_workers):
-                if not worker_batches[w_idx]:
-                    continue
-                results = self._worker_pipes[w_idx].recv()
-                for j, global_i in enumerate(worker_env_order[w_idx]):
-                    state, obj_state, reward, term, trunc, grasped = results[j]
-                    self._step_counts[global_i] += 1
-                    rewards[global_i] = reward
-                    terminated[global_i] = term
-                    truncated[global_i] = trunc
-                    self._par_states[global_i] = state
-                    self._par_object_states[global_i] = obj_state
-                    # Sync grasp state to main process env dict (for get_groot_obs)
-                    self._envs[global_i]["grasp_state"]["grasped"] = grasped
-
-            # For rendering, sync qpos from workers to main process models
             if render_mode != "none":
-                self._sync_qpos_from_workers()
+                self._sync_qpos_all(self._envs, self.num_envs)
                 self._needs_qpos_sync = False
             else:
                 self._needs_qpos_sync = True
@@ -1175,7 +1102,7 @@ class MuJoCoVecEnvStack:
         """Build GR00T-format observation. Gripper is in RAW METERS."""
         # Lazy sync from workers if parallel mode has pending state
         if self._parallel and self._needs_qpos_sync:
-            self._sync_qpos_from_workers()
+            self._sync_qpos_all(self._envs, self.num_envs)
             self._needs_qpos_sync = False
 
         env = self._envs[env_idx]
@@ -1699,21 +1626,8 @@ class MuJoCoVecEnvStack:
         return self._get_green_pos(env_idx)
 
     def close(self) -> None:
-        # Shut down parallel workers
-        if self._parallel and self._worker_pipes:
-            for pipe in self._worker_pipes:
-                try:
-                    pipe.send(("close",))
-                    pipe.recv()
-                    pipe.close()
-                except Exception:
-                    pass
-            for proc in self._workers:
-                proc.join(timeout=5)
-                if proc.is_alive():
-                    proc.terminate()
-            self._worker_pipes = []
-            self._workers = []
+        if self._parallel:
+            self._close_workers()
 
         for env in self._envs:
             for key in ("renderer_base", "renderer_wrist", "renderer_front",
