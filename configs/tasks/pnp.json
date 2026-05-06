@@ -4,10 +4,10 @@
   "offline_data_dir": "outputs/offline_data/pnp_66ep_dense_v3",
 
   "positions_file": "configs/pnp_66ep_positions.json",
-  "train_positions": 44,
+  "train_positions": 30,
   "eval_positions": 20,
 
-  "num_envs": 44,
+  "num_envs": 30,
   "eval_num_envs": 20,
   "eval_num_episodes": 1,
   "max_episode_steps": 500,
