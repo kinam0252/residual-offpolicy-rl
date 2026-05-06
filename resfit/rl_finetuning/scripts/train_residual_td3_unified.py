@@ -1025,6 +1025,9 @@ def main():
             "use_action_scaler": args.use_action_scaler,
             "action_scale": args.action_scale if args.use_action_scaler else None,
             "normalize_base_action": getattr(args, 'normalize_base_action', False),
+            "object_state_dim": task_cfg.object_state_dim,
+            "action_scaler_min": getattr(args, 'action_scaler_min', None),
+            "action_scaler_max": getattr(args, 'action_scaler_max', None),
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key, sort_keys=True).encode()).hexdigest()[:16]
         _cache_dir = Path(__file__).resolve().parents[3] / "buffer_cache" / f"offline_{args.task}_{_cache_hash}"

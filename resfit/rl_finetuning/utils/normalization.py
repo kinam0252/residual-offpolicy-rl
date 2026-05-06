@@ -48,7 +48,7 @@ class ActionScaler:
         Args:
             action_min: Minimum values from dataset statistics
             action_max: Maximum values from dataset statistics
-            action_scale: Scale factor to expand the action range (1 + action_scale)
+            action_scale: Scale factor to expand the action range (1 + 2*action_scale)
             min_range_per_dim: Minimum range per dimension to prevent normalization blow-up
             device: Device to place tensors on
             no_clamp: If True, skip clamping in scale() and unscale().

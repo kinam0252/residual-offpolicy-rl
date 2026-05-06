@@ -448,8 +448,10 @@ def main():
             metrics["eval/eval_time_sec"] = eval_time
 
             result_path = output_dir / f"eval_step{step}.json"
-            with open(result_path, "w") as f:
+            tmp_path = result_path.with_suffix(".json.tmp")
+            with open(tmp_path, "w") as f:
                 json.dump(metrics, f, indent=2)
+            tmp_path.rename(result_path)  # atomic on same filesystem
 
             if _wb is not None and _wb.run is not None:
                 _wb.log(metrics)
