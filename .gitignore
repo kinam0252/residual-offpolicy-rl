@@ -40,3 +40,5 @@ memo/
 report/logs/
 logs/
 debug/
+slurms/
+slurm-*.out
