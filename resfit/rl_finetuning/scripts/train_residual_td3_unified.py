@@ -969,6 +969,7 @@ def main():
         use_gripper_latch=task_cfg.use_gripper_latch,
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
+        async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
     )
     _log("Environment ready.")
 
@@ -1176,6 +1177,18 @@ def main():
     # ══════════════════════════════════════════════════════════════
     # Main training loop
     # ══════════════════════════════════════════════════════════════
+    # Flush CUDA state before re-entering EGL rendering — heavy CUDA ops
+    # during critic warmup can leave the GPU in a state that causes
+    # EGL_BAD_ACCESS when MuJoCo's eglMakeCurrent() is called.
+    import gc
+    torch.cuda.synchronize()
+    gc.collect()
+    torch.cuda.empty_cache()
+    # Proactively reinitialize all EGL renderers after critic warmup
+    _vec = env.vec_env if hasattr(env, 'vec_env') else env
+    if hasattr(_vec, '_reinit_all_renderers'):
+        _log("Reinitializing EGL renderers after critic warmup...")
+        _vec._reinit_all_renderers()
     _log(f"Training {args.total_timesteps} steps...")
     obs, _ = env.reset()
     global_step = _resume_step

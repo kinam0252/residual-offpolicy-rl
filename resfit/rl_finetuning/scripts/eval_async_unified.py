@@ -353,6 +353,7 @@ def main():
         use_gripper_latch=task_cfg.use_gripper_latch,
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
+        async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
     )
     _log("Eval environment ready.")
 

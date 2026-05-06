@@ -85,6 +85,12 @@ class SubprocVecEnvMixin:
         for i in range(num_envs):
             envs_per_worker[i % actual_workers].append(i)
 
+        # Force spawned workers to use osmesa (no GPU rendering)
+        # so they don't compete for EGL contexts with the main process.
+        import os as _os
+        _orig_gl = _os.environ.get("MUJOCO_GL")
+        _os.environ["MUJOCO_GL"] = "osmesa"
+
         for w_idx in range(actual_workers):
             env_indices = envs_per_worker[w_idx]
             for local_i, global_i in enumerate(env_indices):
@@ -103,6 +109,12 @@ class SubprocVecEnvMixin:
             child_pipe.close()
             self._workers.append(proc)
             self._worker_pipes.append(parent_pipe)
+
+        # Restore original MUJOCO_GL for main process
+        if _orig_gl is not None:
+            _os.environ["MUJOCO_GL"] = _orig_gl
+        else:
+            _os.environ.pop("MUJOCO_GL", None)
 
         task_name = getattr(self, '__class__', type(self)).__name__
         print(f"[{task_name}] Spawned {actual_workers} workers for {num_envs} envs")

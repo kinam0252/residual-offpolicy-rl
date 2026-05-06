@@ -29,6 +29,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
+# EGL must be set before mujoco import
+os.environ.setdefault("MUJOCO_GL", "egl")
+
 import cv2
 import gymnasium as gym
 import mujoco
@@ -222,7 +225,7 @@ def _pnp_env_worker_loop(pipe, init_kwargs):
     import os
     os.environ['OMP_NUM_THREADS'] = '1'
     os.environ['MKL_NUM_THREADS'] = '1'
-    os.environ['MUJOCO_GL'] = 'osmesa'
+    os.environ['MUJOCO_GL'] = 'osmesa'  # Workers don't render; avoid EGL conflicts
 
     import mujoco as _mj
     import numpy as _np
@@ -1125,6 +1128,32 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
             "finger_actuator_ids": finger_actuator_ids,
         }
 
+    def rebuild_renderers(self):
+        """Destroy and recreate all EGL renderers (fixes CUDA↔EGL conflicts)."""
+        try:
+            from mujoco.egl import egl_ext as _EGL
+            _EGL.eglReleaseThread()
+        except Exception:
+            pass
+        _rs = self.rl_img_size
+        for env in self._envs:
+            model = env["model"]
+            for key in ("renderer_base", "renderer_wrist", "renderer_front",
+                        "depth_renderer_front", "depth_renderer_wrist"):
+                old = env.get(key)
+                if old is not None:
+                    try:
+                        old.close()
+                    except Exception:
+                        pass
+            env["renderer_base"] = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
+            env["renderer_wrist"] = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
+            env["renderer_front"] = mujoco.Renderer(model, height=_rs, width=_rs)
+            env["depth_renderer_front"] = mujoco.Renderer(model, height=_rs, width=_rs)
+            env["depth_renderer_front"].enable_depth_rendering()
+            env["depth_renderer_wrist"] = mujoco.Renderer(model, height=_rs, width=_rs)
+            env["depth_renderer_wrist"].enable_depth_rendering()
+
     # ------------------------------------------------------------------
     # Core API
     # ------------------------------------------------------------------
@@ -1951,6 +1980,61 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
         ])
         return state
 
+    def _reinit_all_renderers(self) -> None:
+        """Reinitialize ALL renderers after heavy CUDA ops corrupt EGL state.
+
+        Must terminate EGL display exactly ONCE, then recreate all renderers.
+        """
+        import sys, gc
+        _RKEYS = ("renderer_base", "renderer_wrist", "renderer_front",
+                  "depth_renderer_front", "depth_renderer_wrist")
+        print("[PnP] Reinitializing EGL renderers...", file=sys.stderr, flush=True)
+
+        # Phase 1: Nullify renderer refs to prevent GC from calling
+        # eglDestroyContext on the terminated display later.
+        old_renderers = []
+        for env in self._envs:
+            for key in _RKEYS:
+                old = env.get(key)
+                if old is not None:
+                    # Prevent __del__ from calling free() on stale display
+                    try:
+                        old._gl_context._context = None
+                    except Exception:
+                        pass
+                    old_renderers.append(old)
+                    env[key] = None
+
+        # Phase 2: Terminate old EGL display once
+        try:
+            import mujoco.egl as _egl_mod
+            if _egl_mod.EGL_DISPLAY is not None:
+                try:
+                    _egl_mod.EGL.eglTerminate(_egl_mod.EGL_DISPLAY)
+                except Exception:
+                    pass
+                _egl_mod.EGL_DISPLAY = None
+        except Exception:
+            pass
+
+        # Phase 3: Drop old renderer refs and force GC
+        del old_renderers
+        gc.collect()
+
+        # Phase 4: Create fresh renderers (first one re-initializes EGL display)
+        _rs = self.rl_img_size
+        for i, env in enumerate(self._envs):
+            model = env["model"]
+            env["renderer_base"] = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
+            env["renderer_wrist"] = mujoco.Renderer(model, height=RENDER_H, width=RENDER_W)
+            env["renderer_front"] = mujoco.Renderer(model, height=_rs, width=_rs)
+            env["depth_renderer_front"] = mujoco.Renderer(model, height=_rs, width=_rs)
+            env["depth_renderer_front"].enable_depth_rendering()
+            env["depth_renderer_wrist"] = mujoco.Renderer(model, height=_rs, width=_rs)
+            env["depth_renderer_wrist"].enable_depth_rendering()
+
+        print(f"[PnP] Rebuilt {self.num_envs * 5} renderers OK", file=sys.stderr, flush=True)
+
     def _render_cameras(
         self,
         env_idx: int,
@@ -1971,7 +2055,22 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
             if cam_id >= 0:
                 kw = {"scene_option": opt} if opt else {}
                 renderer.update_scene(data, camera=cam_id, **kw)
-                img_rgb = renderer.render().copy()
+                try:
+                    img_rgb = renderer.render().copy()
+                except Exception as _egl_err:
+                    if "EGL_BAD_ACCESS" in str(_egl_err) or "EGL" in str(type(_egl_err).__name__):
+                        # CUDA/EGL conflict — reinitialize all renderers once
+                        self._reinit_all_renderers()
+                        # Retry with fresh renderer
+                        renderer = env[{
+                            "front": "renderer_front",
+                            "cam_base": "renderer_base",
+                            "cam_wrist": "renderer_wrist",
+                        }[mj_key]]
+                        renderer.update_scene(data, camera=cam_id, **kw)
+                        img_rgb = renderer.render().copy()
+                    else:
+                        raise
             else:
                 img_rgb = np.zeros((self.rl_img_size, self.rl_img_size, 3), dtype=np.uint8)
 
@@ -2003,7 +2102,19 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
             if cam_id >= 0:
                 kw = {"scene_option": opt} if opt else {}
                 renderer.update_scene(data, camera=cam_id, **kw)
-                depth_raw = renderer.render().copy()
+                try:
+                    depth_raw = renderer.render().copy()
+                except Exception as _egl_err:
+                    if "EGL_BAD_ACCESS" in str(_egl_err) or "EGL" in str(type(_egl_err).__name__):
+                        self._reinit_all_renderers()
+                        renderer = env[{
+                            "front": "depth_renderer_front",
+                            "wrist": "depth_renderer_wrist",
+                        }[cam_name]]
+                        renderer.update_scene(data, camera=cam_id, **kw)
+                        depth_raw = renderer.render().copy()
+                    else:
+                        raise
             else:
                 depth_raw = np.zeros((self.rl_img_size, self.rl_img_size), dtype=np.float32)
 

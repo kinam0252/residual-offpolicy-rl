@@ -1,7 +1,7 @@
 {
   "task": "pnp",
   "groot_checkpoint": "~/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000",
-  "offline_data_dir": "outputs/offline_data/pnp_66ep_dense_v3",
+  "offline_data_dir": "outputs/offline_data/pnp_30pos_states",
 
   "positions_file": "configs/pnp_66ep_positions.json",
   "train_positions": 30,

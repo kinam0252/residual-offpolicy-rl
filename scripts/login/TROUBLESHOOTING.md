@@ -8,13 +8,26 @@
 
 **증상**: `eglMakeCurrent failed with EGL_BAD_ACCESS`
 
-**원인**: `render_parallel=True`에서 여러 스레드가 동시에 EGL context 사용. MuJoCo 렌더러는 thread-affine.
+**원인**: EGL context는 **thread-affine**. 다음 상황에서 발생:
+1. `async_prefetch=True` → background thread에서 GR00T 추론 시 `get_groot_obs()` → EGL rendering → main thread와 충돌
+2. `render_parallel=True` → ThreadPoolExecutor에서 여러 env 동시 렌더링
+3. Critic warmup의 heavy CUDA ops가 EGL display state를 corrupt (드문 케이스)
 
-**해결**:
+**해결** (2026-05-06 확인):
 ```python
-# MuJoCoResidualWrapperUnified 생성 시
-wrapper = MuJoCoResidualWrapperUnified(..., render_parallel=False, async_prefetch=False)
+# train_residual_td3_unified.py & eval_async_unified.py:
+wrapper = MuJoCoResidualWrapperUnified(..., async_prefetch=False)
+
+# critic warmup 후 renderer 재생성 (train script에 이미 적용):
+env.vec_env.rebuild_renderers()
 ```
+
+**핵심**: `async_prefetch`는 성능 최적화이지만, EGL이 thread-safe하지 않아 training에서 사용 불가. Eval subprocess에서도 동일하게 `async_prefetch=False` 필수.
+
+**이력**:
+- Job 8560 (성공): `async_prefetch` 기능이 존재하지 않던 코드 버전
+- Job 8835~10635 (실패): `async_prefetch=True` 기본값이 적용됨
+- Job 10658+ (성공): `async_prefetch=False` 명시 + `rebuild_renderers()`
 
 ---
 
