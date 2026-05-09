@@ -32,6 +32,8 @@ def relabel_cup(data: dict, reward_type: str) -> Optional[np.ndarray]:
 
     if reward_type == "dense_v2":
         reward = 0.10 * approach_r + 0.10 * grasp_r + 0.30 * upright_r + 0.50 * is_success
+    elif reward_type == "dense_v3":
+        reward = 0.25 * approach_r + 0.15 * grasp_r + 0.25 * upright_r + 0.35 * is_success
     elif reward_type in ("dense_bonus", "dense_equal_bonus"):
         w_a, w_g, w_u = (0.33, 0.34, 0.33) if "equal" in reward_type else (0.20, 0.15, 0.65)
         reward = w_a * approach_r + w_g * grasp_r + w_u * upright_r + 2.0 * is_success

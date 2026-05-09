@@ -570,6 +570,10 @@ def _cup_env_worker_loop(pipe, init_kwargs):
             success_reward = 1.0 if _is_success_local(env) else 0.0
             reward = 0.10 * approach_reward + 0.10 * grasp_reward + 0.30 * upright_reward + 0.50 * success_reward
             return float(_np.clip(reward, 0.0, 1.0))
+        if reward_type == "dense_v3":
+            success_reward = 1.0 if _is_success_local(env) else 0.0
+            reward = 0.25 * approach_reward + 0.15 * grasp_reward + 0.25 * upright_reward + 0.35 * success_reward
+            return float(_np.clip(reward, 0.0, 1.0))
         if reward_type in ("dense_equal", "dense_equal_bonus"):
             w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33
         else:
@@ -1316,6 +1320,10 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
         if self.reward_type == "dense_v2":
             success_reward = 1.0 if self._is_success(env_idx) else 0.0
             reward = 0.10 * approach_reward + 0.10 * grasp_reward + 0.30 * upright_reward + 0.50 * success_reward
+            return float(np.clip(reward, 0.0, 1.0))
+        if self.reward_type == "dense_v3":
+            success_reward = 1.0 if self._is_success(env_idx) else 0.0
+            reward = 0.25 * approach_reward + 0.15 * grasp_reward + 0.25 * upright_reward + 0.35 * success_reward
             return float(np.clip(reward, 0.0, 1.0))
         if self.reward_type in ("dense_equal", "dense_equal_bonus"):
             w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33

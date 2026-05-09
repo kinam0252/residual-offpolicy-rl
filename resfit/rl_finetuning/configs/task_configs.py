@@ -100,7 +100,7 @@ CUP_CONFIG = TaskConfig(
     },
     default_num_envs=27,
     default_reward_type="dense",
-    reward_choices=["sparse", "dense", "dense_bonus"],
+    reward_choices=["sparse", "dense", "dense_bonus", "dense_v2", "dense_v3"],
     default_max_episode_steps=500,
     default_gamma=0.95,
     default_action_l2_reg=1.0,
