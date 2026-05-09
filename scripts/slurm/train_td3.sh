@@ -52,6 +52,9 @@ OVERRIDES=""
 [ -n "$TOTAL_STEPS" ] && OVERRIDES="$OVERRIDES --total_timesteps $TOTAL_STEPS"
 [ -n "$GROOT_CKPT" ] && OVERRIDES="$OVERRIDES --groot_checkpoint $GROOT_CKPT"
 [ -n "$OFFLINE_DIR" ] && OVERRIDES="$OVERRIDES --offline_data_dir $OFFLINE_DIR"
+[ -n "$RESIDUAL_POS_SCALE" ] && OVERRIDES="$OVERRIDES --residual_pos_scale $RESIDUAL_POS_SCALE"
+[ -n "$RESIDUAL_GRIP_SCALE" ] && OVERRIDES="$OVERRIDES --residual_grip_scale $RESIDUAL_GRIP_SCALE"
+[ -n "$RESIDUAL_ROT_SCALE" ] && OVERRIDES="$OVERRIDES --residual_rot_scale $RESIDUAL_ROT_SCALE"
 
 # ══════════════════════════════════════════════════════════════════
 # Launch unified training
