@@ -148,6 +148,8 @@ def _load_offline_data(
     reward_relabel: str = "none",
     action_scaler=None,
     reward_config_path: str | None = None,
+    reward_type: str | None = None,
+    task: str | None = None,
 ) -> None:
     """Load offline .npz files into the replay buffer."""
     npz_files = sorted(Path(data_dir).rglob("*.npz"))
@@ -237,6 +239,35 @@ def _load_offline_data(
                 if len(term_idxs) > 0:
                     reward_t[term_idxs[-1]] = 1.0
                     _relabel_success_count += 1
+        elif task == "cup" and reward_type is not None and reward_type != "sparse":
+            # Recompute Cup reward from stored features using current reward_type
+            cup_features = ["tcp_cup_dist", "grasped", "uprightness", "cup_vel", "cup_z"]
+            missing = [k for k in cup_features if k not in data]
+            if missing:
+                _log(f"    WARNING: {npz_path.name} missing cup features {missing}, using stored reward")
+                reward_t = torch.from_numpy(data["reward"].astype(np.float32)).clamp(0.0, 1.0)
+            else:
+                tcp_cup_dist = data["tcp_cup_dist"].astype(np.float32)
+                grasped = data["grasped"].astype(np.float32)
+                uprightness = data["uprightness"].astype(np.float32)
+                cup_vel = data["cup_vel"].astype(np.float32)
+                cup_z = data["cup_z"].astype(np.float32)
+
+                approach_r = 1.0 - np.tanh(tcp_cup_dist / 0.10)
+                grasp_r = grasped
+                upright_r = np.clip(uprightness, 0.0, 1.0) * grasped
+                is_success = ((uprightness > 0.82) & (cup_vel < 0.5)
+                              & (cup_z > 0.0) & (cup_z < 0.15)).astype(np.float32)
+
+                if reward_type == "dense_v2":
+                    reward_np = 0.10 * approach_r + 0.10 * grasp_r + 0.30 * upright_r + 0.50 * is_success
+                elif reward_type in ("dense_bonus", "dense_equal_bonus"):
+                    w_a, w_g, w_u = (0.33, 0.34, 0.33) if "equal" in reward_type else (0.20, 0.15, 0.65)
+                    reward_np = w_a * approach_r + w_g * grasp_r + w_u * upright_r + 2.0 * is_success
+                else:  # dense / dense_equal
+                    w_a, w_g, w_u = (0.33, 0.34, 0.33) if "equal" in reward_type else (0.20, 0.15, 0.65)
+                    reward_np = w_a * approach_r + w_g * grasp_r + w_u * upright_r
+                reward_t = torch.from_numpy(reward_np).clamp(0.0, 1.0)
         elif use_features and _reward_cfg is not None:
             # Compute reward from raw features (e.g. stack task)
             feature_keys = ["tcp_white_dist", "white_to_green_top_3d", "white_green_xy_dist",
@@ -1042,6 +1073,7 @@ def main():
             "buffer_size": args.buffer_size,
             "lowdim_keys": sorted(lowdim_keys),
             "reward_relabel": args.offline_reward_relabel,
+            "reward_type": getattr(args, 'reward_type', None),
             "reward_config": getattr(args, 'reward_config', None),
             "use_action_scaler": args.use_action_scaler,
             "action_scale": args.action_scale if args.use_action_scaler else None,
@@ -1072,6 +1104,8 @@ def main():
                 device="cpu", reward_relabel=args.offline_reward_relabel,
                 action_scaler=_action_scaler,
                 reward_config_path=getattr(args, 'reward_config', None),
+                reward_type=getattr(args, 'reward_type', None),
+                task=args.task,
             )
             _log(f"Offline buffer: {len(offline_rb)} transitions")
             if not args.no_offline_cache:

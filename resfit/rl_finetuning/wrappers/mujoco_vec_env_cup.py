@@ -566,6 +566,10 @@ def _cup_env_worker_loop(pipe, init_kwargs):
         grasp_reward = 1.0 if grasped else 0.0
         uprightness = _get_uprightness_local(env)
         upright_reward = float(_np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
+        if reward_type == "dense_v2":
+            success_reward = 1.0 if _is_success_local(env) else 0.0
+            reward = 0.10 * approach_reward + 0.10 * grasp_reward + 0.30 * upright_reward + 0.50 * success_reward
+            return float(_np.clip(reward, 0.0, 1.0))
         if reward_type in ("dense_equal", "dense_equal_bonus"):
             w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33
         else:
@@ -585,7 +589,7 @@ def _cup_env_worker_loop(pipe, init_kwargs):
         uprightness = _get_uprightness_local(env)
         cup_z = data.qpos[cup_qpa + 2]
         cup_vel = _np.linalg.norm(data.qvel[cup_dof:cup_dof + 6]) if cup_dof is not None else 0.0
-        return (uprightness > 0.85 and cup_vel < 0.5
+        return (uprightness > 0.82 and cup_vel < 0.5
                 and cup_z > 0.0 and cup_z < CUP_HEIGHT * 1.5)
 
     def _extract_state(env):
@@ -1309,6 +1313,10 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
         upright_reward = float(np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
 
         # Select reward weights based on reward_type
+        if self.reward_type == "dense_v2":
+            success_reward = 1.0 if self._is_success(env_idx) else 0.0
+            reward = 0.10 * approach_reward + 0.10 * grasp_reward + 0.30 * upright_reward + 0.50 * success_reward
+            return float(np.clip(reward, 0.0, 1.0))
         if self.reward_type in ("dense_equal", "dense_equal_bonus"):
             w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33
         else:
@@ -1334,7 +1342,7 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
         cup_z_pos = data.qpos[cup_qpa + 2]
         cup_vel = np.linalg.norm(data.qvel[cup_dof:cup_dof + 6]) if cup_dof is not None else 0.0
 
-        return (uprightness > 0.85
+        return (uprightness > 0.82
                 and cup_vel < 0.5
                 and cup_z_pos > 0.0
                 and cup_z_pos < CUP_HEIGHT * 1.5)
