@@ -411,6 +411,9 @@ def main():
                     ema_alpha=0.0,
                     async_prefetch=False,
                     render_parallel=False,
+                    grip_min=0.0,
+                    grip_max=1.0,
+                    use_gripper_latch=True,
                 )
 
             else:

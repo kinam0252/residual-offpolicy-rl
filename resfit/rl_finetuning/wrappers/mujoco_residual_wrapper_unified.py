@@ -72,10 +72,10 @@ class _FakeImageFeaturesConfig:
         self.image_features = camera_keys
 
 
-# Default gripper latch thresholds
-_GRIP_CLOSE_LATCH_THRESH = 0.015
-_GRIP_OPEN_LATCH_THRESH = 0.035
-_GRIP_LATCH_OPEN_STEPS = 32
+# Default gripper latch thresholds (overridable per-task via constructor)
+_DEFAULT_GRIP_CLOSE_LATCH_THRESH = 0.8
+_DEFAULT_GRIP_OPEN_LATCH_THRESH = 0.95
+_DEFAULT_GRIP_LATCH_OPEN_STEPS = 150
 
 
 class MuJoCoResidualWrapperUnified:
@@ -107,6 +107,9 @@ class MuJoCoResidualWrapperUnified:
         grip_min: float = 0.0,
         grip_max: float = 1.0,
         use_gripper_latch: bool = False,
+        grip_close_latch_thresh: float | None = None,
+        grip_open_latch_thresh: float | None = None,
+        grip_latch_open_steps: int | None = None,
         camera_keys: dict | None = None,
         # ActionScaler for obs normalization
         action_scaler=None,
@@ -130,6 +133,9 @@ class MuJoCoResidualWrapperUnified:
         self.grip_min = grip_min
         self.grip_max = grip_max
         self.use_gripper_latch = use_gripper_latch
+        self.grip_close_latch_thresh = grip_close_latch_thresh if grip_close_latch_thresh is not None else _DEFAULT_GRIP_CLOSE_LATCH_THRESH
+        self.grip_open_latch_thresh = grip_open_latch_thresh if grip_open_latch_thresh is not None else _DEFAULT_GRIP_OPEN_LATCH_THRESH
+        self.grip_latch_open_steps = grip_latch_open_steps if grip_latch_open_steps is not None else _DEFAULT_GRIP_LATCH_OPEN_STEPS
         self.action_scaler = action_scaler  # for normalizing obs.base_action
 
         # Object state augmentation
@@ -523,9 +529,9 @@ class MuJoCoResidualWrapperUnified:
         if self.use_gripper_latch:
             for i in range(self.num_envs):
                 if self._grip_latched[i]:
-                    if raw_grip[i] > _GRIP_OPEN_LATCH_THRESH:
+                    if raw_grip[i] > self.grip_open_latch_thresh:
                         self._grip_open_count[i] += 1
-                        if self._grip_open_count[i] >= _GRIP_LATCH_OPEN_STEPS:
+                        if self._grip_open_count[i] >= self.grip_latch_open_steps:
                             self._grip_latched[i] = False
                             self._grip_open_count[i] = 0
                             combined[i, 7] = raw_grip[i]
@@ -535,7 +541,7 @@ class MuJoCoResidualWrapperUnified:
                         self._grip_open_count[i] = 0
                         combined[i, 7] = self.grip_min
                 else:
-                    if raw_grip[i] < _GRIP_CLOSE_LATCH_THRESH:
+                    if raw_grip[i] < self.grip_close_latch_thresh:
                         self._grip_latched[i] = True
                         self._grip_open_count[i] = 0
                         combined[i, 7] = self.grip_min

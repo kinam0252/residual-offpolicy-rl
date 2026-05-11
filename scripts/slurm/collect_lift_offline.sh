@@ -32,11 +32,11 @@ cd ~/Repos/Intern/residual-offpolicy-rl
 # ══════════════════════════════════════════════════════════════════
 
 POS_FILE=${POS_FILE:-configs/lift_66ep_positions.json}
-GROOT_CKPT=${GROOT_CKPT:-~/DATA/INTERN/training/gr00t_sim_66ep/checkpoint-300000}
+GROOT_CKPT=${GROOT_CKPT:-~/DATA/INTERN/training/groot_lift_sim_32ep_100k/checkpoint-100000}
 OUTPUT_DIR=${OUTPUT_DIR:-outputs/offline_data/lift_30pos_states}
 NUM_POS=${NUM_POS:-30}
 EPISODES=${EPISODES:-10}
-BATCH_SIZE=${BATCH_SIZE:-15}
+BATCH_SIZE=${BATCH_SIZE:-5}
 REWARD_TYPE=${REWARD_TYPE:-dense_clipped}
 
 echo "[Lift Offline] Job $SLURM_JOB_ID"

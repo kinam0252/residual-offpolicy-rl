@@ -361,6 +361,9 @@ def main():
         grip_min=task_cfg.grip_min,
         grip_max=task_cfg.grip_max,
         use_gripper_latch=task_cfg.use_gripper_latch,
+        grip_close_latch_thresh=task_cfg.grip_close_latch_thresh,
+        grip_open_latch_thresh=task_cfg.grip_open_latch_thresh,
+        grip_latch_open_steps=task_cfg.grip_latch_open_steps,
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS

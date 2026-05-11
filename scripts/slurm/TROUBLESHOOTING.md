@@ -133,3 +133,63 @@ export CUDA_VISIBLE_DEVICES=$(nvidia-smi --query-gpu=index --format=csv,noheader
 cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl
 python3 scripts/workloads/your_script.py
 ```
+
+---
+
+## Lift Base Eval SR=0% (큐브 위치 불일치)
+
+**증상**: Lift base eval에서 GR00T가 gripper close를 전혀 예측하지 않음. 모든 스텝에서 `raw_grip ≈ 0.99` (fully open). SR=0%.
+
+**원인**: `MuJoCoVecEnv` 기본 큐브 위치 `[0.45, -0.05, 0.02]`가 학습 데이터(Lift_32ep_sim)의 큐브 위치와 다름. GR00T에 입력되는 카메라 이미지에 큐브가 안 보이거나 다른 위치에 있어서, 학습 시 본 observation 분포와 맞지 않음.
+
+**검증**: 데이터셋 observation을 GR00T에 직접 넣으면 close 정상 출력 → 모델 자체는 정상, 입력 분포 문제.
+
+**해결**: 학습 데이터 수집 시 사용한 큐브 위치를 로드:
+```python
+vec_env = MuJoCoVecEnv(..., cube_positions=cube_positions)
+```
+```bash
+python scripts/eval_base_lift.py --cube_positions_json configs/lift_66ep_positions.json
+```
+위치 적용 후 reward 60x 증가 (130 → 7700+), GR00T가 close 예측 시작.
+
+---
+
+## Lift Gripper Close 신호 너무 짧음 (Latch 필요)
+
+**증상**: 큐브 위치 수정 후 GR00T가 close를 예측하지만, 1 action chunk (16스텝) 동안만 close → 다음 chunk에서 즉시 open (0.99) → 큐브를 잡았다 바로 놓음. lift=0.02m 정도에서 drop.
+
+**원인**: GR00T action chunk (horizon=16)에서 close 구간이 짧음. Lift 데이터셋의 close ratio가 27%로 낮아서(PnP는 46%), close를 유지하는 패턴을 충분히 학습하지 못함. chunk 경계에서 grip 값이 0.99로 복귀.
+
+**해결**: gripper latch 활성화. 한번 close하면 일정 시간 유지:
+```python
+# mujoco_residual_wrapper_unified.py
+_GRIP_CLOSE_LATCH_THRESH = 0.8    # raw_grip < 0.8 → latch ON
+_GRIP_OPEN_LATCH_THRESH = 0.95   # raw_grip > 0.95 for N steps → unlatch
+_GRIP_LATCH_OPEN_STEPS = 150     # 150스텝 연속 open이어야 unlatch
+
+env = MuJoCoResidualWrapperUnified(..., use_gripper_latch=True)
+```
+⚠️ 위 threshold는 Lift용 (grip 범위 0~1). Cup (grip 범위 0~0.04)에서는 원래 값 (0.015/0.035) 사용. 현재 module-level 상수이므로 task 전환 시 주의.
+
+**결과**: SR 0% → 60% (20 env 기준).
+
+---
+
+## Eval 스크립트 Success 미감지 (terminated vs info["success"])
+
+**증상**: env가 성공적으로 lift하고 auto-reset까지 되지만, eval 스크립트에서 SR=0%으로 집계됨. 로그에서 `G lift=0.040` 후 다음 스텝에서 `- lift=0.000` (reset됨).
+
+**원인**: eval 스크립트가 `info["success"]`를 체크했지만, `MuJoCoResidualWrapperUnified`는 해당 키를 info에 넣지 않음. success 시 `terminated=True`를 반환하고 자동으로 env를 reset (line 293: `self.vec_env.reset_envs(done_ids)`).
+
+**해결**: `terminated=True`로 success 감지:
+```python
+# 잘못된 코드
+if "success" in info:
+    if info["success"][i]: ep_successes[i] = True
+
+# 올바른 코드
+if terminated[i]: ep_successes[i] = True
+```
+
+**참고**: `terminated=True`는 `_is_success()` (grasped + lift ≥ 4cm)에서만 발생. `truncated=True`는 max_episode_steps 도달 시 (실패).

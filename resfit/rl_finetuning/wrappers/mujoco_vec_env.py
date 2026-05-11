@@ -66,7 +66,7 @@ RENDER_W = 640
 RENDER_H = 360
 RL_IMG_SIZE = 84
 CUBE_HALF_SIZE = (0.06, 0.02, 0.02)  # 12×4×4 cm lying flat
-GRIPPER_CLOSE_THRESHOLD = 0.5
+GRIPPER_CLOSE_THRESHOLD = 0.8  # was 0.5 — too close to sim data min (~0.494)
 LIFT_REWARD_THRESHOLD_M = 0.005  # 5 mm sparse reward threshold
 LIFT_SUCCESS_THRESHOLD_M = 0.04  # 4 cm — episode terminates on success
 FPS = 20
@@ -295,28 +295,36 @@ def _lift_env_worker_loop(pipe, init_kwargs):
         if reward_type == "sparse":
             return 1.0 if lift_delta >= success_threshold else 0.0
 
-        if reward_type == "dense":
-            tcp_pos, _ = _get_tcp_pose(model, data, ids["hand_id"])
-            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
-            finger_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
-            grasped = float(env["grasp_state"]["grasped"])
+        # Shared state for all dense variants
+        tcp_pos, _ = _get_tcp_pose(model, data, ids["hand_id"])
+        cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
+        tcp_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
+        grasped = env["grasp_state"]["grasped"]
+        is_success = lift_delta >= success_threshold and grasped
 
-            distance_reward = (1.0 - _np.tanh(finger_cube_dist / 0.1)) * 1.0
-            contact_reward = grasped * 2.0
-            height_reward = float(lift_delta > 0.005) * _np.tanh(lift_delta / 0.1) * 100.0 * grasped
-            success_reward = float(lift_delta >= success_threshold) * 100.0 * grasped
-            return float(distance_reward + contact_reward + height_reward + success_reward)
+        if reward_type == "dense":
+            approach = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.15
+            grasp = 0.10 if grasped else 0.0
+            lift = 0.0
+            if grasped:
+                lift = _np.tanh(max(lift_delta, 0.0) / success_threshold) * 0.40
+            success = 0.35 if is_success else 0.0
+            return float(_np.clip(approach + grasp + lift + success, 0.0, 1.0))
+
+        if reward_type == "dense_v2":
+            approach = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.10
+            grasp = 0.10 if grasped else 0.0
+            lift = 0.0
+            if grasped:
+                lift = _np.tanh(max(lift_delta, 0.0) / success_threshold) * 0.30
+            success = 0.50 if is_success else 0.0
+            return float(_np.clip(approach + grasp + lift + success, 0.0, 1.0))
 
         if reward_type == "dense_clipped":
-            tcp_pos, _ = _get_tcp_pose(model, data, ids["hand_id"])
-            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
-            finger_cube_dist = float(_np.linalg.norm(tcp_pos - cube_pos))
-            grasped = float(env["grasp_state"]["grasped"])
-
-            distance_reward = (1.0 - _np.tanh(finger_cube_dist / 0.1)) * 0.1
-            contact_reward = grasped * 0.2
-            height_reward = float(lift_delta > 0.005) * _np.tanh(lift_delta / 0.1) * 0.5 * grasped
-            success_reward = float(lift_delta >= success_threshold) * 1.0 * grasped
+            distance_reward = (1.0 - _np.tanh(tcp_cube_dist / 0.1)) * 0.1
+            contact_reward = 0.2 if grasped else 0.0
+            height_reward = float(lift_delta > 0.005) * _np.tanh(lift_delta / 0.1) * 0.5 * float(grasped)
+            success_reward = 1.0 if is_success else 0.0
             return float(_np.clip(distance_reward + contact_reward + height_reward + success_reward, 0.0, 1.0))
 
         return float(_np.clip(lift_delta * 100.0, 0.0, 1.0))
@@ -995,50 +1003,54 @@ class MuJoCoVecEnv(SubprocVecEnvMixin):
         if self.reward_type == "sparse":
             return 1.0 if lift_delta >= self.success_threshold else 0.0
 
-        elif self.reward_type == "dense":
-            # High-bonus dense reward (v1 style): success/height dominate distance
-            tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
-            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
-            finger_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
+        # Shared state for all dense variants
+        tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
+        cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
+        tcp_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
+        grasped = env["grasp_state"]["grasped"]
+        is_success = lift_delta >= self.success_threshold and grasped
 
-            grasped = float(env["grasp_state"]["grasped"])
+        if self.reward_type == "dense":
+            # Staged dense reward [0, 1] — matches Cup/Stack pattern
+            #   approach (0.15): tanh decay on TCP→cube distance
+            #   grasp   (0.10): flat reward when grasped
+            #   lift    (0.40): height progress (only when grasped)
+            #   success (0.35): lifted above threshold
+            approach = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.15
+            grasp = 0.10 if grasped else 0.0
+            lift = 0.0
+            if grasped:
+                lift = np.tanh(max(lift_delta, 0.0) / self.success_threshold) * 0.40
+            success = 0.35 if is_success else 0.0
+            return float(np.clip(approach + grasp + lift + success, 0.0, 1.0))
 
-            distance_reward = (1.0 - np.tanh(finger_cube_dist / 0.1)) * 1.0
-            contact_reward = grasped * 2.0
-            height_reward = (
-                float(lift_delta > 0.005)
-                * np.tanh(lift_delta / 0.1)
-                * 100.0
-                * grasped
-            )
-            success_reward = float(lift_delta >= self.success_threshold) * 100.0 * grasped
-
-            return float(distance_reward + contact_reward + height_reward + success_reward)
+        elif self.reward_type == "dense_v2":
+            # Success-heavy variant [0, 1]
+            approach = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.10
+            grasp = 0.10 if grasped else 0.0
+            lift = 0.0
+            if grasped:
+                lift = np.tanh(max(lift_delta, 0.0) / self.success_threshold) * 0.30
+            success = 0.50 if is_success else 0.0
+            return float(np.clip(approach + grasp + lift + success, 0.0, 1.0))
 
         elif self.reward_type == "dense_clipped":
-            # 4-stage shaped reward matching IsaacLab v31a
-            tcp_pos, _ = get_tcp_pose(model, data, ids["hand_id"])
-            cube_pos = data.qpos[cube_qposadr:cube_qposadr + 3]
-            finger_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
-
-            grasped = float(env["grasp_state"]["grasped"])
-
-            distance_reward = (1.0 - np.tanh(finger_cube_dist / 0.1)) * 0.1
-            contact_reward = grasped * 0.2
+            # Legacy 4-stage shaped reward (kept for backward compat)
+            distance_reward = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.1
+            contact_reward = 0.2 if grasped else 0.0
             height_reward = (
                 float(lift_delta > 0.005)
                 * np.tanh(lift_delta / 0.1)
                 * 0.5
-                * grasped
+                * float(grasped)
             )
-            success_reward = float(lift_delta >= self.success_threshold) * 1.0 * grasped
-
+            success_reward = 1.0 if is_success else 0.0
             return float(np.clip(
                 distance_reward + contact_reward + height_reward + success_reward,
                 0.0, 1.0,
             ))
 
-        else:  # "dense"
+        else:
             return float(np.clip(lift_delta * 100.0, 0.0, 1.0))
 
     def _is_success(self, env_idx: int) -> bool:

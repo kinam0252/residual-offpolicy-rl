@@ -876,16 +876,17 @@ def parse_args():
         p.error("--groot_checkpoint is required (either via CLI or --config JSON)")
 
     # Unified positions_file → episode_positions_file / eval_positions_file mapping
-    # Slice: first train_positions entries for train, remaining for eval
+    # Train uses first train_positions entries.
+    # Eval uses last eval_positions entries FROM the train set (subset of train).
     if args.positions_file:
         import json as _json_pos
         with open(args.positions_file) as f:
             all_positions = _json_pos.load(f)
         n_train = getattr(args, 'train_positions', None) or len(all_positions)
+        n_eval = getattr(args, 'eval_positions', None) or n_train
         train_slice = all_positions[:n_train]
-        eval_slice = all_positions[n_train:]
-        if not eval_slice:
-            eval_slice = all_positions  # fallback: use all if no eval split
+        # Eval is the first n_eval entries of the train set (always a subset of train)
+        eval_slice = train_slice[:n_eval]
 
         # Write sliced files to output_dir
         _out = Path(getattr(args, 'output_dir', 'outputs/tmp_rl'))
@@ -1027,6 +1028,9 @@ def main():
         grip_min=task_cfg.grip_min,
         grip_max=task_cfg.grip_max,
         use_gripper_latch=task_cfg.use_gripper_latch,
+        grip_close_latch_thresh=task_cfg.grip_close_latch_thresh,
+        grip_open_latch_thresh=task_cfg.grip_open_latch_thresh,
+        grip_latch_open_steps=task_cfg.grip_latch_open_steps,
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
