@@ -74,7 +74,7 @@ def _log(msg):
     print(f"[{_ts()}] [diag-eval] {msg}", flush=True)
 
 
-def run_diagnostic_eval(env, agent, num_episodes, device, output_dir):
+def run_diagnostic_eval(env, agent, num_episodes, device, output_dir, base_only=False):
     """Run eval episodes, recording base/residual/combined actions per step."""
     agent.eval()
     num_envs = env.vec_env.num_envs
@@ -103,6 +103,8 @@ def run_diagnostic_eval(env, agent, num_episodes, device, output_dir):
             # 2. Get residual action from RL agent
             with torch.no_grad():
                 residual_action = agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
+            if base_only:
+                residual_action = torch.zeros_like(residual_action)
             residual_np = residual_action.detach().cpu().numpy()  # (N, 7)
 
             # 3. Compute scaled residual (what actually gets added)
@@ -297,6 +299,8 @@ def main():
     p.add_argument("--num_episodes", type=int, default=1)
     p.add_argument("--output_dir", type=str, default="outputs/cup_diagnostic")
     p.add_argument("--device", type=str, default="cuda")
+    p.add_argument("--base_only", action="store_true",
+                   help="Zero out residual to measure base policy SR")
     args = p.parse_args()
 
     # Load checkpoint and extract training args
@@ -424,6 +428,7 @@ def main():
         num_episodes=args.num_episodes,
         device=device,
         output_dir=args.output_dir,
+        base_only=args.base_only,
     )
 
     _log("Done.")

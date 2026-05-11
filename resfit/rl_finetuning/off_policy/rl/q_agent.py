@@ -87,6 +87,7 @@ class QAgent(nn.Module):
 
         assert len(prop_shape) == 1
         prop_dim = prop_shape[0] if cfg.use_prop else 0
+        self._base_state_dim = prop_dim  # raw state dim before VLM/object_state concat
 
         # VLM latent handling: two modes
         #   1. phase_probe_mode=True (default): frozen probe 2048→3 softmax
@@ -416,17 +417,17 @@ class QAgent(nn.Module):
             state = obs["observation.state"]  # (B, 10)
 
             # ── State pre-concat validation ──
-            assert state.shape[-1] == 10, (
-                f"_prepare_prop: state should be 10D before VLM concat, got {state.shape[-1]}. "
+            assert state.shape[-1] == self._base_state_dim, (
+                f"_prepare_prop: state should be {self._base_state_dim}D before VLM concat, got {state.shape[-1]}. "
                 f"Was _prepare_prop called twice?"
             )
 
-            obs["observation.state"] = torch.cat([state, vlm_proj], dim=-1)  # (B, 10+vlm_projected_dim)
+            obs["observation.state"] = torch.cat([state, vlm_proj], dim=-1)  # (B, state_dim+vlm_projected_dim)
 
             # ── State post-concat validation ──
-            assert obs["observation.state"].shape[-1] == 10 + self.vlm_projected_dim, (
+            assert obs["observation.state"].shape[-1] == self._base_state_dim + self.vlm_projected_dim, (
                 f"_prepare_prop: state after VLM concat = {obs['observation.state'].shape[-1]} "
-                f"!= {10 + self.vlm_projected_dim}"
+                f"!= {self._base_state_dim + self.vlm_projected_dim}"
             )
 
         # ── Object state concatenation (cube 6D pose) ──
@@ -941,10 +942,9 @@ class QAgent(nn.Module):
         state = obs["observation.state"]
         assert state.dim() == 2 and state.shape[0] == B, f"update: state shape {state.shape} vs batch {B}"
         if not self.state_only:
-            expected_state_dim = 10  # base state dim (before VLM concat)
+            expected_state_dim = self._base_state_dim
             assert state.shape[1] == expected_state_dim, (
                 f"update: state dim {state.shape[1]} != {expected_state_dim}. "
-                f"State must be 10D (EEF3+quat4+grip2+contact_force1). "
                 f"VLM concat happens later via _prepare_prop()."
             )
         ba = obs["observation.base_action"]

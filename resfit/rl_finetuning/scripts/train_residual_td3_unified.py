@@ -179,6 +179,7 @@ def _load_offline_data(
     total_loaded = 0
     _relabel_success_count = 0
     _relabel_total_count = 0
+    _img_zerofill_warned = False
 
     for npz_path in npz_files:
         if total_loaded >= max_transitions:
@@ -202,6 +203,19 @@ def _load_offline_data(
             "observation.state": torch.from_numpy(data["obs_state"].astype(np.float32)),
             "observation.base_action": ba_t,
         }
+        # Image keys (vision mode): load from npz or zero-fill
+        for img_key in image_keys:
+            npz_key = img_key.replace(".", "_")
+            if npz_key in data:
+                obs_td[img_key] = torch.from_numpy(data[npz_key])
+            else:
+                # Zero-fill: offline data lacks images — these transitions are
+                # still useful for reward/state learning but image features will be zero.
+                obs_td[img_key] = torch.zeros(n, 3, 84, 84, dtype=torch.uint8)
+                if not _img_zerofill_warned:
+                    _log(f"  WARNING: Image key '{img_key}' not found in offline data — zero-filling. "
+                         f"Consider --offline_fraction 0 for image mode.")
+                    _img_zerofill_warned = True
         # Object state (task-specific)
         if "observation.object_state" in lowdim_keys:
             if "obs_object_state" in data:
@@ -245,9 +259,24 @@ def _load_offline_data(
             reward_np = relabel_offline_reward(data, task, reward_type)
             if reward_np is not None:
                 reward_t = torch.from_numpy(reward_np).clamp(0.0, 1.0)
-            else:
+            elif has_saved_reward:
                 _log(f"    WARNING: {npz_path.name} missing features for {task} relabeling, using stored reward")
                 reward_t = torch.from_numpy(data["reward"].astype(np.float32)).clamp(0.0, 1.0)
+            elif use_features and _reward_cfg is not None:
+                # Fallback: compute from raw features (e.g. stack without stored reward)
+                feature_keys = ["tcp_white_dist", "white_to_green_top_3d", "white_green_xy_dist",
+                                "white_z", "green_z", "grasped", "white_green_contact"]
+                missing_feat = [k for k in feature_keys if k not in data]
+                if missing_feat:
+                    _log(f"    WARNING: {npz_path.name} missing features {missing_feat}, skipping")
+                    continue
+                features = {k: data[k] for k in feature_keys}
+                features["done"] = data["done"].astype(bool)
+                reward_np = compute_reward_from_features(features, config=_reward_cfg, use_next_step=True)
+                reward_t = torch.from_numpy(reward_np).clamp(0.0, 1.0)
+            else:
+                _log(f"    WARNING: {npz_path.name} no reward source available, skipping")
+                continue
         elif use_features and _reward_cfg is not None:
             # Compute reward from raw features (e.g. stack task)
             feature_keys = ["tcp_white_dist", "white_to_green_top_3d", "white_green_xy_dist",
@@ -395,6 +424,10 @@ class AsyncEvaluator:
             cmd += ["--action_scaler_max"] + [str(x) for x in self._action_scaler.action_max.tolist()]
             if a.no_action_clamp:
                 cmd += ["--no_action_clamp"]
+        # Vision mode
+        if getattr(a, 'use_images', False):
+            cmd += ["--use_images"]
+            cmd += ["--rl_img_size", str(getattr(a, 'rl_img_size', 84))]
         # W&B
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [
@@ -713,6 +746,16 @@ def parse_args():
     p.add_argument("--torch_compile", action="store_true", default=False)
     p.add_argument("--chunk_sync", action="store_true", default=False)
 
+    # Object state augmentation
+    p.add_argument("--use_obs_noise", action="store_true", default=False,
+                   help="Apply uniform noise to observation.object_state during training")
+    p.add_argument("--use_obs_dropout", action="store_true", default=False,
+                   help="Randomly zero out observation.object_state during training")
+    p.add_argument("--obs_noise_max", type=float, default=0.01,
+                   help="Max noise magnitude σ_max: σ~U(0,σ_max), obs+=U(-σ,σ)")
+    p.add_argument("--obs_dropout_prob", type=float, default=0.1,
+                   help="Probability of zeroing entire object_state per timestep")
+
     # Algorithm
     p.add_argument("--total_timesteps", type=int, default=None)
     p.add_argument("--learning_starts", type=int, default=1_000)
@@ -735,6 +778,12 @@ def parse_args():
     p.add_argument("--asymmetric_critic", action="store_true")
     p.add_argument("--actor_hidden_dim", type=int, default=None)
     p.add_argument("--critic_hidden_dim", type=int, default=None)
+
+    # Vision mode
+    p.add_argument("--use_images", action="store_true",
+                   help="Enable vision mode: use RGB images as RL input (default: state-only)")
+    p.add_argument("--rl_img_size", type=int, default=84,
+                   help="RL image observation size (default: 84)")
 
     # Offline data
     p.add_argument("--offline_data_dir", type=str, default=None)
@@ -981,11 +1030,21 @@ def main():
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
+        obs_noise_max=args.obs_noise_max if args.use_obs_noise else 0.0,
+        obs_dropout_prob=args.obs_dropout_prob if args.use_obs_dropout else 0.0,
+        use_images=getattr(args, 'use_images', False),
     )
+
     _log("Environment ready.")
 
     # ── Dimensions ──
-    image_keys = []
+    if args.use_images:
+        image_keys = task_cfg.rl_image_keys
+        if not image_keys:
+            raise ValueError(f"Task '{args.task}' has no rl_image_keys defined — cannot use --use_images")
+        _log(f"Vision mode: rl_cameras={image_keys}, img_size={args.rl_img_size}")
+    else:
+        image_keys = []
     object_state_dim = task_cfg.object_state_dim
     lowdim_keys = ["observation.state", "observation.base_action"]
     if object_state_dim > 0 and "observation.object_state" in env.observation_space.spaces:
@@ -994,7 +1053,7 @@ def main():
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     action_dim = env.action_dim
 
-    _log(f"State-only: lowdim={lowdim_dim}, object_state={object_state_dim}, action={action_dim}")
+    _log(f"{'Vision' if args.use_images else 'State-only'}: lowdim={lowdim_dim}, object_state={object_state_dim}, action={action_dim}")
 
     # ── QAgent ──
     cfg = ResidualTD3MuJoCoConfig()
@@ -1011,11 +1070,12 @@ def main():
     if args.critic_grad_clip_norm is not None:
         cfg.agent.critic_grad_clip_norm = args.critic_grad_clip_norm
 
+    _rl_img_size = args.rl_img_size if args.use_images else 84
     agent = QAgent(
-        obs_shape=(3, 84, 84),
+        obs_shape=(3, _rl_img_size, _rl_img_size),
         prop_shape=(lowdim_dim,),
         action_dim=action_dim,
-        rl_cameras=[],
+        rl_cameras=image_keys,
         cfg=cfg.agent,
         residual_actor=True,
         object_state_dim=object_state_dim,
@@ -1061,6 +1121,8 @@ def main():
             "object_state_dim": task_cfg.object_state_dim,
             "action_scaler_min": getattr(args, 'action_scaler_min', None),
             "action_scaler_max": getattr(args, 'action_scaler_max', None),
+            "use_images": getattr(args, 'use_images', False),
+            "image_keys": sorted(image_keys),
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key, sort_keys=True).encode()).hexdigest()[:16]
         _cache_dir = Path(__file__).resolve().parents[3] / "buffer_cache" / f"offline_{args.task}_{_cache_hash}"

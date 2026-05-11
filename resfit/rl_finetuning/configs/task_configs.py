@@ -143,7 +143,7 @@ PNP_CONFIG = TaskConfig(
     groot_checkpoint_hint="~/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000",
     object_state_dim=10,
     supports_asymmetric_critic=True,
-    rl_image_keys=["observation.images.front", "observation.images.back", "observation.images.wrist"],
+    rl_image_keys=["observation.images.back", "observation.images.wrist"],
     extra_lowdim_keys=["observation.object_state"],
     success_threshold=0.095,
     default_scene_xml="~/Repos/Intern/Mujoco_Franka/mujoco_menagerie/franka_fr3/fr3_with_hand.xml",
@@ -176,7 +176,7 @@ LIFT_CONFIG = TaskConfig(
     wandb_project="mujoco-franka-residual-td3",
     groot_checkpoint_hint="~/DATA/INTERN/training/gr00t_sim_66ep/checkpoint-300000",
     supports_asymmetric_critic=True,
-    rl_image_keys=["observation.images.front", "observation.images.wrist"],
+    rl_image_keys=["observation.images.back", "observation.images.wrist"],
     object_state_dim=7,
     extra_lowdim_keys=["observation.object_state"],
 )
@@ -207,7 +207,7 @@ STACK_CONFIG = TaskConfig(
     groot_checkpoint_hint="~/DATA/INTERN/training/groot_stack_sim/checkpoint-100000",
     object_state_dim=10,  # white_cube pos(3)+quat(4) + green_pos(3) = 10
     supports_asymmetric_critic=True,
-    rl_image_keys=["observation.images.front", "observation.images.back", "observation.images.wrist"],
+    rl_image_keys=["observation.images.back", "observation.images.wrist"],
     extra_lowdim_keys=["observation.object_state"],
 )
 

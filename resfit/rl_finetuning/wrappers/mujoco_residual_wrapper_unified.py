@@ -110,6 +110,11 @@ class MuJoCoResidualWrapperUnified:
         camera_keys: dict | None = None,
         # ActionScaler for obs normalization
         action_scaler=None,
+        # Object state augmentation (noise + dropout)
+        obs_noise_max: float = 0.0,
+        obs_dropout_prob: float = 0.0,
+        # Vision mode: render RGB images for RL agent
+        use_images: bool = False,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -126,6 +131,13 @@ class MuJoCoResidualWrapperUnified:
         self.grip_max = grip_max
         self.use_gripper_latch = use_gripper_latch
         self.action_scaler = action_scaler  # for normalizing obs.base_action
+
+        # Object state augmentation
+        self.obs_noise_max = obs_noise_max
+        self.obs_dropout_prob = obs_dropout_prob
+
+        # Vision mode
+        self.use_images = use_images
 
         # ── Load GR00T policy ──
         self._skip_groot = str(
@@ -224,6 +236,7 @@ class MuJoCoResidualWrapperUnified:
         self._global_chunk_step = self.open_loop_horizon
         base_action = self._get_base_actions(force_infer=True)
         augmented_obs = self._augment_obs(raw_obs, base_action)
+        augmented_obs = self._apply_object_state_augmentation(augmented_obs)
         self._last_obs = raw_obs
         return augmented_obs, info
 
@@ -248,6 +261,8 @@ class MuJoCoResidualWrapperUnified:
                 for i in range(self.num_envs)
             )
         render = "rl_only" if needs_infer_next else "none"
+        if self.use_images:
+            render = "full"
         raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode=render)
 
         info["scaled_action"] = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
@@ -276,7 +291,9 @@ class MuJoCoResidualWrapperUnified:
                     pass
                 self._async_groot_future = None
             self.vec_env.reset_envs(done_ids)
-            raw_obs = self.vec_env._build_obs_dict(render_mode="rl_only")
+            raw_obs = self.vec_env._build_obs_dict(
+                render_mode="full" if self.use_images else "rl_only"
+            )
             if self._chunk_sync:
                 self._global_chunk_step = self.open_loop_horizon
 
@@ -287,6 +304,7 @@ class MuJoCoResidualWrapperUnified:
 
         self._last_obs = raw_obs
         augmented_obs = self._augment_obs(raw_obs, next_base_action)
+        augmented_obs = self._apply_object_state_augmentation(augmented_obs)
 
         # Start async prefetch one step BEFORE the boundary so GR00T runs
         # during the training loop (agent.update, agent.act) between step() calls.
@@ -527,6 +545,35 @@ class MuJoCoResidualWrapperUnified:
             combined[:, 7] = raw_grip
 
         return combined
+
+    # ------------------------------------------------------------------
+    # Object state augmentation (noise + dropout)
+    # ------------------------------------------------------------------
+
+    def _apply_object_state_augmentation(
+        self, obs: dict[str, torch.Tensor],
+    ) -> dict[str, torch.Tensor]:
+        """Apply noise and/or dropout to observation.object_state in-place.
+
+        Noise:   σ ~ U(0, obs_noise_max), then obs += U(-σ, σ) per dim per env
+        Dropout: with prob obs_dropout_prob, zero entire vector per env
+        """
+        key = "observation.object_state"
+        if key not in obs:
+            return obs
+        obj = obs[key]  # (num_envs, D), on device
+
+        if self.obs_noise_max > 0.0:
+            sigma = np.random.uniform(0.0, self.obs_noise_max)
+            noise = torch.empty_like(obj).uniform_(-sigma, sigma)
+            obj = obj + noise
+
+        if self.obs_dropout_prob > 0.0:
+            mask = torch.rand(obj.shape[0], 1, device=obj.device) >= self.obs_dropout_prob
+            obj = obj * mask  # zero out entire row with prob p
+
+        obs[key] = obj
+        return obs
 
     # ------------------------------------------------------------------
     # Observation augmentation

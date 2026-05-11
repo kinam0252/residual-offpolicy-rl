@@ -277,6 +277,11 @@ def parse_args():
     p.add_argument("--torch_compile", action="store_true", default=False)
     p.add_argument("--chunk_sync", action="store_true", default=False)
     p.add_argument("--action_scale", type=float, default=0.1)
+    # Object state augmentation (disabled by default in eval for clean measurement)
+    p.add_argument("--use_obs_noise", action="store_true", default=False)
+    p.add_argument("--use_obs_dropout", action="store_true", default=False)
+    p.add_argument("--obs_noise_max", type=float, default=0.01)
+    p.add_argument("--obs_dropout_prob", type=float, default=0.1)
     # ActionScaler
     p.add_argument("--use_action_scaler", action="store_true")
     p.add_argument("--action_scaler_min", type=float, nargs="+", default=None)
@@ -287,6 +292,11 @@ def parse_args():
     p.add_argument("--critic_hidden_dim", type=int, default=256)
     # Eval
     p.add_argument("--save_video", action="store_true")
+    # Vision mode
+    p.add_argument("--use_images", action="store_true",
+                   help="Enable vision mode: use RGB images as RL input (default: state-only)")
+    p.add_argument("--rl_img_size", type=int, default=84,
+                   help="RL image observation size (default: 84)")
     # Task-specific
     p.add_argument("--cup_positions_file", type=str, default=None)
     p.add_argument("--episode_positions_file", type=str, default=None)
@@ -354,10 +364,14 @@ def main():
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
+        obs_noise_max=args.obs_noise_max if args.use_obs_noise else 0.0,
+        obs_dropout_prob=args.obs_dropout_prob if args.use_obs_dropout else 0.0,
+        use_images=getattr(args, 'use_images', False),
     )
     _log("Eval environment ready.")
 
     # -- Create agent --
+    image_keys = task_cfg.rl_image_keys if getattr(args, 'use_images', False) else []
     object_state_dim = task_cfg.object_state_dim
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     action_dim = env.action_dim
@@ -367,11 +381,12 @@ def main():
     cfg.agent.actor.hidden_dim = args.actor_hidden_dim
     cfg.agent.critic.hidden_dim = args.critic_hidden_dim
 
+    _rl_img_size = args.rl_img_size if getattr(args, 'use_images', False) else 84
     agent = QAgent(
-        obs_shape=(3, 84, 84),
+        obs_shape=(3, _rl_img_size, _rl_img_size),
         prop_shape=(lowdim_dim,),
         action_dim=action_dim,
-        rl_cameras=[],
+        rl_cameras=image_keys,
         cfg=cfg.agent,
         residual_actor=True,
         object_state_dim=object_state_dim,

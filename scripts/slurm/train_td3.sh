@@ -17,6 +17,9 @@ export MUJOCO_EGL_DEVICE_ID=${CUDA_VISIBLE_DEVICES%%,*}
 NV=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia
 export LD_LIBRARY_PATH=$NV/cu13/lib:$NV/cuda_runtime/lib:$NV/cublas/lib:$NV/cudnn/lib:$NV/cufft/lib:$NV/cusolver/lib:$NV/cusparse/lib:$NV/nvjitlink/lib:$NV/cuda_nvrtc/lib:$NV/nccl/lib:$HOME/.local/lib:$HOME/lib-compat:$HOME/.local/lib/gl:${LD_LIBRARY_PATH:-}
 export HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 DS_BUILD_OPS=0 CUDA_HOME=~/fake_cuda
+# Fix wandb TLS: Go-based wandb binary needs system CA bundle
+export SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 export PATH=~/bin:$PATH
 export OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 PYTHONUNBUFFERED=1
 echo "[gpu] SLURM_JOB_GPUS=$SLURM_JOB_GPUS CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES GPU_DEVICE_ORDINAL=${GPU_DEVICE_ORDINAL:-}"
@@ -55,6 +58,9 @@ OVERRIDES=""
 [ -n "$RESIDUAL_POS_SCALE" ] && OVERRIDES="$OVERRIDES --residual_pos_scale $RESIDUAL_POS_SCALE"
 [ -n "$RESIDUAL_GRIP_SCALE" ] && OVERRIDES="$OVERRIDES --residual_grip_scale $RESIDUAL_GRIP_SCALE"
 [ -n "$RESIDUAL_ROT_SCALE" ] && OVERRIDES="$OVERRIDES --residual_rot_scale $RESIDUAL_ROT_SCALE"
+# Object state augmentation
+[ -n "$OBS_NOISE_MAX" ] && OVERRIDES="$OVERRIDES --use_obs_noise --obs_noise_max $OBS_NOISE_MAX"
+[ -n "$OBS_DROPOUT_PROB" ] && OVERRIDES="$OVERRIDES --use_obs_dropout --obs_dropout_prob $OBS_DROPOUT_PROB"
 
 # ══════════════════════════════════════════════════════════════════
 # Launch unified training
