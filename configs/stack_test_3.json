@@ -1,0 +1,47 @@
+[
+  {
+    "episode": 0,
+    "white_cube_pos": [
+      0.450895,
+      0.223522,
+      0.02
+    ],
+    "green_cube_pos": [
+      0.446638,
+      -0.057234,
+      0.02
+    ],
+    "white_yaw_deg": 12.98,
+    "green_yaw_deg": -4.46
+  },
+  {
+    "episode": 1,
+    "white_cube_pos": [
+      0.394176,
+      -0.199029,
+      0.02
+    ],
+    "green_cube_pos": [
+      0.468756,
+      0.030583,
+      0.02
+    ],
+    "white_yaw_deg": 2.03,
+    "green_yaw_deg": 24.37
+  },
+  {
+    "episode": 2,
+    "white_cube_pos": [
+      0.421289,
+      0.184901,
+      0.02
+    ],
+    "green_cube_pos": [
+      0.423595,
+      -0.171185,
+      0.02
+    ],
+    "white_yaw_deg": -0.39,
+    "green_yaw_deg": 2.47
+  }
+]

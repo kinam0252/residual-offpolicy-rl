@@ -295,6 +295,8 @@ def parse_args():
     # Vision mode
     p.add_argument("--use_images", action="store_true",
                    help="Enable vision mode: use RGB images as RL input (default: state-only)")
+    p.add_argument("--realistic", action="store_true",
+                   help="Use realistic rendering for RL images. Implies --use_images.")
     p.add_argument("--rl_img_size", type=int, default=84,
                    help="RL image observation size (default: 84)")
     # Task-specific
@@ -369,12 +371,16 @@ def main():
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
         obs_noise_max=args.obs_noise_max if args.use_obs_noise else 0.0,
         obs_dropout_prob=args.obs_dropout_prob if args.use_obs_dropout else 0.0,
-        use_images=getattr(args, 'use_images', False),
+        use_images=getattr(args, 'use_images', False) or getattr(args, 'realistic', False),
+        realistic=getattr(args, 'realistic', False),
+        realistic_task=args.task if getattr(args, 'realistic', False) else None,
+        rl_img_size=args.rl_img_size,
     )
     _log("Eval environment ready.")
 
     # -- Create agent --
-    image_keys = task_cfg.rl_image_keys if getattr(args, 'use_images', False) else []
+    _use_vision = getattr(args, 'use_images', False) or getattr(args, 'realistic', False)
+    image_keys = task_cfg.rl_image_keys if _use_vision else []
     object_state_dim = task_cfg.object_state_dim
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     action_dim = env.action_dim
@@ -384,7 +390,7 @@ def main():
     cfg.agent.actor.hidden_dim = args.actor_hidden_dim
     cfg.agent.critic.hidden_dim = args.critic_hidden_dim
 
-    _rl_img_size = args.rl_img_size if getattr(args, 'use_images', False) else 84
+    _rl_img_size = args.rl_img_size if _use_vision else 84
     agent = QAgent(
         obs_shape=(3, _rl_img_size, _rl_img_size),
         prop_shape=(lowdim_dim,),

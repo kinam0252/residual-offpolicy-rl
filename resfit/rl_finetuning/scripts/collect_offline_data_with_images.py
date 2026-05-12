@@ -63,7 +63,18 @@ def parse_args():
     p.add_argument("--task_description", type=str, default=None)
     p.add_argument("--random_cube_range", type=str, default=None)
     p.add_argument("--resume", action="store_true")
+    p.add_argument("--realistic", action="store_true",
+                   help="Use realistic rendering (depth compositing + real background) "
+                        "for saved images. GR00T still uses standard rendering.")
     return p.parse_args()
+
+
+# ── Realistic rendering helpers ──────────────────────────────────
+# Imported from shared module
+from resfit.rl_finetuning.rendering.realistic_renderer import (
+    RealisticImageRenderer,
+    TASK_OBJECTS as _TASK_OBJECTS,
+)
 
 
 def main():
@@ -138,6 +149,9 @@ def main():
                           green_cube_positions=[first_ep.get("green_cube_pos", [0.42, 0.05, 0.02])])
     elif args.task == "lift":
         env_kwargs.update(cube_positions=[first_ep.get("cube_pos", [0.42, 0.0, 0.02])])
+    elif args.task == "cup":
+        env_kwargs.update(cup_positions_path=args.episode_positions_file,
+                          episode_ids=[0])
 
     print("[collect] Creating environment...")
     mujoco_env = VecEnvClass(**env_kwargs)
@@ -160,6 +174,12 @@ def main():
     )
     print("[collect] Ready.\n")
 
+    # Realistic renderer (dual-model, only for saved images)
+    realistic = None
+    if args.realistic:
+        print("[collect] Setting up realistic renderer...")
+        realistic = RealisticImageRenderer(args.task, mujoco_env, args.rl_img_size)
+
     REAL_INIT_QPOS = np.array([-1.567889, -1.287458, 1.495029, -2.485614, 1.351407, 1.725887, -0.180199])
 
     total_success = 0
@@ -170,18 +190,85 @@ def main():
     total_state_bytes = 0
     t_start = time.time()
 
+    # Lock-based parallel collection
+    lock_dir = out_dir / "locks"
+    lock_dir.mkdir(exist_ok=True)
+    STALE_LOCK_SEC = 1800  # 30 min — consider lock stale after this
+
+    def _try_lock(ep_id):
+        """Try to acquire lock for episode. Returns True if acquired."""
+        lock_path = lock_dir / f"ep_{ep_id:04d}.lock"
+        try:
+            lock_path.mkdir()  # atomic on POSIX
+            # Write job info for debugging
+            (lock_path / "info").write_text(
+                f"pid={os.getpid()} job={os.environ.get('SLURM_JOB_ID','?')} "
+                f"time={time.strftime('%Y%m%d_%H%M%S')}\n")
+            return True
+        except FileExistsError:
+            # Check if stale
+            try:
+                age = time.time() - (lock_path / "info").stat().st_mtime
+                if age > STALE_LOCK_SEC:
+                    print(f"  [lock] Stale lock ep_{ep_id:04d} ({age:.0f}s old), reclaiming")
+                    import shutil
+                    shutil.rmtree(lock_path, ignore_errors=True)
+                    try:
+                        lock_path.mkdir()
+                        (lock_path / "info").write_text(
+                            f"pid={os.getpid()} job={os.environ.get('SLURM_JOB_ID','?')} "
+                            f"time={time.strftime('%Y%m%d_%H%M%S')} reclaimed=True\n")
+                        return True
+                    except FileExistsError:
+                        return False
+            except FileNotFoundError:
+                pass
+            return False
+
+    def _unlock(ep_id):
+        """Release lock after episode is saved."""
+        lock_path = lock_dir / f"ep_{ep_id:04d}.lock"
+        import shutil
+        shutil.rmtree(lock_path, ignore_errors=True)
+
+    # Build episode list: (ep_global, pos_idx, ep_within_pos, pos_info)
+    all_episodes = []
     for pos_idx, pos_info in enumerate(unique_positions):
         for ep in range(args.num_episodes_per_env):
             ep_global = pos_idx * args.num_episodes_per_env + ep
+            all_episodes.append((ep_global, pos_idx, ep, pos_info))
 
-            ep_save_path = out_dir / f"ep_{ep_global:04d}.npz"
-            if ep_save_path.exists() and args.resume:
-                continue
+    # Shuffle to reduce contention when multiple jobs run
+    import random as _rng_lock
+    _rng_lock.shuffle(all_episodes)
 
+    skipped = 0
+    locked_by_others = 0
+
+    for ep_global, pos_idx, ep, pos_info in all_episodes:
+        ep_save_path = out_dir / f"ep_{ep_global:04d}.npz"
+
+        # Already done
+        if ep_save_path.exists():
+            skipped += 1
+            continue
+
+        # Try to acquire lock
+        if not _try_lock(ep_global):
+            locked_by_others += 1
+            continue
+
+        # Double-check after lock (race condition guard)
+        if ep_save_path.exists():
+            _unlock(ep_global)
+            skipped += 1
+            continue
+
+        try:
             # Reset
             obs, _ = wrapper.reset()
 
-            # Override env state (PnP-specific position setup)
+            # Override env state per-episode position
             if args.task == "pnp":
                 env_data = mujoco_env._envs[0]
                 data = env_data["data"]
@@ -226,6 +313,68 @@ def main():
                 mujoco_env._episode_rewards = np.zeros(mujoco_env.num_envs, dtype=np.float64)
                 mujoco_env._initial_cube_z[0] = data.qpos[cqa + 2] if cqa is not None else 0.0
 
+            elif args.task == "stack":
+                env_data = mujoco_env._envs[0]
+                data, model = env_data["data"], env_data["model"]
+                wqa = env_data["white_qposadr"]
+                gqa = env_data["green_qposadr"]
+
+                # Robot home
+                for j, jid in enumerate(env_data["ids"]["jnt_ids"]):
+                    data.qpos[model.jnt_qposadr[jid]] = REAL_INIT_QPOS[j]
+                for fid in env_data["ids"]["finger_ids"]:
+                    if fid >= 0:
+                        data.qpos[model.jnt_qposadr[fid]] = 0.04
+
+                white_pos = np.array(pos_info.get("white_cube_pos", [0.42, 0.0, 0.02]), dtype=np.float64)
+                green_pos = np.array(pos_info.get("green_cube_pos", [0.42, 0.05, 0.02]), dtype=np.float64)
+                white_yaw = pos_info.get("white_yaw_deg", 0.0)
+                green_yaw = pos_info.get("green_yaw_deg", 0.0)
+
+                if wqa is not None:
+                    data.qpos[wqa:wqa+3] = white_pos
+                    q = Rotation.from_euler("z", np.radians(white_yaw)).as_quat()
+                    data.qpos[wqa+3:wqa+7] = [q[3], q[0], q[1], q[2]]
+                if gqa is not None:
+                    data.qpos[gqa:gqa+3] = green_pos
+                    q = Rotation.from_euler("z", np.radians(green_yaw)).as_quat()
+                    data.qpos[gqa+3:gqa+7] = [q[3], q[0], q[1], q[2]]
+
+                data.qvel[:] = 0
+                env_data["white_pos_init"] = white_pos.copy()
+                env_data["green_pos_init"] = green_pos.copy()
+                env_data["grasp_state"] = {"grasped": False, "contact_count": 0}
+                mujoco.mj_forward(model, data)
+                mujoco_env._step_counts = np.zeros(mujoco_env.num_envs, dtype=int)
+                mujoco_env._initial_white_z[0] = data.qpos[wqa + 2] if wqa is not None else 0.0
+
+            elif args.task == "lift":
+                env_data = mujoco_env._envs[0]
+                data, model = env_data["data"], env_data["model"]
+                cqa = env_data["cube_qposadr"]
+
+                # Robot home
+                for j, jid in enumerate(env_data["ids"]["jnt_ids"]):
+                    data.qpos[model.jnt_qposadr[jid]] = REAL_INIT_QPOS[j]
+                for fid in env_data["ids"]["finger_ids"]:
+                    if fid >= 0:
+                        data.qpos[model.jnt_qposadr[fid]] = 0.04
+
+                cube_pos = np.array(pos_info.get("cube_pos", [0.42, 0.0, 0.02]), dtype=np.float64)
+                cube_yaw = pos_info.get("cube_yaw_deg", 0.0)
+
+                if cqa is not None:
+                    data.qpos[cqa:cqa+3] = cube_pos
+                    q = Rotation.from_euler("z", np.radians(cube_yaw)).as_quat()
+                    data.qpos[cqa+3:cqa+7] = [q[3], q[0], q[1], q[2]]
+
+                data.qvel[:] = 0
+                env_data["cube_pos_init"] = cube_pos.copy()
+                env_data["grasp_state"] = {"grasped": False, "T_cube_in_tcp": None}
+                mujoco.mj_forward(model, data)
+                mujoco_env._step_counts = np.zeros(mujoco_env.num_envs, dtype=int)
+                mujoco_env._initial_cube_z[0] = data.qpos[cqa + 2] if cqa is not None else 0.0
+
             ep_transitions = []
             ep_reward = 0.0
 
@@ -259,14 +408,30 @@ def main():
                     transition["obs_object_state"] = _to_np(prev_obs[obj_key])
 
                 # RGB images - save with npz-compatible key names
-                for img_key in image_keys:
-                    npz_key = img_key.replace(".", "_")
-                    if img_key in prev_obs:
-                        img_data = _to_np(prev_obs[img_key])
-                        transition[npz_key] = img_data.astype(np.uint8)
-                    else:
-                        transition[npz_key] = np.zeros(
-                            (3, args.rl_img_size, args.rl_img_size), dtype=np.uint8)
+                if realistic is not None:
+                    # Realistic: render from dual model (GR00T still used standard images)
+                    real_imgs = realistic.sync_and_render(mujoco_env, env_idx=0)
+                    # Map task camera keys → realistic camera names
+                    _cam_alias = {"cam_base": "back", "cam_wrist": "wrist"}
+                    for img_key in image_keys:
+                        npz_key = img_key.replace(".", "_")
+                        cam_name = img_key.rsplit(".", 1)[-1]
+                        cam_name = _cam_alias.get(cam_name, cam_name)
+                        if cam_name in real_imgs:
+                            transition[npz_key] = real_imgs[cam_name]
+                        else:
+                            transition[npz_key] = np.zeros(
+                                (3, args.rl_img_size, args.rl_img_size), dtype=np.uint8)
+                else:
+                    # Standard: use images from VecEnv obs
+                    for img_key in image_keys:
+                        npz_key = img_key.replace(".", "_")
+                        if img_key in prev_obs:
+                            img_data = _to_np(prev_obs[img_key])
+                            transition[npz_key] = img_data.astype(np.uint8)
+                        else:
+                            transition[npz_key] = np.zeros(
+                                (3, args.rl_img_size, args.rl_img_size), dtype=np.uint8)
 
                 ep_transitions.append(transition)
 
@@ -309,7 +474,7 @@ def main():
             total_state_bytes += save_dict["obs_state"].nbytes
             total_state_bytes += save_dict["obs_base_action"].nbytes
 
-            # Save
+            # Save (atomic: write tmp then rename)
             ep_tmp_path = out_dir / f"ep_{ep_global:04d}.tmp.npz"
             np.savez_compressed(ep_tmp_path, **save_dict)
             ep_tmp_path.rename(ep_save_path)
@@ -317,13 +482,23 @@ def main():
             file_size_mb = ep_save_path.stat().st_size / (1024 * 1024)
             n_trans = len(ep_transitions)
 
+            done_count = len(list(out_dir.glob("ep_*.npz")))
             tag = "SUCC" if success else "FAIL"
             sr = total_success / total_episodes * 100
             elapsed = time.time() - t_start
-            print(f"  ep={total_episodes:3d}/{total_episodes_target} {tag} "
+            print(f"  ep={ep_global:04d} ({done_count}/{len(all_episodes)} total) {tag} "
                   f"steps={step+1:3d} reward={ep_reward:7.1f} "
                   f"SR={sr:5.1f}% file={file_size_mb:.2f}MB ({n_trans} trans) "
                   f"t={elapsed:.0f}s", flush=True)
+
+        except Exception as e:
+            print(f"  [ERROR] ep_{ep_global:04d}: {e}", file=sys.stderr, flush=True)
+            import traceback; traceback.print_exc()
+        finally:
+            _unlock(ep_global)
+
+    print(f"\n[lock] This job: collected={total_episodes}, skipped_done={skipped}, "
+          f"skipped_locked={locked_by_others}")
 
     # Final summary
     elapsed = time.time() - t_start
@@ -352,6 +527,7 @@ def main():
     meta = {
         "timestamp": time.strftime('%Y%m%d_%H%M%S'),
         "task": args.task,
+        "realistic": args.realistic,
         "total_episodes": total_episodes,
         "total_transitions": total_trans,
         "success_rate": sr,
@@ -368,6 +544,8 @@ def main():
     print(f"\nResult: {out_dir / 'result.json'}")
 
     wrapper.close()
+    if realistic is not None:
+        realistic.close()
     print("Done.")
 
 

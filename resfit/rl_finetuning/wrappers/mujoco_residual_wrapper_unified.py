@@ -116,8 +116,13 @@ class MuJoCoResidualWrapperUnified:
         # Object state augmentation (noise + dropout)
         obs_noise_max: float = 0.0,
         obs_dropout_prob: float = 0.0,
-        # Vision mode: render RGB images for RL agent
+        disable_object_state: bool = False,
+        # Vision mode
         use_images: bool = False,
+        # Realistic rendering: depth-composited images with real backgrounds
+        realistic: bool = False,
+        realistic_task: str | None = None,
+        rl_img_size: int = 84,
     ):
         self.vec_env = vec_env
         self.num_envs = vec_env.num_envs
@@ -141,9 +146,24 @@ class MuJoCoResidualWrapperUnified:
         # Object state augmentation
         self.obs_noise_max = obs_noise_max
         self.obs_dropout_prob = obs_dropout_prob
+        self.disable_object_state = disable_object_state
+        if disable_object_state:
+            print("[UnifiedWrapper] Object state DISABLED — observation.object_state will be zeroed")
 
         # Vision mode
-        self.use_images = use_images
+        self.use_images = use_images or realistic
+        self.realistic = realistic
+        self._realistic_renderer = None
+        self._realistic_task = realistic_task
+        self._rl_img_size = rl_img_size
+        if realistic:
+            from resfit.rl_finetuning.rendering.realistic_renderer import RealisticImageRenderer
+            assert realistic_task is not None, "realistic_task must be set when realistic=True"
+            self._realistic_renderer = RealisticImageRenderer(
+                task=realistic_task,
+                vecenv=vec_env,
+                rl_img_size=rl_img_size,
+            )
 
         # ── Load GR00T policy ──
         self._skip_groot = str(
@@ -232,6 +252,8 @@ class MuJoCoResidualWrapperUnified:
                 pass
             self._async_groot_future = None
         raw_obs, info = self.vec_env.reset(**kwargs)
+        if self.realistic:
+            self._inject_realistic_images(raw_obs)
         self._cached_chunks = [None] * self.num_envs
         self._chunk_idx = [self.open_loop_horizon] * self.num_envs
         self._held_base_action[:] = 0.0
@@ -267,9 +289,16 @@ class MuJoCoResidualWrapperUnified:
                 for i in range(self.num_envs)
             )
         render = "rl_only" if needs_infer_next else "none"
-        if self.use_images:
+        if self.use_images and not self.realistic:
             render = "full"
+        elif self.realistic:
+            # Realistic mode: skip standard image rendering, we'll inject our own
+            render = "rl_only" if needs_infer_next else "none"
         raw_obs, reward, terminated, truncated, info = self.vec_env.step(combined_t, render_mode=render)
+
+        # Inject realistic images
+        if self.realistic:
+            self._inject_realistic_images(raw_obs)
 
         info["scaled_action"] = torch.as_tensor(combined, device=self.device, dtype=torch.float32)
 
@@ -298,8 +327,10 @@ class MuJoCoResidualWrapperUnified:
                 self._async_groot_future = None
             self.vec_env.reset_envs(done_ids)
             raw_obs = self.vec_env._build_obs_dict(
-                render_mode="full" if self.use_images else "rl_only"
+                render_mode="full" if (self.use_images and not self.realistic) else "rl_only"
             )
+            if self.realistic:
+                self._inject_realistic_images(raw_obs)
             if self._chunk_sync:
                 self._global_chunk_step = self.open_loop_horizon
 
@@ -553,6 +584,40 @@ class MuJoCoResidualWrapperUnified:
         return combined
 
     # ------------------------------------------------------------------
+    # Realistic image injection
+    # ------------------------------------------------------------------
+
+    def reinit_realistic_renderer(self) -> None:
+        """Re-create the realistic renderer (fresh EGL context).
+
+        Call after heavy CUDA ops (e.g. critic warmup) that may corrupt the
+        EGL display/context state.
+        """
+        if self._realistic_renderer is None:
+            return
+        self._realistic_renderer.close()
+        from resfit.rl_finetuning.rendering.realistic_renderer import RealisticImageRenderer
+        self._realistic_renderer = RealisticImageRenderer(
+            task=self._realistic_task,
+            vecenv=self.vec_env,
+            rl_img_size=self._rl_img_size,
+        )
+
+    def _inject_realistic_images(self, obs: dict[str, torch.Tensor]) -> None:
+        """Replace standard images with realistic-rendered ones in-place."""
+        import torch as _torch
+        for i in range(self.num_envs):
+            imgs = self._realistic_renderer.sync_and_render(self.vec_env, env_idx=i)
+            for cam_alias, obs_key in [
+                ("back", "observation.images.back"),
+                ("wrist", "observation.images.wrist"),
+            ]:
+                if obs_key in obs and cam_alias in imgs:
+                    obs[obs_key][i] = _torch.as_tensor(
+                        imgs[cam_alias], device=obs[obs_key].device
+                    )
+
+    # ------------------------------------------------------------------
     # Object state augmentation (noise + dropout)
     # ------------------------------------------------------------------
 
@@ -563,11 +628,16 @@ class MuJoCoResidualWrapperUnified:
 
         Noise:   σ ~ U(0, obs_noise_max), then obs += U(-σ, σ) per dim per env
         Dropout: with prob obs_dropout_prob, zero entire vector per env
+        Disable: zero entire object_state always (no_obj ablation)
         """
         key = "observation.object_state"
         if key not in obs:
             return obs
         obj = obs[key]  # (num_envs, D), on device
+
+        if self.disable_object_state:
+            obs[key] = torch.zeros_like(obj)
+            return obs
 
         if self.obs_noise_max > 0.0:
             sigma = np.random.uniform(0.0, self.obs_noise_max)

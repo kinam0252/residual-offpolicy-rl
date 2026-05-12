@@ -425,9 +425,11 @@ class AsyncEvaluator:
             if a.no_action_clamp:
                 cmd += ["--no_action_clamp"]
         # Vision mode
-        if getattr(a, 'use_images', False):
+        if getattr(a, 'use_images', False) or getattr(a, 'realistic', False):
             cmd += ["--use_images"]
             cmd += ["--rl_img_size", str(getattr(a, 'rl_img_size', 84))]
+        if getattr(a, 'realistic', False):
+            cmd += ["--realistic"]
         # W&B
         if a.wandb_mode != "disabled" and wandb_run_id:
             cmd += [
@@ -755,6 +757,8 @@ def parse_args():
                    help="Max noise magnitude σ_max: σ~U(0,σ_max), obs+=U(-σ,σ)")
     p.add_argument("--obs_dropout_prob", type=float, default=0.1,
                    help="Probability of zeroing entire object_state per timestep")
+    p.add_argument("--disable_object_state", action="store_true", default=False,
+                   help="Completely zero out object_state (train without object info)")
 
     # Algorithm
     p.add_argument("--total_timesteps", type=int, default=None)
@@ -782,6 +786,8 @@ def parse_args():
     # Vision mode
     p.add_argument("--use_images", action="store_true",
                    help="Enable vision mode: use RGB images as RL input (default: state-only)")
+    p.add_argument("--realistic", action="store_true",
+                   help="Use realistic rendering (depth compositing + real background) for RL images. Implies --use_images.")
     p.add_argument("--rl_img_size", type=int, default=84,
                    help="RL image observation size (default: 84)")
 
@@ -1036,13 +1042,18 @@ def main():
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
         obs_noise_max=args.obs_noise_max if args.use_obs_noise else 0.0,
         obs_dropout_prob=args.obs_dropout_prob if args.use_obs_dropout else 0.0,
-        use_images=getattr(args, 'use_images', False),
+        disable_object_state=getattr(args, 'disable_object_state', False),
+        use_images=getattr(args, 'use_images', False) or getattr(args, 'realistic', False),
+        realistic=getattr(args, 'realistic', False),
+        realistic_task=args.task if getattr(args, 'realistic', False) else None,
+        rl_img_size=args.rl_img_size,
     )
 
     _log("Environment ready.")
 
     # ── Dimensions ──
-    if args.use_images:
+    _use_vision = args.use_images or args.realistic
+    if _use_vision:
         image_keys = task_cfg.rl_image_keys
         if not image_keys:
             raise ValueError(f"Task '{args.task}' has no rl_image_keys defined — cannot use --use_images")
@@ -1057,7 +1068,7 @@ def main():
     lowdim_dim = env.observation_space["observation.state"].shape[1]
     action_dim = env.action_dim
 
-    _log(f"{'Vision' if args.use_images else 'State-only'}: lowdim={lowdim_dim}, object_state={object_state_dim}, action={action_dim}")
+    _log(f"{'Vision (realistic)' if args.realistic else 'Vision' if _use_vision else 'State-only'}: lowdim={lowdim_dim}, object_state={object_state_dim}, action={action_dim}")
 
     # ── QAgent ──
     cfg = ResidualTD3MuJoCoConfig()
@@ -1074,7 +1085,7 @@ def main():
     if args.critic_grad_clip_norm is not None:
         cfg.agent.critic_grad_clip_norm = args.critic_grad_clip_norm
 
-    _rl_img_size = args.rl_img_size if args.use_images else 84
+    _rl_img_size = args.rl_img_size if _use_vision else 84
     agent = QAgent(
         obs_shape=(3, _rl_img_size, _rl_img_size),
         prop_shape=(lowdim_dim,),
@@ -1125,7 +1136,7 @@ def main():
             "object_state_dim": task_cfg.object_state_dim,
             "action_scaler_min": getattr(args, 'action_scaler_min', None),
             "action_scaler_max": getattr(args, 'action_scaler_max', None),
-            "use_images": getattr(args, 'use_images', False),
+            "use_images": _use_vision,
             "image_keys": sorted(image_keys),
         }
         _cache_hash = hashlib.sha256(_json.dumps(_cache_key, sort_keys=True).encode()).hexdigest()[:16]
@@ -1269,6 +1280,10 @@ def main():
     if hasattr(_vec, '_reinit_all_renderers'):
         _log("Reinitializing EGL renderers after critic warmup...")
         _vec._reinit_all_renderers()
+    # Reinitialize the realistic renderer's EGL context too
+    if hasattr(env, 'reinit_realistic_renderer'):
+        _log("Reinitializing realistic renderer EGL context...")
+        env.reinit_realistic_renderer()
     _log(f"Training {args.total_timesteps} steps...")
     obs, _ = env.reset()
     global_step = _resume_step

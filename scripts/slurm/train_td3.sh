@@ -63,6 +63,7 @@ OVERRIDES=""
 # Object state augmentation
 [ -n "$OBS_NOISE_MAX" ] && OVERRIDES="$OVERRIDES --use_obs_noise --obs_noise_max $OBS_NOISE_MAX"
 [ -n "$OBS_DROPOUT_PROB" ] && OVERRIDES="$OVERRIDES --use_obs_dropout --obs_dropout_prob $OBS_DROPOUT_PROB"
+[ -n "$DISABLE_OBJECT_STATE" ] && OVERRIDES="$OVERRIDES --disable_object_state"
 
 # ══════════════════════════════════════════════════════════════════
 # Launch unified training
