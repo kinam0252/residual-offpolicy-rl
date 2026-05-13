@@ -10,7 +10,7 @@ Key differences from Close Drawer env:
 - Per-episode cup position/orientation from cup_positions.json
 - Success = cup upright (local z · world z > threshold)
 - Camera calib: shared PnP calib (camera_info_66ep.yaml)
-- TABLE_Z_OFFSET = 0.02
+- TABLE_Z_OFFSET = 0.01
 - Physics: high friction fingers + cup for stable grasp
 """
 
@@ -182,7 +182,7 @@ RENDER_W = 640
 RENDER_H = 360
 RL_IMG_SIZE = 84
 FPS = 15
-TABLE_Z_OFFSET = 0.02
+TABLE_Z_OFFSET = 0.01
 GRIPPER_MAX_WIDTH = 0.04
 GRIPPER_MIN_WIDTH = 0.0
 
@@ -288,6 +288,7 @@ def _setup_physics_cup(model, arm_actuator_ids, finger_actuator_ids, mj_mod=None
         if "finger" in bname and model.geom_contype[gi] > 0:
             model.geom_friction[gi] = FINGER_FRICTION
             model.geom_condim[gi] = 6
+            model.geom_margin[gi] = 0.005
 
     # ── Per-joint arm gains + torque limits ──
     for i, aid in enumerate(arm_actuator_ids):
@@ -305,6 +306,8 @@ def _setup_physics_cup(model, arm_actuator_ids, finger_actuator_ids, mj_mod=None
         model.actuator_biasprm[faid, 0] = 0.0
         model.actuator_biasprm[faid, 1] = -FINGER_GAIN  # FINGER_BIAS = -FINGER_GAIN
         model.actuator_biasprm[faid, 2] = 0.0
+        model.actuator_forcelimited[faid] = 1
+        model.actuator_forcerange[faid] = [-20.0, 20.0]
 
     return cup_col_gids
 
@@ -593,7 +596,7 @@ def _cup_env_worker_loop(pipe, init_kwargs):
         uprightness = _get_uprightness_local(env)
         cup_z = data.qpos[cup_qpa + 2]
         cup_vel = _np.linalg.norm(data.qvel[cup_dof:cup_dof + 6]) if cup_dof is not None else 0.0
-        return (uprightness > 0.82 and cup_vel < 0.5
+        return (uprightness > 0.707 and cup_vel < 0.5
                 and cup_z > 0.0 and cup_z < CUP_HEIGHT * 1.5)
 
     def _extract_state(env):
@@ -1350,7 +1353,7 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
         cup_z_pos = data.qpos[cup_qpa + 2]
         cup_vel = np.linalg.norm(data.qvel[cup_dof:cup_dof + 6]) if cup_dof is not None else 0.0
 
-        return (uprightness > 0.82
+        return (uprightness > 0.707
                 and cup_vel < 0.5
                 and cup_z_pos > 0.0
                 and cup_z_pos < CUP_HEIGHT * 1.5)

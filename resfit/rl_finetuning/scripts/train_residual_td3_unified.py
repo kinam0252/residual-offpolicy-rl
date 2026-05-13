@@ -791,6 +791,16 @@ def parse_args():
     p.add_argument("--rl_img_size", type=int, default=84,
                    help="RL image observation size (default: 84)")
 
+    # Distillation mode (DAgger-style: state teacher → image student)
+    p.add_argument("--distill", action="store_true",
+                   help="DAgger distillation: train image student to mimic state teacher actions")
+    p.add_argument("--teacher_checkpoint", type=str, default=None,
+                   help="Path to state-only teacher best.pt checkpoint")
+    p.add_argument("--distill_lr", type=float, default=1e-4,
+                   help="Learning rate for distillation (default: 1e-4)")
+    p.add_argument("--distill_beta", type=float, default=0.0,
+                   help="RL loss mixing weight: total = (1-beta)*MSE + beta*RL_actor_loss (default: 0.0 = pure distill)")
+
     # Offline data
     p.add_argument("--offline_data_dir", type=str, default=None)
     p.add_argument("--offline_fraction", type=float, default=None)
@@ -880,6 +890,15 @@ def parse_args():
     # Validate groot_checkpoint
     if args.groot_checkpoint is None:
         p.error("--groot_checkpoint is required (either via CLI or --config JSON)")
+
+    # Validate distillation args
+    if args.distill:
+        if args.teacher_checkpoint is None:
+            p.error("--teacher_checkpoint is required when --distill is set")
+        if not Path(args.teacher_checkpoint).expanduser().exists():
+            p.error(f"Teacher checkpoint not found: {args.teacher_checkpoint}")
+        # Distill implies image mode
+        args.use_images = True
 
     # Unified positions_file → episode_positions_file / eval_positions_file mapping
     # Train uses first train_positions entries.
@@ -1097,6 +1116,54 @@ def main():
         asymmetric_critic=False,
     )
 
+    # ── Distillation: load state-only teacher ──
+    teacher_agent = None
+    if args.distill:
+        _teacher_path = Path(args.teacher_checkpoint).expanduser()
+        _log(f"[distill] Loading teacher from {_teacher_path}")
+        _teacher_ckpt = torch.load(_teacher_path, map_location=device, weights_only=False)
+        _teacher_args = _teacher_ckpt.get("args", {})
+
+        # Create state-only teacher agent (no cameras)
+        teacher_cfg = ResidualTD3MuJoCoConfig()
+        teacher_cfg.agent.actor.action_scale = _teacher_args.get("action_scale", args.action_scale)
+        teacher_cfg.agent.actor.hidden_dim = _teacher_args.get("actor_hidden_dim", None)
+        teacher_agent = QAgent(
+            obs_shape=(3, 84, 84),  # dummy, not used in state-only
+            prop_shape=(lowdim_dim,),
+            action_dim=action_dim,
+            rl_cameras=[],  # state-only
+            cfg=teacher_cfg.agent,
+            residual_actor=True,
+            object_state_dim=object_state_dim,
+        )
+        # Load only actor weights (critic dims may differ; not needed for distill)
+        _teacher_state = _teacher_ckpt["model"]
+        _actor_state = {k: v for k, v in _teacher_state.items() if k.startswith("actor.")}
+        _missing, _unexpected = teacher_agent.load_state_dict(_actor_state, strict=False)
+        _log(f"[distill] Teacher actor keys loaded: {len(_actor_state)}, "
+             f"skipped (missing): {len(_missing)}")
+        teacher_agent.to(device)
+        teacher_agent.eval()
+        for _tp in teacher_agent.parameters():
+            _tp.requires_grad_(False)
+        _log(f"[distill] Teacher loaded: SR={_teacher_ckpt.get('success_rate', '?')}, "
+             f"action_scale={teacher_cfg.agent.actor.action_scale}")
+
+        # Override student action_scale to match teacher
+        _teacher_scale = teacher_cfg.agent.actor.action_scale
+        if cfg.agent.actor.action_scale != _teacher_scale:
+            _log(f"[distill] Student action_scale overridden: {cfg.agent.actor.action_scale} → {_teacher_scale}")
+            agent.actor.cfg.action_scale = _teacher_scale
+
+        # Override student optimizers for distillation:
+        # train encoder + actor jointly with distill_lr
+        _distill_params = list(agent.encoders.parameters()) + list(agent.actor.parameters())
+        if agent.actor.compress is not None:
+            # compress is part of actor but let's be explicit
+            pass
+        agent._distill_opt = torch.optim.AdamW(_distill_params, lr=args.distill_lr)
+
     # ── Replay buffers ──
     online_batch_size = int(args.batch_size * (1 - args.offline_fraction)) if args.offline_fraction > 0 else args.batch_size
     offline_batch_size = args.batch_size - online_batch_size
@@ -1254,7 +1321,7 @@ def main():
     _log(f"Warm-up done: {warmup_transitions} transitions")
 
     # ── Critic warmup ──
-    if args.critic_warmup_steps > 0:
+    if args.critic_warmup_steps > 0 and not args.distill:
         _log(f"Critic warmup: {args.critic_warmup_steps} updates...")
         for i in range(args.critic_warmup_steps):
             batch = online_rb.sample(args.batch_size).to(device, non_blocking=True)
@@ -1264,6 +1331,8 @@ def main():
             if i % 200 == 0:
                 _log(f"  critic warmup: {i}/{args.critic_warmup_steps} loss={metrics.get('train/critic_loss', 0):.4f}")
         _log("Critic warmup done.")
+    elif args.distill:
+        _log("[distill] Skipping critic warmup (not needed for distillation)")
 
     # ══════════════════════════════════════════════════════════════
     # Main training loop
@@ -1348,7 +1417,46 @@ def main():
         obs = next_obs
 
         # ── Update agent ──
-        if len(online_rb) >= max(online_batch_size, 1) and global_step % args.update_every_n_steps == 0:
+        if args.distill:
+            # ── DAgger distillation update ──
+            # Every step: compute teacher action from state, student action from images, MSE loss
+            if global_step % args.update_every_n_steps == 0:
+                _t0 = time.perf_counter()
+                for _ in range(args.num_updates_per_iteration):
+                    # Teacher action from GT state (no images needed)
+                    with torch.no_grad():
+                        teacher_action = teacher_agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
+
+                    # Student forward pass (with images) — need gradients
+                    agent.train()
+                    _obs_copy = {k: v for k, v in obs.items()}
+                    _obs_copy["feat"] = agent._encode(_obs_copy, augment=True)
+                    agent._prepare_prop(_obs_copy, detach_vlm=True)
+                    student_dist = agent.actor.forward(_obs_copy, std=0.0)
+                    student_action = student_dist.mean  # deterministic
+
+                    # MSE loss: student should match teacher
+                    distill_loss = torch.nn.functional.mse_loss(student_action, teacher_action)
+
+                    agent._distill_opt.zero_grad()
+                    distill_loss.backward()
+                    torch.nn.utils.clip_grad_norm_(
+                        list(agent.encoders.parameters()) + list(agent.actor.parameters()),
+                        max_norm=1.0,
+                    )
+                    agent._distill_opt.step()
+                    agent.eval()
+
+                _timers["grad_update"].append(time.perf_counter() - _t0)
+                metrics = {"distill/loss": distill_loss.item(),
+                           "distill/teacher_action_norm": teacher_action.abs().mean().item(),
+                           "distill/student_action_norm": student_action.detach().abs().mean().item()}
+
+                if global_step % 100 == 0 and _wb is not None and _wb.run is not None:
+                    log_dict = {k: v for k, v in metrics.items() if isinstance(v, (int, float))}
+                    log_dict["training/global_step"] = global_step
+                    _wb.log(log_dict, step=global_step)
+        elif len(online_rb) >= max(online_batch_size, 1) and global_step % args.update_every_n_steps == 0:
             _t0 = time.perf_counter()
             for _ in range(args.num_updates_per_iteration):
                 batch = online_rb.sample(max(online_batch_size, 1)).to(device, non_blocking=True)
@@ -1383,8 +1491,12 @@ def main():
             eta_h = (args.total_timesteps - global_step) / max(0.01, sps) / 3600
 
             _timing = " ".join(f"{k}={sum(v[-500:])/len(v[-500:])*1000:.1f}ms" for k, v in _timers.items() if v)
+            _extra = ""
+            if args.distill and 'metrics' in locals() and isinstance(metrics, dict):
+                _dl = metrics.get("distill/loss", 0)
+                _extra = f" distill_loss={_dl:.6f}"
             _log(f"step={global_step}/{args.total_timesteps} rw={reward[0].item():.4f} eps={episode_count} "
-                 f"speed={sps:.1f}sps ETA={eta_h:.1f}h res={ra[:6].mean():.5f}")
+                 f"speed={sps:.1f}sps ETA={eta_h:.1f}h res={ra[:6].mean():.5f}{_extra}")
             if _timing:
                 _log(f"  {_timing}")
 
