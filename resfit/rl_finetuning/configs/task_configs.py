@@ -230,8 +230,8 @@ DRAWER_CONFIG = TaskConfig(
     use_gripper_latch=False,
     residual_grip_scale=0.0,  # no grip residual
     camera_keys={
-        "observation.images.cam_base": None,
-        "observation.images.cam_wrist": None,
+        "observation.images.back": None,
+        "observation.images.wrist": None,
     },
     default_num_envs=10,
     default_reward_type="dense",
@@ -245,7 +245,7 @@ DRAWER_CONFIG = TaskConfig(
     groot_checkpoint_hint="~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000",
     object_state_dim=0,  # offline data lacks obs_object_state; online env provides it but we skip for consistency
     supports_asymmetric_critic=False,
-    rl_image_keys=["observation.images.cam_base", "observation.images.cam_wrist"],
+    rl_image_keys=["observation.images.back", "observation.images.wrist"],
     extra_lowdim_keys=[],
     success_threshold=0.01,
 )
