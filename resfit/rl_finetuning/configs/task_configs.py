@@ -101,9 +101,10 @@ CUP_CONFIG = TaskConfig(
     grip_latch_open_steps=32,
     residual_grip_scale=0.004,
     camera_keys={
-        "observation.images.cam_base": None,
-        "observation.images.cam_wrist": None,
+        "observation.images.back": None,
+        "observation.images.wrist": None,
     },
+    rl_image_keys=["observation.images.back", "observation.images.wrist"],
     default_num_envs=27,
     default_reward_type="dense",
     reward_choices=["sparse", "dense", "dense_bonus", "dense_v2", "dense_v3"],

@@ -54,8 +54,8 @@ TASK_OBJECTS = {
         "objects_xml": """
         <body name="cube" pos="0.42 0.0 0.02">
           <freejoint name="cube_joint"/>
-          <geom name="cube_geom" type="box" size="0.02 0.02 0.02"
-                rgba="0.85 0.15 0.10 1" mass="0.1" friction="1.0 0.005 0.0001"/>
+          <geom name="cube_geom" type="box" size="0.06 0.02 0.02"
+                rgba="0.76 0.65 0.50 1" mass="0.1" friction="1.0 0.005 0.0001"/>
         </body>
         """,
         "materials_xml": "",
@@ -87,14 +87,17 @@ _DRAWER_GAP = 0.001
 _SLOT_H = (_CABINET_HEIGHT - _WALL_THICK * (_NUM_DRAWERS + 1)) / _NUM_DRAWERS
 
 # Drawer-specific paths
+_DRAWER_TMP = str(Path(__file__).resolve().parents[4] / "Mujoco_Franka_Drawer")
+_DRAWER_CALIB = os.path.join(_DRAWER_TMP, "config", "camera_info.yaml")  # interactive calib
 _DRAWER_PHYSICS = str(Path(__file__).resolve().parents[4] / "MSRA" / "close_drawer" / "physics")
-_DRAWER_CALIB = os.path.join(_DRAWER_PHYSICS, "camera_info.yaml")
-_CABINET_PLACEMENT = os.path.join(_DRAWER_PHYSICS, "cabinet_placement.json")
-_DRAWER_TMP = str(Path(__file__).resolve().parents[4] / "tmp_Mujoco_Franka_drawer")
+# Use our calibrated cabinet placement for realistic rendering
+_CABINET_PLACEMENT = os.path.join(_DRAWER_TMP, "output", "cabinet_placement.json")
 _DRAWER_SCENE_XML = os.path.join(_DRAWER_TMP, "mujoco_menagerie", "franka_fr3", "fr3_with_hand_contact.xml")
+_DRAWER_BG_PATH = os.path.join(_DRAWER_TMP, "output", "real_background_sam_fixed.png")
+_FACE_TEX_DIR = os.path.join(_DRAWER_TMP, "output")
 
 
-def _drawer_xml_snippet(drawer_idx):
+def _drawer_xml_snippet(drawer_idx, face_material=None):
     """Generate XML for one drawer body with prismatic joint."""
     z_off = _WALL_THICK + _SLOT_H / 2 + drawer_idx * (_SLOT_H + _WALL_THICK)
     d_hx = (_CABINET_LONG - 2 * _WALL_THICK) / 2 - _DRAWER_GAP
@@ -124,7 +127,7 @@ def _drawer_xml_snippet(drawer_idx):
                 pos="{-(d_hx - wt):.4f} 0 0" material="wood_drawer" contype="1" conaffinity="1"/>
           <geom name="{name}_face" type="box"
                 size="{face_hx:.4f} {face_hy:.4f} {face_hz:.4f}"
-                pos="{d_hx + face_hx:.4f} 0 0" material="wood_face" contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
+                pos="{d_hx + face_hx:.4f} 0 0" material="{face_material or 'wood_face'}" contype="1" conaffinity="1" friction="0.8 0.005 0.0001"/>
         </body>"""
 
 
@@ -149,10 +152,18 @@ def _build_drawer_config():
         div_z = _WALL_THICK + i * (_SLOT_H + _WALL_THICK) - _WALL_THICK / 2
         shell += f'<geom name="cab_div_{i}" type="box" size="{cab_hx:.4f} {cab_hy:.4f} {_WALL_THICK/2:.4f}" pos="0 0 {div_z:.4f}" material="wood_cabinet" contype="1" conaffinity="1"/>'
 
+    # Discover face textures
+    face_textures = {}
+    for i in range(_NUM_DRAWERS):
+        tex_path = os.path.join(_FACE_TEX_DIR, f"face_tex_d{i}.png")
+        if os.path.exists(tex_path):
+            face_textures[i] = tex_path
+
     # 5 drawer bodies
     drawers = ""
     for i in range(_NUM_DRAWERS):
-        drawers += _drawer_xml_snippet(i)
+        fmat = f"face_mat_{i}" if i in face_textures else None
+        drawers += _drawer_xml_snippet(i, face_material=fmat)
 
     # Cabinet orientation
     cab_euler_str = ""
@@ -167,10 +178,19 @@ def _build_drawer_config():
           {drawers}
         </body>"""
 
-    materials_xml = """
+    # Face texture materials
+    face_tex_xml = ""
+    for di, tex_path in face_textures.items():
+        face_tex_xml += f"""
+        <texture type="2d" name="face_tex_{di}" file="{tex_path}"/>
+        <material name="face_mat_{di}" texture="face_tex_{di}" texuniform="true"
+                  rgba="1 1 1 1" specular="0.05" shininess="0.02" reflectance="0.01"/>"""
+
+    materials_xml = f"""
         <material name="wood_cabinet" rgba="0.58 0.57 0.47 1" specular="0.08" shininess="0.02" reflectance="0.02"/>
         <material name="wood_drawer" rgba="0.52 0.51 0.42 1" specular="0.06" shininess="0.02" reflectance="0.01"/>
-        <material name="wood_face" rgba="0.55 0.54 0.44 1" specular="0.10" shininess="0.03" reflectance="0.02"/>"""
+        <material name="wood_face" rgba="0.55 0.54 0.44 1" specular="0.10" shininess="0.03" reflectance="0.02"/>
+        {face_tex_xml}"""
 
     shadow_bodies = ["cabinet"] + [f"drawer_{i}" for i in range(_NUM_DRAWERS)]
 
@@ -214,15 +234,33 @@ class RealisticImageRenderer:
             CAM_W, CAM_H = _utils_mod.CAM_W, _utils_mod.CAM_H
             cfg = _build_drawer_config()
             scene_xml = _DRAWER_SCENE_XML
+            # Override background to drawer-specific image
+            import scene_realistic as _sr_mod
+            if os.path.exists(_DRAWER_BG_PATH):
+                _sr_mod.REAL_BG_PATH = _DRAWER_BG_PATH
+                print(f"[realistic] Using drawer background: {_DRAWER_BG_PATH}")
         else:
             T_base_cam = load_calib()
             cfg = TASK_OBJECTS[task]
+
+        # Drawer needs visible table (wrist cam renders it directly);
+        # other tasks hide it (base cam composites real photo background).
+        table_kwargs = {}
+        if task == "drawer":
+            table_kwargs = dict(
+                table_visible=True,
+                table_hx=0.55, table_hy=0.45, table_skew=0.0,
+                table_tx=0.3, table_ty=0.0, table_rz_rad=0.0,
+            )
+        else:
+            table_kwargs = dict(table_visible=False)
 
         self.model = make_model_generic(
             T_base_cam,
             objects_xml=cfg["objects_xml"],
             materials_xml=cfg["materials_xml"],
             scene_xml=scene_xml,
+            **table_kwargs,
         )
         self.data = mujoco.MjData(self.model)
         self.cam_w, self.cam_h = CAM_W, CAM_H
@@ -246,8 +284,80 @@ class RealisticImageRenderer:
         if task == "pnp":
             self._static_body_names = ["bowl"]
 
+        # Face texture overlay for drawer (homography-based post-processing)
+        self._face_textures = {}
+        if task == "drawer":
+            face_tex_dir = os.path.join(_DRAWER_TMP, "output")
+            tex_d3 = _cv2.imread(os.path.join(face_tex_dir, "face_tex_d3.png"))
+            tex_d4 = _cv2.imread(os.path.join(face_tex_dir, "face_tex_d4.png"))
+            if tex_d3 is not None:
+                self._face_textures = {0: tex_d3, 1: tex_d3, 2: tex_d3, 3: tex_d3}
+            if tex_d4 is not None:
+                self._face_textures[4] = tex_d4
+            if self._face_textures:
+                print(f"[realistic] Face textures loaded: {list(self._face_textures.keys())}")
+
         print(f"[realistic] Initialized: task={task}, nq={self.model.nq}, "
               f"cam={CAM_W}x{CAM_H} → {rl_img_size}x{rl_img_size}")
+
+    def _overlay_face_textures(self, img_bgr):
+        """Overlay real face textures onto rendered image using homography + segmentation."""
+        if not self._face_textures:
+            return img_bgr
+        cv2 = self._cv2
+        model, data = self.model, self.data
+        cam_id = self.helper.cam_base_id
+        h, w = img_bgr.shape[:2]
+
+        # Segmentation render
+        renderer = self.helper.real_renderer._renderer
+        renderer.enable_segmentation_rendering()
+        renderer.update_scene(data, camera=cam_id,
+                              scene_option=self.helper.real_renderer._scene_option)
+        seg = renderer.render()[:, :, 0]  # geom IDs
+        renderer.disable_segmentation_rendering()
+
+        # Camera intrinsics
+        fovy = model.cam_fovy[cam_id]
+        fy = h / (2 * np.tan(np.deg2rad(fovy) / 2))
+        fx = fy
+        cx, cy = w / 2, h / 2
+        cam_pos = data.cam_xpos[cam_id]
+        cam_mat = data.cam_xmat[cam_id].reshape(3, 3)
+
+        for di, tex_img in self._face_textures.items():
+            if tex_img is None:
+                continue
+            th, tw = tex_img.shape[:2]
+            gid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"drawer_{di}_face")
+            if gid < 0:
+                continue
+            gp = data.geom_xpos[gid]
+            gm = data.geom_xmat[gid].reshape(3, 3)
+            ghx, ghy, ghz = model.geom_size[gid]
+            # Face corners in local frame (front face of box geom)
+            local_c = np.array([[ghx, -ghy, ghz], [ghx, ghy, ghz],
+                                [ghx, ghy, -ghz], [ghx, -ghy, -ghz]])
+            # Project to image
+            dst = []
+            for c in local_c:
+                wp = gm @ c + gp
+                cc = cam_mat.T @ (wp - cam_pos)
+                px = fx * cc[0] / (-cc[2]) + cx
+                py = cy - fy * cc[1] / (-cc[2])
+                dst.append([px, py])
+            dst = np.array(dst, dtype=np.float32)
+            src = np.array([[0, 0], [tw, 0], [tw, th], [0, th]], dtype=np.float32)
+            H, _ = cv2.findHomography(src, dst)
+            if H is None:
+                continue
+            warped = cv2.warpPerspective(tex_img, H, (w, h))
+            warp_m = cv2.warpPerspective(
+                np.ones((th, tw), dtype=np.uint8) * 255, H, (w, h))
+            face_m = (seg == gid).astype(np.uint8) * 255
+            final = cv2.bitwise_and(warp_m, face_m) > 0
+            img_bgr[final] = warped[final]
+        return img_bgr
 
     def sync_and_render(self, vecenv, env_idx=0):
         """Copy qpos/qvel from VecEnv, forward, render realistic images.
@@ -274,6 +384,7 @@ class RealisticImageRenderer:
 
         # Render base + wrist (returns BGR)
         img_base_bgr = self.helper.render_base(self.data)
+        img_base_bgr = self._overlay_face_textures(img_base_bgr)
         img_wrist_bgr = self.helper.render_wrist(self.data)
 
         # Convert BGR → RGB, resize, transpose to CHW

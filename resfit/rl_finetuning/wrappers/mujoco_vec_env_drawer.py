@@ -395,6 +395,7 @@ def _drawer_env_worker_loop(pipe, init_kwargs):
     max_episode_steps = init_kwargs["max_episode_steps"]
     contact_threshold = init_kwargs.get("contact_threshold", float("inf"))
     contact_z_gate = init_kwargs.get("contact_z_gate", False)
+    physics_drawer = init_kwargs.get("physics_drawer", False)
     face_hy = init_kwargs["face_hy"]
     face_x_closed = init_kwargs["face_x_closed"]
     drawer_face_centers = init_kwargs["drawer_face_centers"]
@@ -500,12 +501,24 @@ def _drawer_env_worker_loop(pipe, init_kwargs):
                 data.ctrl[aid] = tq
         for aid in env["finger_actuator_ids"]:
             data.ctrl[aid] = 0.0
+        # Cache drawer qpos to prevent spring-back during mj_step
+        ad = env["active_drawer"]
+        djname = f"drawer_{ad}_slide"
+        djid = _mj.mj_name2id(model, _mj.mjtObj.mjOBJ_JOINT, djname)
+        dq_frozen = env["drawer_qpos"]
         for _ in range(env["n_substeps"]):
             for fid in ids["finger_ids"]:
                 if fid >= 0:
                     data.qpos[model.jnt_qposadr[fid]] = 0.0
                     data.qvel[model.jnt_dofadr[fid]] = 0.0
+            if not physics_drawer and djid >= 0:
+                data.qpos[model.jnt_qposadr[djid]] = dq_frozen
+                data.qvel[model.jnt_dofadr[djid]] = 0.0
             _mj.mj_step(model, data)
+        # Final pin after last mj_step
+        if not physics_drawer and djid >= 0:
+            data.qpos[model.jnt_qposadr[djid]] = dq_frozen
+            data.qvel[model.jnt_dofadr[djid]] = 0.0
 
     def _update_drawer_physics(env):
         model, data, ids = env["model"], env["data"], env["ids"]
@@ -543,7 +556,9 @@ def _drawer_env_worker_loop(pipe, init_kwargs):
                 new_qpos = max(0.0, min(DRAWER_SLIDE, new_qpos))
                 if new_qpos < env["drawer_qpos"]:
                     env["drawer_qpos"] = new_qpos
-                    set_drawer_pos(model, data, ad, new_qpos)
+
+        # Always sync MuJoCo joint to kinematic value — prevents visual spring-back
+        set_drawer_pos(model, data, ad, env["drawer_qpos"])
 
     def _is_success(env):
         return env["drawer_qpos"] < DRAWER_SLIDE * 0.1
@@ -649,7 +664,11 @@ def _drawer_env_worker_loop(pipe, init_kwargs):
                     env = envs[local_idx]
                     env["prev_drawer_qpos"] = env["drawer_qpos"]
                     _apply_action(env, pos3, quat4, 0.0)
-                    _update_drawer_physics(env)
+                    if physics_drawer:
+                        env["drawer_qpos"] = get_drawer_pos(
+                            env["model"], env["data"], env["active_drawer"])
+                    else:
+                        _update_drawer_physics(env)
                     env["step_count"] += 1
                     reward = _compute_reward(env)
                     term = _is_success(env)
@@ -714,6 +733,7 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
         groot_img_size: int = 256,
         contact_threshold: float = float("inf"),
         contact_z_gate: bool = False,
+        physics_drawer: bool = False,
         parallel_envs: bool = True,
         num_workers: int = 8,
     ):
@@ -725,6 +745,7 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
         self.groot_img_size = groot_img_size
         self.contact_threshold = contact_threshold
         self.contact_z_gate = contact_z_gate
+        self.physics_drawer = physics_drawer
 
         # Cabinet placement
         if cabinet_pos is None or cabinet_euler is None:
@@ -789,6 +810,7 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
                     "face_x_closed": self._face_x_closed,
                     "drawer_face_centers": fc_serial,
                     "home_qpos": DRAWER_HOME_QPOS.tolist(),
+                    "physics_drawer": physics_drawer,
                 }
 
             self._init_parallel(
@@ -1015,7 +1037,12 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
                 action = actions_np[i]
                 self._prev_drawer_qpos[i] = self._drawer_qpos[i]
                 self._apply_action(i, action[:3], action[3:7], 0.0)
-                self._update_drawer_physics(i)
+                if self.physics_drawer:
+                    self._drawer_qpos[i] = get_drawer_pos(
+                        self._envs[i]["model"], self._envs[i]["data"],
+                        self._envs[i]["active_drawer"])
+                else:
+                    self._update_drawer_physics(i)
                 self._step_counts[i] += 1
                 self._last_actions[i] = action
                 rewards[i] = self._compute_reward(i)
@@ -1122,13 +1149,26 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
             data.ctrl[aid] = 0.0
 
         # Physics simulation
+        # Cache drawer qpos so MuJoCo contact/damping can't spring it back
+        drawer_qpos_frozen = self._drawer_qpos[env_idx]
+        ad = env["active_drawer"]
+        djname = f"drawer_{ad}_slide"
+        djid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, djname)
         for _ in range(env["n_substeps"]):
             # Force finger qpos=0 every substep so contact forces can't open gripper
             for fid in env["ids"]["finger_ids"]:
                 if fid >= 0:
                     data.qpos[model.jnt_qposadr[fid]] = 0.0
                     data.qvel[model.jnt_dofadr[fid]] = 0.0
+            # Pin drawer joint to kinematic value — prevent spring-back
+            if not self.physics_drawer and djid >= 0:
+                data.qpos[model.jnt_qposadr[djid]] = drawer_qpos_frozen
+                data.qvel[model.jnt_dofadr[djid]] = 0.0
             mujoco.mj_step(model, data)
+        # Final pin after last mj_step so MuJoCo state matches kinematic value
+        if not self.physics_drawer and djid >= 0:
+            data.qpos[model.jnt_qposadr[djid]] = drawer_qpos_frozen
+            data.qvel[model.jnt_dofadr[djid]] = 0.0
 
     def _update_drawer_physics(self, env_idx):
         """Kinematic drawer physics: TCP-face contact → update drawer qpos.
@@ -1193,7 +1233,9 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
                 new_qpos = max(0.0, min(DRAWER_SLIDE, new_qpos))
                 if new_qpos < self._drawer_qpos[env_idx]:
                     self._drawer_qpos[env_idx] = new_qpos
-                    set_drawer_pos(model, data, active_drawer, new_qpos)
+
+        # Always sync MuJoCo joint to kinematic value — prevents visual spring-back
+        set_drawer_pos(model, data, active_drawer, self._drawer_qpos[env_idx])
 
     # ------------------------------------------------------------------
     # Internal: reset

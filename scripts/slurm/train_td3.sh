@@ -64,6 +64,12 @@ OVERRIDES=""
 [ -n "$OBS_NOISE_MAX" ] && OVERRIDES="$OVERRIDES --use_obs_noise --obs_noise_max $OBS_NOISE_MAX"
 [ -n "$OBS_DROPOUT_PROB" ] && OVERRIDES="$OVERRIDES --use_obs_dropout --obs_dropout_prob $OBS_DROPOUT_PROB"
 [ -n "$DISABLE_OBJECT_STATE" ] && OVERRIDES="$OVERRIDES --disable_object_state"
+# Drawer-specific
+[ -n "$ACTIVE_DRAWERS" ] && OVERRIDES="$OVERRIDES --active_drawers $ACTIVE_DRAWERS"
+[ -n "$CONTACT_Z_GATE" ] && OVERRIDES="$OVERRIDES --contact_z_gate"
+# Network size
+[ -n "$ACTOR_HIDDEN" ] && OVERRIDES="$OVERRIDES --actor_hidden_dim $ACTOR_HIDDEN"
+[ -n "$CRITIC_HIDDEN" ] && OVERRIDES="$OVERRIDES --critic_hidden_dim $CRITIC_HIDDEN"
 
 # ══════════════════════════════════════════════════════════════════
 # Launch unified training

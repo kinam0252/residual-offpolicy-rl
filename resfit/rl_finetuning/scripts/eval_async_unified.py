@@ -238,13 +238,25 @@ def _create_eval_env(args, task_cfg: TaskConfig, num_envs: int):
         ), num_envs
 
     elif task_cfg.name == "drawer":
+        cabinet_pos = cabinet_euler = None
+        if getattr(args, 'realistic', False):
+            from resfit.rl_finetuning.wrappers.mujoco_vec_env_drawer import load_cabinet_placement
+            _realistic_placement = str(
+                Path(__file__).resolve().parents[4] / "Mujoco_Franka_Drawer" / "output" / "cabinet_placement.json"
+            )
+            cabinet_pos, cabinet_euler = load_cabinet_placement(_realistic_placement)
         return VecEnvClass(
             num_envs=num_envs,
+            active_drawers=getattr(args, 'active_drawers', None),
+            contact_z_gate=getattr(args, 'contact_z_gate', False),
+            physics_drawer=getattr(args, 'physics_drawer', False),
             max_episode_steps=args.max_episode_steps,
             reward_type=args.reward_type,
             device=args.device,
             rl_img_size=84,
             scene_xml=getattr(args, 'scene_xml', None),
+            cabinet_pos=cabinet_pos,
+            cabinet_euler=cabinet_euler,
         ), num_envs
 
     else:
@@ -263,6 +275,10 @@ def parse_args():
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--eval_num_episodes", type=int, default=1)
     p.add_argument("--eval_num_envs", type=int, default=15)
+    # Drawer-specific
+    p.add_argument("--active_drawers", type=int, nargs="+", default=None)
+    p.add_argument("--contact_z_gate", action="store_true", default=False)
+    p.add_argument("--physics_drawer", action="store_true", default=False)
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, required=True)
     p.add_argument("--groot_embodiment_tag", type=str, default="NEW_EMBODIMENT")

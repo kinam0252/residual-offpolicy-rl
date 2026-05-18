@@ -154,6 +154,8 @@ def run_diagnostic_eval(env, agent, num_episodes, device, output_dir, base_only=
             reward_np = reward.detach().cpu().numpy() if torch.is_tensor(reward) else np.asarray(reward)
             done_np = done.detach().cpu().numpy() if torch.is_tensor(done) else np.asarray(done)
 
+            terminated_np = terminated.detach().cpu().numpy() if torch.is_tensor(terminated) else np.asarray(terminated)
+
             for i in range(num_envs):
                 if not env_done[i]:
                     recorders[i]["base_actions"].append(base_action[i])
@@ -165,10 +167,13 @@ def run_diagnostic_eval(env, agent, num_episodes, device, output_dir, base_only=
                     recorders[i]["dones"].append(done_np[i])
                     recorders[i]["cup_features"].append(cup_feats[i])
 
+                    # Success: reward==1.0 (consistent with evaluate_dexmg)
+                    # OR terminated signal (early termination on success)
+                    if reward_np[i] == 1.0 or terminated_np[i]:
+                        env_success[i] = True
+
                     if done_np[i]:
                         env_done[i] = True
-                        if terminated[i] if torch.is_tensor(terminated) else bool(terminated[i]):
-                            env_success[i] = True
 
             if all(env_done):
                 break
@@ -390,6 +395,9 @@ def main():
         grip_min=task_cfg.grip_min,
         grip_max=task_cfg.grip_max,
         use_gripper_latch=task_cfg.use_gripper_latch,
+        grip_close_latch_thresh=task_cfg.grip_close_latch_thresh,
+        grip_open_latch_thresh=task_cfg.grip_open_latch_thresh,
+        grip_latch_open_steps=task_cfg.grip_latch_open_steps,
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,

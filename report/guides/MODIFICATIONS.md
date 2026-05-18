@@ -1,6 +1,6 @@
 # 코드 수정사항 (원본 대비)
 
-> 마지막 업데이트: 2026-05-04
+> 마지막 업데이트: 2026-05-15
 
 ## 요약
 
@@ -73,6 +73,93 @@
 
 ### PnP / Lift
 - **수정 없음** — 원본 코드 그대로
+
+## 🏗️ Unified Architecture (2026-05 ~)
+
+### 커밋: `4660514` ~ `a816db8`
+
+Task별 분산되어 있던 train/eval/wrapper를 통합 아키텍처로 리팩터링.
+
+### 1. Unified Train/Eval Scripts
+| 파일 | 설명 |
+|------|------|
+| `scripts/train_residual_td3_unified.py` | 모든 task (cup/pnp/lift/stack/drawer) 통합 학습 |
+| `scripts/eval_async_unified.py` | 모든 task 통합 평가 |
+| `scripts/eval_distill_debug.py` | Distillation 모델 디버그 평가 |
+| `scripts/collect_offline_data_with_images.py` | Realistic 이미지 포함 offline 데이터 수집 |
+
+### 2. Unified Wrapper — `mujoco_residual_wrapper_unified.py`
+- **커밋**: `4660514`, `0e40b74`
+- `use_images`: VecEnv 이미지를 obs에 포함 (distillation용)
+- `realistic`: `RealisticImageRenderer`로 sim 이미지를 realistic 이미지로 교체
+- `_inject_realistic_images()`: 매 step마다 realistic 렌더링 → obs dict 교체
+- `reinit_realistic_renderer()`: fork 후 EGL 컨텍스트 재생성
+
+### 3. Task Config Registry — `configs/task_configs.py`
+- **커밋**: `4660514`
+- 각 task의 `vec_env_module`, `vec_env_class`, `camera_keys`, `rl_image_keys` 등 중앙 관리
+- Drawer: `camera_keys = ["back", "wrist"]` (다른 task와 통일)
+
+## 🎨 Realistic Rendering Pipeline (2026-05 ~)
+
+### 커밋: `0e40b74`, `72ad541`, `a816db8` + uncommitted
+
+Sim 이미지를 실제 환경과 유사하게 렌더링하는 파이프라인. `scene_realistic.py` (공용 라이브러리)를 활용.
+
+### 1. Realistic Renderer — `rendering/realistic_renderer.py`
+- **커밋**: `0e40b74` (PnP/Lift/Stack), `a816db8` (Drawer)
+- 별도 MuJoCo 모델(`make_model_generic()`)을 생성하여 realistic 렌더링
+- VecEnv → realistic model로 qpos/qvel 복사 → `RealisticRenderHelper`로 렌더링
+- Base cam: depth compositing + real background 합성
+- Wrist cam: textured table + depth-based background replacement
+
+### 2. Drawer Realistic 지원
+- **커밋**: `a816db8` + uncommitted 수정
+
+| 항목 | 내용 |
+|------|------|
+| Cabinet XML | `_build_drawer_config()` — `cabinet_placement.json`에서 동적 생성 |
+| Camera calib | Interactive calib (`Mujoco_Franka_Drawer/config/camera_info.yaml`) |
+| Background | `real_background_sam_fixed.png` (SAM으로 추출한 drawer 전용 배경) |
+| Face texture | Homography 기반 `_overlay_face_textures()` — drawer face에 실제 나무 텍스처 오버레이 |
+| Table | `table_visible=True` (wrist cam에서 직접 렌더링), size=0.55×0.45 |
+| Cabinet placement | `--realistic` 시에만 `Mujoco_Franka_Drawer/output/cabinet_placement.json` 사용, 미사용 시 MSRA 기본값 유지 |
+
+### 3. Camera Key 통일
+- **커밋**: `a816db8`
+- Drawer의 `cam_base`/`cam_wrist` → `back`/`wrist`로 통일 (다른 task와 동일)
+- `CAMERA_MAP` 및 `_render_cameras()` 수정
+- `_inject_realistic_images()`가 task 구분 없이 동작
+
+### 4. 외부 에셋 경로
+
+| 경로 | 용도 |
+|------|------|
+| `~/Repos/Intern/Mujoco_Franka/src/scene_realistic.py` | 공용 realistic 렌더링 라이브러리 |
+| `~/Repos/Intern/Mujoco_Franka/src/assets/table_texture.png` | 테이블 텍스처 |
+| `~/Repos/Intern/Mujoco_Franka_Drawer/config/camera_info.yaml` | Drawer interactive calib |
+| `~/Repos/Intern/Mujoco_Franka_Drawer/output/cabinet_placement.json` | Realistic용 cabinet 위치 |
+| `~/Repos/Intern/Mujoco_Franka_Drawer/output/real_background_sam_fixed.png` | Drawer 배경 |
+| `~/Repos/Intern/Mujoco_Franka_Drawer/output/face_tex_d{3,4}.png` | Drawer face 텍스처 |
+
+## 🧪 DAgger Distillation (2026-05 ~)
+
+### 커밋: `69a7715`
+
+State-only teacher → Image student distillation (DAgger 방식).
+
+### 1. Distill Script — `scripts/distill_dagger.py`
+- Teacher: state-only RL checkpoint (critic frozen)
+- Student: ResNet18 image encoder → MLP policy
+- DAgger: student rollout → teacher labels → supervised update
+- `--realistic` 플래그로 realistic 이미지 사용 가능
+
+### 2. Distill 결과 (Lift/PnP/Stack)
+| Task | Teacher SR | Best Student SR | 비고 |
+|------|-----------|----------------|------|
+| PnP | 95% | 80% | 안정적 |
+| Lift | 95% | 75% | 진동 |
+| Stack | 75% | 65% | 높은 분산 |
 
 ## 🆕 새로 만든 파일 (Untracked)
 

@@ -710,8 +710,8 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
     """
 
     CAMERA_MAP = {
-        "cam_base": "observation.images.cam_base",
-        "cam_wrist": "observation.images.cam_wrist",
+        "cam_base": "observation.images.back",
+        "cam_wrist": "observation.images.wrist",
     }
 
     def __init__(
@@ -1451,13 +1451,13 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
                                            scene_option=env["opt_base"])
         frame_base = env["renderer_base"].render()
         img_base = cv2.resize(frame_base, (_rs, _rs))
-        self._buf_images["observation.images.cam_base"][env_idx] = np.transpose(img_base, (2, 0, 1))
+        self._buf_images["observation.images.back"][env_idx] = np.transpose(img_base, (2, 0, 1))
 
         env["renderer_wrist"].update_scene(data, camera=env["cam_wrist_id"],
                                             scene_option=env["opt_wrist"])
         frame_wrist = env["renderer_wrist"].render()
         img_wrist = cv2.resize(frame_wrist, (_rs, _rs))
-        self._buf_images["observation.images.cam_wrist"][env_idx] = np.transpose(img_wrist, (2, 0, 1))
+        self._buf_images["observation.images.wrist"][env_idx] = np.transpose(img_wrist, (2, 0, 1))
 
     def _render_cameras(self, env_idx, images_dict):
         """Legacy render (used by get_groot_obs)."""
@@ -1469,7 +1469,7 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
                                            scene_option=env["opt_base"])
         frame_base = env["renderer_base"].render().copy()
         img_base = cv2.resize(frame_base, (_rs, _rs))
-        images_dict["observation.images.cam_base"].append(
+        images_dict["observation.images.back"].append(
             np.transpose(img_base, (2, 0, 1)).astype(np.uint8)
         )
 
@@ -1477,7 +1477,7 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
                                             scene_option=env["opt_wrist"])
         frame_wrist = env["renderer_wrist"].render().copy()
         img_wrist = cv2.resize(frame_wrist, (_rs, _rs))
-        images_dict["observation.images.cam_wrist"].append(
+        images_dict["observation.images.wrist"].append(
             np.transpose(img_wrist, (2, 0, 1)).astype(np.uint8)
         )
 

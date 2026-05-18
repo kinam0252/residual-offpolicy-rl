@@ -417,6 +417,14 @@ class AsyncEvaluator:
             cmd += ["--scene_xml", a.scene_xml]
         if hasattr(a, 'success_threshold') and a.success_threshold is not None:
             cmd += ["--success_threshold", str(a.success_threshold)]
+        # Drawer-specific: eval uses eval_active_drawers if set, else falls back to active_drawers
+        _eval_drawers = getattr(a, 'eval_active_drawers', None) or getattr(a, 'active_drawers', None)
+        if _eval_drawers:
+            cmd += ["--active_drawers"] + [str(d) for d in _eval_drawers]
+        if getattr(a, 'contact_z_gate', False):
+            cmd += ["--contact_z_gate"]
+        if getattr(a, 'physics_drawer', False):
+            cmd += ["--physics_drawer"]
         # ActionScaler
         if a.use_action_scaler and self._action_scaler is not None:
             cmd += ["--use_action_scaler"]
@@ -698,14 +706,26 @@ def _create_env(args, task_cfg: TaskConfig):
         )
 
     elif task_cfg.name == "drawer":
+        # When --realistic, use calibrated cabinet placement matching realistic renderer
+        cabinet_pos = cabinet_euler = None
+        if getattr(args, 'realistic', False):
+            from resfit.rl_finetuning.wrappers.mujoco_vec_env_drawer import load_cabinet_placement
+            _realistic_placement = str(
+                Path(__file__).resolve().parents[4] / "Mujoco_Franka_Drawer" / "output" / "cabinet_placement.json"
+            )
+            cabinet_pos, cabinet_euler = load_cabinet_placement(_realistic_placement)
         return VecEnvClass(
             num_envs=args.num_envs,
             active_drawers=getattr(args, 'active_drawers', None),
+            contact_z_gate=getattr(args, 'contact_z_gate', False),
+            physics_drawer=getattr(args, 'physics_drawer', False),
             scene_xml=getattr(args, 'scene_xml', None),
             max_episode_steps=args.max_episode_steps,
             reward_type=args.reward_type,
             device=args.device,
             rl_img_size=84,
+            cabinet_pos=cabinet_pos,
+            cabinet_euler=cabinet_euler,
         )
 
     else:
@@ -732,6 +752,16 @@ def parse_args():
     p.add_argument("--num_envs", type=int, default=None, help="Override task default num_envs")
     p.add_argument("--max_episode_steps", type=int, default=None)
     p.add_argument("--reward_type", type=str, default=None)
+
+    # Drawer-specific
+    p.add_argument("--active_drawers", type=int, nargs="+", default=None,
+                   help="Which drawers to use (e.g. --active_drawers 2 for D2 only)")
+    p.add_argument("--eval_active_drawers", type=int, nargs="+", default=None,
+                   help="Drawer distribution for eval (overrides active_drawers for eval)")
+    p.add_argument("--contact_z_gate", action="store_true", default=False,
+                   help="Enable contact-based z-axis gating for drawer task")
+    p.add_argument("--physics_drawer", action="store_true", default=False,
+                   help="Use MuJoCo physics for drawer joint (vs kinematic)")
 
     # GR00T
     p.add_argument("--groot_checkpoint", type=str, default=None)
@@ -1495,7 +1525,8 @@ def main():
             if args.distill and 'metrics' in locals() and isinstance(metrics, dict):
                 _dl = metrics.get("distill/loss", 0)
                 _extra = f" distill_loss={_dl:.6f}"
-            _log(f"step={global_step}/{args.total_timesteps} rw={reward[0].item():.4f} eps={episode_count} "
+            _ep_ret = float(ep_cum_reward.mean().item())
+            _log(f"step={global_step}/{args.total_timesteps} rw={reward[0].item():.4f} ep_ret={_ep_ret:.4f} eps={episode_count} "
                  f"speed={sps:.1f}sps ETA={eta_h:.1f}h res={ra[:6].mean():.5f}{_extra}")
             if _timing:
                 _log(f"  {_timing}")
