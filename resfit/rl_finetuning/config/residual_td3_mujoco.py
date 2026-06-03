@@ -102,7 +102,7 @@ class ResidualTD3MuJoCoConfig:
                 action_scale=0.1,
                 hidden_dim=512,
                 actor_last_layer_init_scale=0.0,
-                action_l2_reg_weight=10.0,
+                action_l2_reg_weight=0.0,
             ),
             critic=CriticConfig(
                 hidden_dim=1024,

@@ -63,6 +63,9 @@ class TaskConfig:
     # Offline data
     default_offline_fraction: float = 0.75
 
+    # Critic warmup
+    default_critic_warmup_steps: int = 1_000
+
     # W&B
     wandb_project: str = "mujoco-franka-residual-td3"
 
@@ -108,10 +111,12 @@ CUP_CONFIG = TaskConfig(
     default_num_envs=27,
     default_reward_type="dense",
     reward_choices=["sparse", "dense", "dense_bonus", "dense_v2", "dense_v3"],
-    default_max_episode_steps=500,
-    default_gamma=0.95,
+    default_max_episode_steps=300,
+    default_gamma=0.99,
+    default_actor_lr=1e-5,
+    default_critic_lr=1e-4,
     default_action_l2_reg=1.0,
-    default_offline_fraction=0.75,
+    default_offline_fraction=0.5,
     wandb_project="mujoco-franka-cup-residual-td3",
     groot_checkpoint_hint="checkpoints/groot_cup_sim/checkpoint-100000",
     object_state_dim=8,
@@ -135,10 +140,10 @@ PNP_CONFIG = TaskConfig(
     default_num_envs=15,
     default_reward_type="dense_v3",
     reward_choices=["sparse", "dense", "dense_clipped", "dense_v2", "dense_v3"],
-    default_max_episode_steps=500,
+    default_max_episode_steps=300,
     default_gamma=0.99,
     default_action_scale=0.2,
-    default_action_l2_reg=0.01,
+    default_action_l2_reg=0.1,
     default_actor_lr=1e-5,
     default_critic_lr=1e-4,
     default_buffer_size=500_000,
@@ -177,7 +182,7 @@ LIFT_CONFIG = TaskConfig(
     reward_choices=["sparse", "dense", "dense_v2", "dense_clipped"],
     default_max_episode_steps=300,
     default_gamma=0.99,
-    default_action_l2_reg=10.0,
+    default_action_l2_reg=0.0,
     default_actor_lr=1e-5,
     default_critic_lr=1e-4,
     default_buffer_size=200_000,
@@ -213,6 +218,7 @@ STACK_CONFIG = TaskConfig(
     default_action_scale=0.05,
     default_action_l2_reg=1.0,
     default_offline_fraction=0.75,
+    default_critic_warmup_steps=2_000,
     wandb_project="mujoco-franka-stack-residual-td3",
     groot_checkpoint_hint="checkpoints/groot_stack_sim/checkpoint-100000",
     object_state_dim=10,  # white_cube pos(3)+quat(4) + green_pos(3) = 10
@@ -240,7 +246,9 @@ DRAWER_CONFIG = TaskConfig(
     default_max_episode_steps=500,
     default_gamma=0.99,
     default_action_scale=0.1,
-    default_action_l2_reg=10.0,
+    default_action_l2_reg=0.01,
+    default_actor_lr=1e-5,
+    default_critic_lr=1e-4,
     default_offline_fraction=0.3,
     wandb_project="mujoco-franka-drawer-residual-td3",
     groot_checkpoint_hint="checkpoints/groot_drawer_sim/checkpoint-100000",

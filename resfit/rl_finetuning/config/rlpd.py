@@ -100,7 +100,7 @@ class QAgentConfig:
     actor_lr: float = 1e-4
     critic_lr: float = 1e-4
     critic_target_tau: float = 0.01
-    stddev_clip: float = 0.3
+    stddev_clip: float = 0.5
     # LR warmup configuration
     lr_warmup_steps: int = 0  # Number of warmup steps
     lr_warmup_start: float = 1e-8  # Starting LR for warmup (very small positive value)

@@ -795,7 +795,7 @@ def parse_args():
     # Algorithm
     p.add_argument("--total_timesteps", type=int, default=None)
     p.add_argument("--learning_starts", type=int, default=1_000)
-    p.add_argument("--critic_warmup_steps", type=int, default=2_000)
+    p.add_argument("--critic_warmup_steps", type=int, default=None)
     p.add_argument("--batch_size", type=int, default=256)
     p.add_argument("--buffer_size", type=int, default=None)
     p.add_argument("--gamma", type=float, default=None)
@@ -978,6 +978,7 @@ def _apply_task_defaults(args, task_cfg: TaskConfig):
         "actor_hidden_dim": task_cfg.default_actor_hidden_dim,
         "critic_hidden_dim": task_cfg.default_critic_hidden_dim,
         "offline_fraction": task_cfg.default_offline_fraction,
+        "critic_warmup_steps": task_cfg.default_critic_warmup_steps,
         "wandb_project": task_cfg.wandb_project,
         "task_description": task_cfg.task_description,
         "residual_pos_scale": task_cfg.residual_pos_scale,
