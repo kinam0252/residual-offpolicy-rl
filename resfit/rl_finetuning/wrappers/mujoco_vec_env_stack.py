@@ -1344,7 +1344,7 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
         if self.reward_type == "sparse":
             return 1.0 if self._is_success(env_idx) else 0.0
 
-        # Dense stacking reward (0~1.0)
+        # Paper-aligned 4-stage dense reward (0~1.0): Reach → Grasp → Align → Stack
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
         qa = env["white_qposadr"]
@@ -1364,21 +1364,21 @@ class MuJoCoVecEnvStack(SubprocVecEnvMixin):
         green_top[2] += CUBE_HALF * 2
         white_to_target = float(np.linalg.norm(white_pos - green_top))
 
-        # Stage 1: Approach white cube (max 0.15)
-        approach = (1.0 - np.tanh(tcp_white_dist / 0.1)) * 0.15
+        # Stage 1: Reach — approach white cube (max 0.15)
+        reach = (1.0 - np.tanh(tcp_white_dist / 0.1)) * 0.15
 
-        # Stage 2: Grasp (0.10 bonus)
-        grasp = 0.10 if grasped else 0.0
+        # Stage 2: Grasp (0.15 bonus)
+        grasp = 0.15 if grasped else 0.0
 
-        # Stage 3: Proximity — white cube → green top (max 0.40)
-        proximity = 0.0
+        # Stage 3: Align — white cube → green top (max 0.35, gated by grasp)
+        align = 0.0
         if grasped:
-            proximity = (1.0 - np.tanh(white_to_target / 0.08)) * 0.40
+            align = (1.0 - np.tanh(white_to_target / 0.08)) * 0.35
 
         # Stage 4: Stack success (0.35 bonus)
-        success = 0.35 if self._is_success(env_idx) else 0.0
+        stack = 0.35 if self._is_success(env_idx) else 0.0
 
-        total = approach + grasp + proximity + success
+        total = reach + grasp + align + stack
         return float(np.clip(total, 0.0, 1.0))
 
     def _is_success(self, env_idx: int) -> bool:

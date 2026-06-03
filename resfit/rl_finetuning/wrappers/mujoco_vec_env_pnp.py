@@ -1660,57 +1660,26 @@ class MuJoCoVecEnvPnP(SubprocVecEnvMixin):
             return float(np.clip(total, 0.0, 1.0))
 
         elif self.reward_type == "dense_v3":
-            # 7-stage reward with gripper-cube alignment and continuous place (0~1.0)
-            # Designed for random env perturbation training
+            # Paper-aligned 4-stage reward (0~1.0): Reach → Grasp → Carry → Place
             tcp_cube_dist = float(np.linalg.norm(tcp_pos - cube_pos))
             cube_bowl_xy = float(np.linalg.norm(cube_pos[:2] - bowl_pos[:2]))
-
-            # Get gripper rotation matrix (already available from get_tcp_pose)
-            _, tcp_R = get_tcp_pose(model, data, ids["hand_id"])
-
-            # Cube yaw quaternion → rotation matrix
-            cube_quat_wxyz = data.qpos[cube_qposadr + 3:cube_qposadr + 7]
-            cube_R = Rotation.from_quat([
-                cube_quat_wxyz[1], cube_quat_wxyz[2],
-                cube_quat_wxyz[3], cube_quat_wxyz[0]
-            ]).as_matrix()
-
-            # Gripper-cube yaw alignment: compare gripper y-axis (finger opening
-            # direction) with cube y-axis (short 4cm side) in XY plane.
-            # Cube is 8×4×4cm so x=long, y=short. Gripper must align fingers
-            # along the short side to grasp. |cos| handles 180° symmetry.
-            grip_dir = tcp_R[:2, 1]  # gripper y-axis (finger opening dir) in XY
-            cube_dir = cube_R[:2, 1]  # cube y-axis (short 4cm side) in XY
-            grip_dir_n = grip_dir / (np.linalg.norm(grip_dir) + 1e-8)
-            cube_dir_n = cube_dir / (np.linalg.norm(cube_dir) + 1e-8)
-            cos_align = abs(float(np.dot(grip_dir_n, cube_dir_n)))  # 0~1, 1=aligned
-
-            # Stage 1: Approach cube (max 0.15)
-            approach_reward = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.15
-
-            # Stage 2: Gripper-cube alignment (max 0.10, only when close to cube)
-            proximity = max(0.0, 1.0 - tcp_cube_dist / 0.15)  # ramp: 1 at cube, 0 at 15cm
-            alignment_reward = cos_align * proximity * 0.10
-
-            # Stage 3: Grasp (0.10 bonus)
-            grasp_reward = 0.10 if grasped else 0.0
-
-            # Stage 4: Lift (max 0.10, only if grasped)
             lift_delta = cube_pos[2] - self._initial_cube_z[env_idx]
-            lift_reward = 0.0
+
+            # Stage 1: Reach — approach cube (max 0.20)
+            reach = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.20
+
+            # Stage 2: Grasp (0.15 bonus)
+            grasp = 0.15 if grasped else 0.0
+
+            # Stage 3: Carry — transport to bowl (max 0.30, gated by grasp + lift)
+            carry = 0.0
             if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
-                lift_reward = np.tanh(lift_delta / 0.1) * 0.10
+                carry = (1.0 - np.tanh(cube_bowl_xy / 0.1)) * 0.30
 
-            # Stage 5: Transport to bowl (max 0.30, only if grasped + lifted)
-            transport_reward = 0.0
-            if grasped and lift_delta > PNP_LIFT_THRESHOLD_M:
-                transport_reward = (1.0 - np.tanh(cube_bowl_xy / 0.1)) * 0.30
+            # Stage 4: Place — cube in bowl (0.35 bonus)
+            place = 0.35 if self._is_success(env_idx) else 0.0
 
-            # Stage 6: Success (0.25 bonus)
-            success_reward = 0.25 if self._is_success(env_idx) else 0.0
-
-            total = (approach_reward + alignment_reward + grasp_reward +
-                     lift_reward + transport_reward + success_reward)
+            total = reach + grasp + carry + place
             return float(np.clip(total, 0.0, 1.0))
 
         elif self.reward_type == "dense_v4":

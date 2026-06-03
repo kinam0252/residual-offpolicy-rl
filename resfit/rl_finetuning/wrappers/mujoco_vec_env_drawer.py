@@ -1291,8 +1291,7 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
             success = 1.0 if self._is_success(env_idx) else 0.0
             return delta_reward + success
 
-        # Stage-based dense reward (approach / contact / push / success)
-        # Each stage contributes up to 0.25, total max = 1.0
+        # Paper-aligned dense reward (0~1.0): Approach + Push to close
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
         active_drawer = env["active_drawer"]
@@ -1305,7 +1304,7 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
         cab_mat = data.xmat[env["cab_body_id"]].reshape(3, 3)
         tcp_local = cab_mat.T @ (tcp - cab_pos_w)
 
-        # Demo mean target in cabinet-local 3D
+        # Target: drawer face center
         dm = DEMO_CONTACT_MEAN.get(active_drawer)
         face_hz = DRAWER_SLOT_HEIGHT / 2 - DRAWER_GAP
         dz_center = env["drawer_z_min"] + face_hz + DRAWER_GAP
@@ -1314,29 +1313,15 @@ class MuJoCoVecEnvDrawer(SubprocVecEnvMixin):
         target_z = dz_center + dm["z_norm"] * face_hz if dm else dz_center
         target_local = np.array([target_x, target_y, target_z])
 
-        # Stage 1: Approach — TCP distance to demo mean 3D position (max 0.25)
+        # Stage 1: Approach — TCP → drawer face (max 0.25)
         dist_to_target = float(np.linalg.norm(tcp_local - target_local))
         approach = (1.0 - np.tanh(dist_to_target / 0.1)) * 0.25
 
-        # Stage 2: Contact — TCP in face region AND within threshold of demo mean (0.25)
-        y_ok = abs(tcp_local[1]) < self._face_hy + 0.03
-        z_ok = (tcp_local[2] > env["drawer_z_min"]) and (tcp_local[2] < env["drawer_z_max"])
-        contact = 0.0
-        if y_ok and z_ok and dm is not None:
-            y_norm = tcp_local[1] / self._face_hy if self._face_hy > 0 else 0.0
-            z_norm = (tcp_local[2] - dz_center) / face_hz if face_hz > 0 else 0.0
-            norm_dist = np.sqrt((y_norm - dm["y_norm"])**2 + (z_norm - dm["z_norm"])**2)
-            if norm_dist <= 1.0:
-                contact = 0.25
-
-        # Stage 3: Push — fraction of drawer closed (max 0.25)
+        # Stage 2: Close — fraction of drawer closed (max 0.75)
         closed_frac = 1.0 - (self._drawer_qpos[env_idx] / DRAWER_SLIDE)
-        push = float(np.clip(closed_frac, 0.0, 1.0)) * 0.25
+        close = float(np.clip(closed_frac, 0.0, 1.0)) * 0.75
 
-        # Stage 4: Success — drawer ≥90% closed (0.25 bonus)
-        success = 0.25 if self._is_success(env_idx) else 0.0
-
-        total = approach + contact + push + success
+        total = approach + close
         return float(np.clip(total, 0.0, 1.0))
 
     def _is_success(self, env_idx) -> bool:

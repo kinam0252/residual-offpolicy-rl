@@ -1291,10 +1291,11 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
             return 1.0 if self._is_success(env_idx) else 0.0
 
         # dense and dense_bonus share the same staged reward structure
-        # Staged dense reward:
-        #   approach (0.20): tanh decay on tcp-cup distance
-        #   grasp   (0.15): flat reward when grasped
-        #   upright (0.65): uprightness (only when grasped)
+        # Paper-aligned 4-stage dense reward:
+        #   Reach   (0.15): tanh decay on tcp-cup distance
+        #   Grasp   (0.15): flat reward when grasped
+        #   Rotate  (0.35): continuous uprightness progress (gated by grasp)
+        #   Upright (0.35): success bonus when cup is upright and stable
         env = self._envs[env_idx]
         model, data, ids = env["model"], env["data"], env["ids"]
 
@@ -1307,36 +1308,36 @@ class MuJoCoVecEnvCup(SubprocVecEnvMixin):
         cup_pos = data.qpos[cup_qpa:cup_qpa + 3]
         tcp_cup_dist = float(np.linalg.norm(tcp_pos - cup_pos))
 
-        # Approach: 1 - tanh(dist / scale)
-        approach_scale = 0.10
-        approach_reward = 1.0 - float(np.tanh(tcp_cup_dist / approach_scale))
+        # Reach
+        reach_reward = 1.0 - float(np.tanh(tcp_cup_dist / 0.10))
 
         # Grasp
         grasped = env["grasp_state"]["grasped"]
         grasp_reward = 1.0 if grasped else 0.0
 
-        # Upright (only counts when grasped)
+        # Rotate (continuous uprightness, gated by grasp)
         uprightness = self._get_uprightness(env_idx)
-        upright_reward = float(np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
+        rotate_reward = float(np.clip(uprightness, 0.0, 1.0)) if grasped else 0.0
+
+        # Upright (success bonus)
+        upright_reward = 1.0 if self._is_success(env_idx) else 0.0
 
         # Select reward weights based on reward_type
         if self.reward_type == "dense_v2":
-            success_reward = 1.0 if self._is_success(env_idx) else 0.0
-            reward = 0.10 * approach_reward + 0.10 * grasp_reward + 0.30 * upright_reward + 0.50 * success_reward
+            reward = 0.10 * reach_reward + 0.10 * grasp_reward + 0.30 * rotate_reward + 0.50 * upright_reward
             return float(np.clip(reward, 0.0, 1.0))
         if self.reward_type == "dense_v3":
-            success_reward = 1.0 if self._is_success(env_idx) else 0.0
-            reward = 0.25 * approach_reward + 0.15 * grasp_reward + 0.25 * upright_reward + 0.35 * success_reward
+            reward = 0.15 * reach_reward + 0.15 * grasp_reward + 0.35 * rotate_reward + 0.35 * upright_reward
             return float(np.clip(reward, 0.0, 1.0))
         if self.reward_type in ("dense_equal", "dense_equal_bonus"):
-            w_approach, w_grasp, w_upright = 0.33, 0.34, 0.33
-        else:
-            w_approach, w_grasp, w_upright = 0.20, 0.15, 0.65
+            reward = 0.25 * reach_reward + 0.25 * grasp_reward + 0.25 * rotate_reward + 0.25 * upright_reward
+            return float(np.clip(reward, 0.0, 1.0))
 
-        reward = w_approach * approach_reward + w_grasp * grasp_reward + w_upright * upright_reward
+        # default "dense": paper-aligned weights
+        reward = 0.15 * reach_reward + 0.15 * grasp_reward + 0.35 * rotate_reward + 0.35 * upright_reward
         reward = float(np.clip(reward, 0.0, 1.0))
-        # dense_bonus / dense_equal_bonus: add success bonus
-        if self.reward_type in ("dense_bonus", "dense_equal_bonus") and self._is_success(env_idx):
+        # dense_bonus: add success bonus
+        if self.reward_type == "dense_bonus" and self._is_success(env_idx):
             reward += 2.0
         return reward
 

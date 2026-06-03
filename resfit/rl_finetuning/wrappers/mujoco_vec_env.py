@@ -1011,18 +1011,16 @@ class MuJoCoVecEnv(SubprocVecEnvMixin):
         is_success = lift_delta >= self.success_threshold and grasped
 
         if self.reward_type == "dense":
-            # Staged dense reward [0, 1] — matches Cup/Stack pattern
-            #   approach (0.15): tanh decay on TCP→cube distance
-            #   grasp   (0.10): flat reward when grasped
-            #   lift    (0.40): height progress (only when grasped)
-            #   success (0.35): lifted above threshold
-            approach = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.15
-            grasp = 0.10 if grasped else 0.0
+            # Paper-aligned 3-stage dense reward [0, 1]
+            #   Reach (0.15): tanh decay on TCP→cube distance
+            #   Grasp (0.15): flat reward when grasped
+            #   Lift  (0.70): height progress toward 3cm threshold
+            reach = (1.0 - np.tanh(tcp_cube_dist / 0.1)) * 0.15
+            grasp = 0.15 if grasped else 0.0
             lift = 0.0
             if grasped:
-                lift = np.tanh(max(lift_delta, 0.0) / self.success_threshold) * 0.40
-            success = 0.35 if is_success else 0.0
-            return float(np.clip(approach + grasp + lift + success, 0.0, 1.0))
+                lift = min(max(lift_delta, 0.0) / self.success_threshold, 1.0) * 0.70
+            return float(np.clip(reach + grasp + lift, 0.0, 1.0))
 
         elif self.reward_type == "dense_v2":
             # Success-heavy variant [0, 1]
