@@ -114,7 +114,8 @@ class MuJoCoResidualWrapperUnified:
         # ActionScaler for obs normalization
         action_scaler=None,
         # Object state augmentation (noise + dropout)
-        obs_noise_max: float = 0.0,
+        obs_noise_max_pos: float = 0.0,
+        obs_noise_max_rot: float = 0.0,
         obs_dropout_prob: float = 0.0,
         disable_object_state: bool = False,
         # Vision mode
@@ -144,7 +145,8 @@ class MuJoCoResidualWrapperUnified:
         self.action_scaler = action_scaler  # for normalizing obs.base_action
 
         # Object state augmentation
-        self.obs_noise_max = obs_noise_max
+        self.obs_noise_max_pos = obs_noise_max_pos
+        self.obs_noise_max_rot = obs_noise_max_rot
         self.obs_dropout_prob = obs_dropout_prob
         self.disable_object_state = disable_object_state
         if disable_object_state:
@@ -624,23 +626,87 @@ class MuJoCoResidualWrapperUnified:
     def _apply_object_state_augmentation(
         self, obs: dict[str, torch.Tensor],
     ) -> dict[str, torch.Tensor]:
-        """Apply noise and/or dropout to observation.object_state in-place.
+        """Apply structured noise and/or dropout to observation.object_state.
 
-        Noise:   σ ~ U(0, obs_noise_max), then obs += U(-σ, σ) per dim per env
-        Dropout: with prob obs_dropout_prob, zero entire vector per env
-        Disable: zero entire object_state always (no_obj ablation)
+        Following the paper (Eq.4-5):
+          - Position noise:    p̂ = p + ε_p,  ε_p ~ U(-σ̃_p, σ̃_p),  σ̃_p ~ U(0, σ_p^max)
+          - Orientation noise: q̂ = q ⊗ ε_q,  ε_q is a small random rotation with
+                               magnitude σ̃_q ~ U(0, σ_q^max)
+          - Dropout:           zero entire object_state with prob ρ_drop
+
+        Object state layout per task:
+          Lift:  [pos(3), quat_wxyz(4)]              dim=7
+          PnP:   [cube_pos(3), cube_quat(4), bowl_pos(3)]  dim=10
+          Stack: [white_pos(3), white_quat(4), green_pos(3)] dim=10
+          Cup:   [pos(3), quat_wxyz(4), uprightness(1)]     dim=8
+          Drawer: dim=0 (no object state)
         """
         key = "observation.object_state"
         if key not in obs:
             return obs
-        obj = obs[key]  # (num_envs, D), on device
+        obj = obs[key].clone()  # (num_envs, D), on device
 
         if self.disable_object_state:
             obs[key] = torch.zeros_like(obj)
             return obs
 
-        if self.obs_noise_max > 0.0:
-            sigma = np.random.uniform(0.0, self.obs_noise_max)
+        D = obj.shape[-1]
+
+        if (self.obs_noise_max_pos > 0.0 or self.obs_noise_max_rot > 0.0) and D >= 7:
+            # Apply structured noise to each pose block [pos(3), quat_wxyz(4)]
+            pose_blocks = []
+            if D == 7:
+                # Single object: [pos(3), quat(4)]
+                pose_blocks = [(0, 3, 7)]
+            elif D == 10:
+                # PnP/Stack: [obj_pos(3), obj_quat(4), target_pos(3)]
+                pose_blocks = [(0, 3, 7)]
+                # Also add position noise to target_pos(3) at indices 7:10
+                if self.obs_noise_max_pos > 0.0:
+                    sigma_p = np.random.uniform(0.0, self.obs_noise_max_pos)
+                    noise_p = torch.empty(obj.shape[0], 3, device=obj.device).uniform_(-sigma_p, sigma_p)
+                    obj[:, 7:10] = obj[:, 7:10] + noise_p
+            elif D == 8:
+                # Cup: [pos(3), quat(4), uprightness(1)]
+                pose_blocks = [(0, 3, 7)]
+                # uprightness(1) at index 7 — no noise (derived scalar)
+
+            for (start, pos_end, quat_end) in pose_blocks:
+                # Position noise: additive
+                if self.obs_noise_max_pos > 0.0:
+                    sigma_p = np.random.uniform(0.0, self.obs_noise_max_pos)
+                    noise_p = torch.empty(obj.shape[0], 3, device=obj.device).uniform_(-sigma_p, sigma_p)
+                    obj[:, start:pos_end] = obj[:, start:pos_end] + noise_p
+
+                # Orientation noise: quaternion multiplication
+                if self.obs_noise_max_rot > 0.0:
+                    sigma_q = np.random.uniform(0.0, self.obs_noise_max_rot)
+                    # Generate small random rotation as axis-angle, then convert to quaternion
+                    # axis: random unit vector, angle: ~ U(0, sigma_q)
+                    axes = torch.randn(obj.shape[0], 3, device=obj.device)
+                    axes = axes / (axes.norm(dim=-1, keepdim=True) + 1e-8)
+                    angles = torch.empty(obj.shape[0], 1, device=obj.device).uniform_(0, sigma_q)
+                    half_angles = angles / 2.0
+                    # ε_q in wxyz: [cos(θ/2), sin(θ/2)*axis]
+                    eps_w = torch.cos(half_angles)                    # (N, 1)
+                    eps_xyz = torch.sin(half_angles) * axes           # (N, 3)
+
+                    # Original quaternion in wxyz format
+                    q_w = obj[:, pos_end:pos_end+1]
+                    q_xyz = obj[:, pos_end+1:quat_end]
+
+                    # Hamilton product: q ⊗ ε_q (wxyz convention)
+                    new_w = q_w * eps_w - (q_xyz * eps_xyz).sum(dim=-1, keepdim=True)
+                    new_xyz = q_w * eps_xyz + eps_w * q_xyz + torch.cross(q_xyz, eps_xyz, dim=-1)
+
+                    # Normalize
+                    new_quat = torch.cat([new_w, new_xyz], dim=-1)
+                    new_quat = new_quat / (new_quat.norm(dim=-1, keepdim=True) + 1e-8)
+                    obj[:, pos_end:quat_end] = new_quat
+
+        elif self.obs_noise_max_pos > 0.0 and D > 0 and D < 7:
+            # Fallback for non-standard layouts: simple additive noise
+            sigma = np.random.uniform(0.0, self.obs_noise_max_pos)
             noise = torch.empty_like(obj).uniform_(-sigma, sigma)
             obj = obj + noise
 

@@ -57,8 +57,8 @@ class TaskConfig:
     default_critic_lr: float = 3e-4
     default_buffer_size: int = 500_000
     default_total_timesteps: int = 500_000
-    default_actor_hidden_dim: int = 256
-    default_critic_hidden_dim: int = 256
+    default_actor_hidden_dim: int = 512
+    default_critic_hidden_dim: int = 1024
 
     # Offline data
     default_offline_fraction: float = 0.75
@@ -139,12 +139,12 @@ PNP_CONFIG = TaskConfig(
     default_gamma=0.99,
     default_action_scale=0.2,
     default_action_l2_reg=0.01,
-    default_actor_lr=3e-4,
-    default_critic_lr=3e-4,
+    default_actor_lr=1e-5,
+    default_critic_lr=1e-4,
     default_buffer_size=500_000,
     default_total_timesteps=500_000,
-    default_actor_hidden_dim=256,
-    default_critic_hidden_dim=256,
+    default_actor_hidden_dim=512,
+    default_critic_hidden_dim=1024,
     default_offline_fraction=0.5,
     wandb_project="mujoco-franka-pnp-residual-td3",
     groot_checkpoint_hint="checkpoints/groot_pnp_sim/checkpoint-100000",

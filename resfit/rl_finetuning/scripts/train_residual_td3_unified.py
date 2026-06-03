@@ -780,11 +780,13 @@ def parse_args():
 
     # Object state augmentation
     p.add_argument("--use_obs_noise", action="store_true", default=False,
-                   help="Apply uniform noise to observation.object_state during training")
+                   help="Apply structured noise to observation.object_state during training")
     p.add_argument("--use_obs_dropout", action="store_true", default=False,
                    help="Randomly zero out observation.object_state during training")
-    p.add_argument("--obs_noise_max", type=float, default=0.01,
-                   help="Max noise magnitude σ_max: σ~U(0,σ_max), obs+=U(-σ,σ)")
+    p.add_argument("--obs_noise_max_pos", type=float, default=0.005,
+                   help="Max position noise σ_p^max in metres (default 5mm)")
+    p.add_argument("--obs_noise_max_rot", type=float, default=0.1,
+                   help="Max orientation noise σ_q^max in radians (default ~5.7°)")
     p.add_argument("--obs_dropout_prob", type=float, default=0.1,
                    help="Probability of zeroing entire object_state per timestep")
     p.add_argument("--disable_object_state", action="store_true", default=False,
@@ -1089,7 +1091,8 @@ def main():
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
-        obs_noise_max=args.obs_noise_max if args.use_obs_noise else 0.0,
+        obs_noise_max_pos=args.obs_noise_max_pos if args.use_obs_noise else 0.0,
+        obs_noise_max_rot=args.obs_noise_max_rot if args.use_obs_noise else 0.0,
         obs_dropout_prob=args.obs_dropout_prob if args.use_obs_dropout else 0.0,
         disable_object_state=getattr(args, 'disable_object_state', False),
         use_images=getattr(args, 'use_images', False) or getattr(args, 'realistic', False),

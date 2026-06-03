@@ -44,17 +44,18 @@ class CriticConfig:
     orth: int = 1
     spatial_emb: int = 1024
 
-    # Number of independent Q-heads (in the ensemble). Set to 2 for TD3, >2 for RED-Q style.
-    num_q: int = 10
+    # Number of independent Q-heads. Set to 2 for TD3 (twin critics).
+    num_q: int = 2
     loss: CriticLossCfg = field(default_factory=lambda: CriticLossCfg())
-    # Policy gradient type: "ensemble_mean" (mean over all heads, standard RED-Q) or
-    # "min_random_pair" (min of 2 random heads) or "q1" (just use q1 from ensemble, standard TD3)
-    policy_gradient_type: str = "ensemble_mean"
+    # Policy gradient type: "q1" (standard TD3: actor uses Q1 only) or
+    # "ensemble_mean" (mean over all heads, RED-Q style) or
+    # "min_random_pair" (min of 2 random heads)
+    policy_gradient_type: str = "q1"
     # Number of hidden layers in the critic MLP heads (default 2 for backwards compatibility)
     num_layers: int = 2
     # Layer normalization control
     use_layer_norm: bool = True
-    # Number of Q-heads to take min over for target computation (default 2 for RED-Q behavior)
+    # Number of Q-heads to take min over for target computation (2 = standard TD3)
     min_q_heads: int = 2
 
     def __post_init__(self):

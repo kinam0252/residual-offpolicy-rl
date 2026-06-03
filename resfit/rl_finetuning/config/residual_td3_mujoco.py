@@ -97,7 +97,7 @@ class ResidualTD3MuJoCoConfig:
             actor_lr=1e-5,
             critic_lr=1e-4,
             critic_target_tau=0.005,
-            clip_q_target_to_reward_range=True,
+            clip_q_target_to_reward_range=False,
             actor=ActorConfig(
                 action_scale=0.1,
                 hidden_dim=512,

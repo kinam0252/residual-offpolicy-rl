@@ -104,7 +104,7 @@ def evaluate(env, agent, num_episodes, device):
     }
 
 
-def create_env(args, ckpt_args, task_cfg, obs_noise_max=0.0, obs_dropout_prob=0.0, action_scaler=None):
+def create_env(args, ckpt_args, task_cfg, obs_noise_max_pos=0.0, obs_noise_max_rot=0.0, obs_dropout_prob=0.0, action_scaler=None):
     """Create eval environment with optional noise/dropout, reusing eval_async logic."""
     from resfit.rl_finetuning.scripts.eval_async_unified import _create_eval_env
 
@@ -148,7 +148,7 @@ def create_env(args, ckpt_args, task_cfg, obs_noise_max=0.0, obs_dropout_prob=0.
         camera_keys=task_cfg.camera_keys,
         action_scaler=action_scaler,
         async_prefetch=False,
-        obs_noise_max=obs_noise_max,
+        obs_noise_max_pos=obs_noise_max, obs_noise_max_rot=0.0,
         obs_dropout_prob=obs_dropout_prob,
     )
     return env, num_envs
@@ -205,7 +205,7 @@ def main():
 
     env_clean, num_envs = create_env(
         args, ckpt_args, task_cfg,
-        obs_noise_max=0.0, obs_dropout_prob=0.0,
+        obs_noise_max_pos=0.0, obs_noise_max_rot=0.0, obs_dropout_prob=0.0,
         action_scaler=action_scaler,
     )
 
@@ -241,7 +241,7 @@ def main():
 
     env_noisy, _ = create_env(
         args, ckpt_args, task_cfg,
-        obs_noise_max=args.noise_max,
+        obs_noise_max_pos=args.noise_max, obs_noise_max_rot=0.0,
         obs_dropout_prob=args.dropout_prob,
         action_scaler=action_scaler,
     )

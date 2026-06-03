@@ -296,7 +296,7 @@ def parse_args():
     # Object state augmentation (disabled by default in eval for clean measurement)
     p.add_argument("--use_obs_noise", action="store_true", default=False)
     p.add_argument("--use_obs_dropout", action="store_true", default=False)
-    p.add_argument("--obs_noise_max", type=float, default=0.01)
+    p.add_argument("--obs_noise_max_pos", type=float, default=0.01)
     p.add_argument("--obs_dropout_prob", type=float, default=0.1)
     # ActionScaler
     p.add_argument("--use_action_scaler", action="store_true")
@@ -385,7 +385,7 @@ def main():
         camera_keys=task_cfg.camera_keys,
         action_scaler=_action_scaler,
         async_prefetch=False,  # EGL is not thread-safe; async rendering causes EGL_BAD_ACCESS
-        obs_noise_max=args.obs_noise_max if args.use_obs_noise else 0.0,
+        obs_noise_max_pos=args.obs_noise_max_pos, obs_noise_max_rot=0.0 if args.use_obs_noise else 0.0,
         obs_dropout_prob=args.obs_dropout_prob if args.use_obs_dropout else 0.0,
         use_images=getattr(args, 'use_images', False) or getattr(args, 'realistic', False),
         realistic=getattr(args, 'realistic', False),
