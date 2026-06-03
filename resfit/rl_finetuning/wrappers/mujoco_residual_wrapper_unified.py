@@ -639,7 +639,7 @@ class MuJoCoResidualWrapperUnified:
           PnP:   [cube_pos(3), cube_quat(4), bowl_pos(3)]  dim=10
           Stack: [white_pos(3), white_quat(4), green_pos(3)] dim=10
           Cup:   [pos(3), quat_wxyz(4), uprightness(1)]     dim=8
-          Drawer: dim=0 (no object state)
+          Drawer: [drawer_qpos(1), active_idx(1), face_center(3)]  dim=5
         """
         key = "observation.object_state"
         if key not in obs:

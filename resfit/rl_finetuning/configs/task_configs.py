@@ -244,10 +244,10 @@ DRAWER_CONFIG = TaskConfig(
     default_offline_fraction=0.3,
     wandb_project="mujoco-franka-drawer-residual-td3",
     groot_checkpoint_hint="checkpoints/groot_drawer_sim/checkpoint-100000",
-    object_state_dim=0,  # offline data lacks obs_object_state; online env provides it but we skip for consistency
+    object_state_dim=5,  # drawer_qpos(1) + active_drawer_idx(1) + face_center_world(3)
     supports_asymmetric_critic=False,
     rl_image_keys=["observation.images.back", "observation.images.wrist"],
-    extra_lowdim_keys=[],
+    extra_lowdim_keys=["observation.object_state"],
     success_threshold=0.01,
 )
 
