@@ -1,6 +1,6 @@
 {
   "task": "lift",
-  "groot_checkpoint": "~/DATA/INTERN/training/groot_lift_sim_32ep_100k/checkpoint-100000",
+  "groot_checkpoint": "checkpoints/groot_lift_sim/checkpoint-100000",
   "offline_data_dir": "outputs/offline_data/lift_30pos_states",
 
   "positions_file": "configs/lift_66ep_positions.json",

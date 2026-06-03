@@ -1,7 +1,0 @@
-. ~/.venvs/groot/bin/activate && export LD_LIBRARY_PATH=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_runtime/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cublas/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cudnn/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cufft/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusolver/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cusparse/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nvjitlink/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cuda_nvrtc/lib:$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/nccl/lib:~/.local/lib/gl:${LD_LIBRARY_PATH:-} && export CUDA_HOME=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13 && export PATH=$CUDA_HOME/bin:$PATH && cd /home/nas_main/kinamkim/Repos/Intern/residual-offpolicy-rl && which gcc 2>&1; which g++ 2>&1; ls /usr/bin/gcc* /usr/bin/g++* 2>&1; find /usr -name 'gcc' -o -name 'g++' 2>/dev/null | head -10; echo '=== nvcc test ===' && nvcc -ccbin /usr/bin/gcc /tmp/test_nvcc.cu -o /tmp/test_nvcc 2>&1 || true
-ls: cannot access '/usr/bin/gcc*': No such file or directory
-ls: cannot access '/usr/bin/g++*': No such file or directory
-/usr/share/gcc
-=== nvcc test ===
-/usr/bin/gcc: No such file or directory
-nvcc fatal   : Failed to preprocess host compiler properties.

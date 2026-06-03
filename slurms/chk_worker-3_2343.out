@@ -1,6 +1,0 @@
-. ~/.venvs/groot/bin/activate && export LD_LIBRARY_PATH=~/.local/lib/gl:${LD_LIBRARY_PATH:-} && echo NODE=$(hostname) && nvidia-smi | head -4 && ls /usr/local/cuda*/lib64/libcudart* 2>/dev/null && echo '---' && python -c 'import torch; print("avail:", torch.cuda.is_available()); print("count:", torch.cuda.device_count())'
-NODE=worker-3
-Thu Apr 30 03:14:54 2026       
-+-----------------------------------------------------------------------------------------+
-| NVIDIA-SMI 580.95.05              Driver Version: 580.95.05      CUDA Version: 13.0     |
-+-----------------------------------------+------------------------+----------------------+

@@ -4,7 +4,7 @@ Runs GR00T only (no residual) and saves videos.
 
 Usage:
     python scripts/eval_base_lift.py \
-        --groot_checkpoint ~/DATA/INTERN/training/groot_lift_sim_32ep_100k/checkpoint-100000 \
+        --groot_checkpoint checkpoints/<TASK>/checkpoint \
         --num_envs 3 --num_episodes 1 --save_video
 """
 from __future__ import annotations

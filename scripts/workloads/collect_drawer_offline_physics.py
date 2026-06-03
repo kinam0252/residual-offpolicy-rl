@@ -5,7 +5,7 @@ Saves per-episode npz with transitions + reward features for offline RL.
 
 Usage:
     python scripts/workloads/collect_drawer_offline_physics.py \
-        --groot_checkpoint ~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-75000 \
+        --groot_checkpoint checkpoints/<TASK>/checkpoint \
         --active_drawers 2 3 \
         --num_episodes 150 \
         --output_dir outputs/offline_drawer_physics_75k
@@ -47,7 +47,7 @@ from resfit.rl_finetuning.wrappers.mujoco_residual_wrapper_unified import MuJoCo
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--groot_checkpoint", type=str,
-                   default=os.path.expanduser("~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-75000"))
+                   default=os.path.expanduser("checkpoints/<TASK>/checkpoint"))
     p.add_argument("--active_drawers", type=int, nargs="+", default=[2, 3])
     p.add_argument("--num_episodes", type=int, default=150,
                    help="Number of episodes per drawer")

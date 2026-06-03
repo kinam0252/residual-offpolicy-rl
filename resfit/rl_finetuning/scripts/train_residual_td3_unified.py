@@ -6,7 +6,7 @@ Includes: ActionScaler, chunk_sync, replay buffer fix, buffer cache.
 
 Launch:
     python resfit/rl_finetuning/scripts/train_residual_td3_unified.py \
-        --task cup --groot_checkpoint ~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000 \
+        --task cup --groot_checkpoint checkpoints/groot_cup_sim/checkpoint-100000 \
         --use_action_scaler --chunk_sync --num_envs 27 --total_timesteps 500000
 """
 

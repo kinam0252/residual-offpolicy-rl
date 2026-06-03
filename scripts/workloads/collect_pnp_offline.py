@@ -11,7 +11,7 @@ enable reward relabeling during training.
 Usage:
     python scripts/workloads/collect_pnp_offline.py \
         --positions_file configs/pnp_66ep_positions.json \
-        --groot_checkpoint ~/DATA/INTERN/training/groot_pnp_sim_66ep/checkpoint-100000 \
+        --groot_checkpoint checkpoints/<TASK>/checkpoint \
         --output_dir outputs/offline_data/pnp_30pos_states \
         --num_positions 30 --episodes_per_pos 10 --batch_size 15
 """

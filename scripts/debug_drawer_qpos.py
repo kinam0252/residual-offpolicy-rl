@@ -37,7 +37,7 @@ def main():
     parser.add_argument("--max_steps", type=int, default=500)
     parser.add_argument("--drawer", type=int, default=2)
     parser.add_argument("--groot_checkpoint", type=str,
-                        default=os.path.expanduser("~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000"))
+                        default=os.path.expanduser("checkpoints/<TASK>/checkpoint"))
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

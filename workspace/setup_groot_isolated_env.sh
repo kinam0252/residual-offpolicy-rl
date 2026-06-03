@@ -10,7 +10,7 @@ ISAACLAB_ROOT="${ISAACLAB_ROOT:-}"
 if [[ -z "${ISAACLAB_ROOT}" ]]; then
   CANDIDATES=(
     "${WORKSPACE_DIR}/../../Honda_IsaacLab"
-    "/home/kinam/Desktop/Repos/VLA_RL/Honda_IsaacLab"
+    "<YOUR_REPO_PATH>"
   )
 
   for candidate in "${CANDIDATES[@]}"; do

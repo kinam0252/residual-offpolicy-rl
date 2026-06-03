@@ -1,6 +1,6 @@
 {
   "task": "cup",
-  "groot_checkpoint": "~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000",
+  "groot_checkpoint": "checkpoints/groot_cup_sim/checkpoint-100000",
   "offline_data_dir": "outputs/offline_cup_batch",
 
   "positions_file": "configs/cup_positions.json",

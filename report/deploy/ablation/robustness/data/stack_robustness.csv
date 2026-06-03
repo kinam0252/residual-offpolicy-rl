@@ -1,5 +1,0 @@
-condition,checkpoint_job,clean_sr,noisy_sr,sr_drop,clean_successes,noisy_successes,total_episodes,clean_mean_return,noisy_mean_return
-clean,stack_rl_763,55.00,46.67,8.33,33,28,60,150.56,189.75
-noise,stack_rl_764,45.00,50.00,-5.00,27,30,60,187.45,166.80
-drop,stack_rl_765,50.00,55.00,-5.00,30,33,60,168.83,137.69
-both,stack_rl_766,60.00,58.33,1.67,36,35,60,142.41,158.44

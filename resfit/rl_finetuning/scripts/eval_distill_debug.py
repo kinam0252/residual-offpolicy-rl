@@ -5,7 +5,7 @@ Usage:
   python eval_distill_debug.py \
     --checkpoint outputs/lift_rl_1803/checkpoints/best.pt \
     --task lift \
-    --groot_checkpoint ~/DATA/INTERN/training/groot_lift_sim_32ep_100k/checkpoint-100000 \
+    --groot_checkpoint checkpoints/<TASK>/checkpoint \
     --num_envs 5 --num_episodes 1 \
     --save_dir outputs/lift_rl_1803/debug_images
 """

@@ -36,7 +36,7 @@ def main():
     parser.add_argument("--mode", choices=["base", "residual"], required=True)
     parser.add_argument("--ckpt", type=str, default=None, help="Residual checkpoint path")
     parser.add_argument("--groot_checkpoint", type=str,
-                        default=os.path.expanduser("~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000"))
+                        default=os.path.expanduser("checkpoints/<TASK>/checkpoint"))
     parser.add_argument("--num_envs", type=int, default=20)
     parser.add_argument("--episodes", type=int, default=1)
     parser.add_argument("--max_steps", type=int, default=500)

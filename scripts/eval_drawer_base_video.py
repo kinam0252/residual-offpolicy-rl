@@ -155,7 +155,7 @@ def main():
     parser.add_argument(
         "--groot_checkpoint",
         type=str,
-        default="~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000",
+        default="checkpoints/<TASK>/checkpoint",
     )
     parser.add_argument("--device", type=str, default="cuda:0")
     parser.add_argument("--physics_drawer", action="store_true",

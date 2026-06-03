@@ -4,7 +4,7 @@ Runs GR00T only (no residual) and reports per-env success rate.
 
 Usage:
     python scripts/eval_base_cup.py \
-        --groot_checkpoint ~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000 \
+        --groot_checkpoint checkpoints/<TASK>/checkpoint \
         --num_envs 5 --num_episodes 2 --save_video
 """
 from __future__ import annotations

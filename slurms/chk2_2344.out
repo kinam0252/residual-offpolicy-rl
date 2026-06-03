@@ -1,4 +1,0 @@
-hostname && nvidia-smi --query-gpu=driver_version,cuda_version --format=csv,noheader && echo '---CUDA_DIRS---' && ls -d /usr/local/cuda* 2>&1 && echo '---LIBCUDA---' && ldconfig -p 2>/dev/null | grep libcuda && echo '---TORCH---' && . ~/.venvs/groot/bin/activate && python -c 'import torch; print("torch:", torch.__version__); print("cuda_compiled:", torch.version.cuda); print("avail:", torch.cuda.is_available()); print("count:", torch.cuda.device_count())' 2>&1 && echo '---DONE---'
-worker-2
-Field "cuda_version" is not a valid field to query.
-

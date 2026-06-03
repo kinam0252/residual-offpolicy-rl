@@ -1,6 +1,6 @@
 {
   "task": "stack",
-  "groot_checkpoint": "~/DATA/INTERN/training/groot_stack_sim_66ep/checkpoint-75000",
+  "groot_checkpoint": "checkpoints/groot_stack_sim/checkpoint-75000",
   "offline_data_dir": "outputs/offline_data/stack_75k",
 
   "positions_file": "configs/stack_positions.json",

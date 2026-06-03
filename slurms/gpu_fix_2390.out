@@ -1,7 +1,0 @@
-set +e; . ~/.venvs/groot/bin/activate; export LD_LIBRARY_PATH=$HOME/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:${LD_LIBRARY_PATH:-}; echo LD=$LD_LIBRARY_PATH; python -c 'import torch; print("torch:", torch.__version__); print("cuda:", torch.cuda.is_available()); print("count:", torch.cuda.device_count()); t=torch.zeros(1,device="cuda"); print("OK:", t)' 2>&1; echo DONE
-LD=/home/nas_main/kinamkim/.venvs/groot/lib/python3.10/site-packages/nvidia/cu13/lib:/usr/local/cuda-13.0/lib64:/mnt/system/.slurm-install/lib:
-torch: 2.9.0+cu130
-cuda: True
-count: 1
-OK: tensor([0.], device='cuda:0')
-DONE

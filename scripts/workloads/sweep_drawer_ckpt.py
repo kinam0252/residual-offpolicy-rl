@@ -6,7 +6,7 @@ Each job claims (ckpt, drawer) combos via atomic lockfiles.
 
 Usage:
     python scripts/workloads/sweep_drawer_ckpt.py \
-        --ckpt_dir ~/DATA/INTERN/training/groot_drawer_sim_33ep \
+        --ckpt_dir checkpoints/<TASK>/checkpoint \
         --output_dir outputs/sweep_drawer_ckpt \
         --episodes 3
 """
@@ -163,7 +163,7 @@ def eval_drawer(ckpt_path: str, drawer_id: int, episodes: int,
 def main():
     parser = argparse.ArgumentParser(description="Sweep drawer base policy checkpoints")
     parser.add_argument("--ckpt_dir", type=str,
-                        default="~/DATA/INTERN/training/groot_drawer_sim_33ep")
+                        default="checkpoints/<TASK>/checkpoint")
     parser.add_argument("--output_dir", type=str,
                         default="outputs/sweep_drawer_ckpt")
     parser.add_argument("--drawers", type=int, nargs="+", default=[2, 3, 4])

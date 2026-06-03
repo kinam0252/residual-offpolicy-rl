@@ -77,7 +77,7 @@ parser.add_argument("--num_envs", type=int, default=1, help="Number of environme
 parser.add_argument(
     "--model_path",
     type=str,
-    default="/home/kinam/Desktop/Repos/VLA_RL/Isaac-GR00T/outputs/checkpoint-100000",
+    default="<YOUR_REPO_PATH>",
     help="Path to local GR00T checkpoint directory (loaded in-process, no server).",
 )
 parser.add_argument(

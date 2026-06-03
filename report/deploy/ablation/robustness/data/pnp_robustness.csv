@@ -1,5 +1,0 @@
-condition,checkpoint_job,clean_sr,noisy_sr,sr_drop,clean_successes,noisy_successes,total_episodes,clean_mean_return,noisy_mean_return
-clean,pnp_rl_747,36.67,58.33,-21.67,22,35,60,66.19,69.55
-noise,pnp_rl_748,46.67,43.33,3.33,28,26,60,71.42,72.06
-drop,pnp_rl_749,33.33,48.33,-15.00,20,29,60,74.70,67.96
-both,pnp_rl_750,53.33,45.00,8.33,32,27,60,76.86,73.14

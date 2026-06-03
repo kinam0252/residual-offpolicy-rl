@@ -8,7 +8,7 @@ episodes in batches, then claims more until all positions are done.
 Usage:
     python scripts/workloads/collect_lift_offline.py \
         --positions_file configs/lift_66ep_positions.json \
-        --groot_checkpoint ~/DATA/INTERN/training/gr00t_sim_66ep/checkpoint-300000 \
+        --groot_checkpoint checkpoints/<TASK>/checkpoint \
         --output_dir outputs/offline_data/lift_30pos_states \
         --num_positions 30 --episodes_per_pos 10 --batch_size 15
 """

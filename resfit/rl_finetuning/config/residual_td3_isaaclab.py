@@ -45,7 +45,7 @@ class IsaacLabEnvConfig:
     image_size_w: int = 84
     device: str = "cuda:0"
     # CSV for initial pose
-    csv_base_dir: str = "/home/kinam/Desktop/DATA/dataset_from_Namiko/0_Raw_dataset/pickMushroom/pickMushroom_20251209_082448_104"
+    csv_base_dir: str = "<YOUR_DATA_PATH>"
     csv_init_row_index: int = 0
     # Episode
     max_episode_steps: int = 1000

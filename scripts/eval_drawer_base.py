@@ -136,7 +136,7 @@ def main():
     parser.add_argument("--num_episodes", type=int, default=3,
                         help="Episodes per eval (default: 3)")
     parser.add_argument("--groot_checkpoint", type=str,
-                        default="~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000")
+                        default="checkpoints/<TASK>/checkpoint")
     parser.add_argument("--max_episode_steps", type=int, default=500)
     parser.add_argument("--device", type=str, default="cuda:0")
     args = parser.parse_args()

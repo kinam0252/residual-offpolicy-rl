@@ -1,6 +1,6 @@
 {
   "task": "drawer",
-  "groot_checkpoint": "~/DATA/INTERN/training/groot_drawer_sim_33ep/checkpoint-100000",
+  "groot_checkpoint": "checkpoints/groot_drawer_sim/checkpoint-100000",
   "offline_data_dir": "outputs/offline_drawer_zgate_100k",
 
   "positions_file": null,

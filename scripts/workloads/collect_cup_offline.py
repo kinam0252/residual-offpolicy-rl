@@ -8,7 +8,7 @@ episodes in batches, then claims more until all positions are done.
 Usage:
     python scripts/workloads/collect_cup_offline.py \
         --positions_file configs/cup_positions.json \
-        --groot_checkpoint ~/DATA/INTERN/training/groot_cup_sim_27ep/checkpoint-100000 \
+        --groot_checkpoint checkpoints/<TASK>/checkpoint \
         --output_dir outputs/offline_cup_batch \
         --num_positions 27 --episodes_per_pos 10 --batch_size 9
 """
