@@ -173,13 +173,13 @@ def _make_model_with_cube_and_bowl(T_base_cam, cube_pos, bowl_pos,
         <body name="cube" pos="{cpos}" quat="{cquat}">
           <freejoint name="cube_joint"/>
           <geom name="cube_geom" type="box" size="{csz}" material="red_cube"
-                mass="0.03" friction="5.0 0.5 0.1"
+                mass="0.05" friction="5.0 0.5 0.1"
                 condim="6" solimp="0.95 0.99 0.001" solref="0.002 1"/>
           <site name="cube_site" size="0.001"/>
         </body>
         <body name="bowl" pos="{bpos}">
           <geom name="bowl_base" type="cylinder" size="{bowl_radius:.4f} 0.005"
-                material="white_bowl" mass="0.3" pos="0 0 0.005"/>
+                material="white_bowl" mass="0.01" pos="0 0 0.005"/>
         </body>
       </worldbody>
       <equality>
